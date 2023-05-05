@@ -19,7 +19,7 @@
     "file_handler": {
       "class": "logging.FileHandler",
       "level": "INFO",
-      "filename": "logs/onboard.log",
+      "filename": "logs/xxx.log",
       "formatter": "long",
       "delay": true,
       "mode": "w"
