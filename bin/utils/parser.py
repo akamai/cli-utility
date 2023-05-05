@@ -20,7 +20,6 @@ class Parser:
 
     @classmethod
     def get_args(cls):
-
         parser = argparse.ArgumentParser(prog='Akamai API',
                                          description='Available arguments',
                                          epilog='Options are sorted alphabetically. List options with both short and long arguments first',
@@ -119,12 +118,11 @@ class Parser:
                             default=False,
                             help='increase output/logging verbosity')
 
-        return parser.parse_args()
+        subparsers = parser.add_subparsers(dest='command')
+        parser_offload = subparsers.add_parser('offload')
+        parser_offload.add_argument('-p',
+                            metavar='', type=str, default=None,
+                            dest='product',
+                            help='product list')
 
-    def required_parms(self, value: str):
-        args = [data for key, data in vars(self.get_args()).items() if key in [value]]
-        for each in args:
-            if each is None:
-                return False
-                break
-        return True
+        return parser.parse_args()
