@@ -1,0 +1,15 @@
+{
+    "requirements": {
+        "python": "3.6.0"
+    },
+    "commands": [
+        {
+            "name": "utility",
+            "aliases": [
+                "utility"
+            ],
+            "version": "0.0.0",
+            "description": "Provides a collection of useful tools"
+        }
+    ]
+}
