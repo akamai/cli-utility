@@ -33,7 +33,7 @@ class Appsec(AkamaiSession):
     def get_config_version_detail(self, config_id: int, version: int, remove_tags: list | None = None):
         url = self.form_url(f'{self.MODULE}/export/configs/{config_id}/versions/{version}')
         resp = self.session.get(url, headers=self.headers)
-        logger.info(resp.url)
+        logger.debug(resp.url)
 
         # tags we are not interested to compare
         ignore_keys = ['createDate', 'updateDate', 'time']

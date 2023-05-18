@@ -117,7 +117,7 @@ class PapiWrapper(Papi):
         hostnames = df['cnameFrom'].unique().tolist()
         return hostnames
 
-    def get_behavior(self, rule_dict: dict, behavior: str):
+    def get_behavior(self, rule_dict: dict, behavior: str) -> tuple:
         print()
         logger.warning(behavior)
         rule_dict = rule_dict['definitions']['catalog']['behaviors']
@@ -125,7 +125,7 @@ class PapiWrapper(Papi):
         options = data[behavior]['properties']['options']['properties']
         logger.debug(data)
         logger.debug(options)
-        return options
+        return data, options
 
 
 if __name__ == '__main__':

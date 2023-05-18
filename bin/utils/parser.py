@@ -54,7 +54,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
         actions['ruleformat'] = cls.create_sub_command(subparsers, 'ruleformat', help='download ruleformat version',
                                                         required_arguments=[{'name': 'product-id', 'help': 'product_id, https://techdocs.akamai.com/property-mgr/reference/id-prefixes'}],
                                                         optional_arguments=[{'name': 'version', 'help': 'version, https://techdocs.akamai.com/property-mgr/reference/get-schemas-product-rule-format'},
-                                                                            {'name': 'behavior', 'help': 'behavior name'},
+                                                                            {'name': 'behavior', 'help': 'behavior name', 'nargs': '+'},
                                                                             {'name': 'save', 'help': 'save JSON file locally', 'action': 'store_true'},
                                                                             {'name': 'xlsx', 'help': 'save XLSX file locally', 'action': 'store_true'},
                                                                             {'name': 'json', 'help': 'display JSON result to terminal', 'action': 'store_true'}])

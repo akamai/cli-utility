@@ -56,18 +56,21 @@ def get_ruleformat_schema(args):
 
     status_code, rule_dict = papi.get_ruleformat_schema(args.product_id, args.version)
     if status_code == 200:
-        if args.save:
-            Path('output/ruleformat').mkdir(parents=True, exist_ok=True)
-            local_file = f'output/ruleformat/{args.product_id}_{args.version}.json'
-            files.write_json(local_file, rule_dict)
-            logger.info(f'Rule format downloaded: {cwd}/{local_file}')
-        if args.json:
-            print_json(data=rule_dict)
+        papi_wrapper = PapiWrapper()
+        if args.behavior:
+            if args.behavior is not None:
+                behaviors = [tag for tag in args.behavior]
+                for behavior in behaviors:
+                    data, options = papi_wrapper.get_behavior(rule_dict, behavior=behavior)
+                    if args.json:
+                        print_json(data=data, indent=8)
+
+        if args.json and not args.behavior:
+            print_json(data=rule_dict, indent=8)
+
         if args.xlsx:
-            papi_wrapper = PapiWrapper()
             displayed_columns = ['type', 'default', 'enum', 'minimum', 'maximum', 'items', 'maxItems', '$ref']
             if args.behavior:
-                options = papi_wrapper.get_behavior(rule_dict, behavior=args.behavior)
                 df = pd.DataFrame.from_dict(options, orient='index')
                 df = df.fillna('')
                 behavior_options = list(df.columns)
@@ -95,7 +98,7 @@ def get_ruleformat_schema(args):
             else:
                 all_behaviors = list(rule_dict['definitions']['catalog']['behaviors'].keys())
                 for behavior in all_behaviors:
-                    options = papi_wrapper.get_behavior(rule_dict, behavior)
+                    data, options = papi_wrapper.get_behavior(rule_dict, behavior)
                     df = pd.DataFrame.from_dict(options, orient='index')
                     df = df.fillna('')
 
@@ -119,6 +122,12 @@ def get_ruleformat_schema(args):
                                 width.append(None)
                         width.insert(0, None)
                         print(tabulate(df, headers='keys', tablefmt='grid', numalign='center', maxcolwidths=width))
+
+        # save JSON regardless
+        Path('output/ruleformat').mkdir(parents=True, exist_ok=True)
+        local_file = f'output/ruleformat/{args.product_id}_{args.version}.json'
+        files.write_json(local_file, rule_dict)
+        logger.info(f'Rule format downloaded: {cwd}/{local_file}')
 
     elif status_code == 404:
         logger.error(f'version {args.version} not found')
