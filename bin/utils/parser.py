@@ -49,10 +49,8 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                                                 {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'},
                                                 {'name': 'remove-tags', 'help': 'ignore json tags from comparison', 'nargs': '+'}
                                                 ])
-
-        actions['contract'] = cls.create_sub_command(subparsers, 'contract', help='list active contracts for the account')
-        actions['contract-test'] = cls.create_sub_command(subparsers, 'contract-test', help='list active contracts for the account')
-        actions['offload-report'] = cls.create_sub_command(subparsers, 'offload-report', help='list traffic report')
+        actions['delivery-config'] = cls.create_sub_command(subparsers, 'delivery-config', help='collect all configs for account')
+        actions['report'] = cls.create_sub_command(subparsers, 'report', help='list traffic report')
         actions['ruleformat'] = cls.create_sub_command(subparsers, 'ruleformat', help='download ruleformat version',
                                                         required_arguments=[{'name': 'product-id', 'help': 'product_id, https://techdocs.akamai.com/property-mgr/reference/id-prefixes'}],
                                                         optional_arguments=[{'name': 'version', 'help': 'version, https://techdocs.akamai.com/property-mgr/reference/get-schemas-product-rule-format'},
