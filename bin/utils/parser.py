@@ -4,7 +4,10 @@ import argparse
 from argparse import HelpFormatter
 from operator import attrgetter
 
-from rich_argparse import RichHelpFormatter
+import rich_argparse as rap
+from utils._logging import setup_logger
+
+logger = setup_logger()
 
 
 class SortingHelpFormatter(HelpFormatter):
@@ -14,115 +17,78 @@ class SortingHelpFormatter(HelpFormatter):
         super().add_arguments(actions)
 
 
-class Parser:
-    def __init__(self):
-        pass
+class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
+    def __init__(self, prog):
+        super().__init__(prog,
+                         indent_increment=2,
+                         max_help_position=120)
 
     @classmethod
     def get_args(cls):
-        parser = argparse.ArgumentParser(prog='Akamai API',
-                                         description='Available arguments',
-                                         epilog='Options are sorted alphabetically. List options with both short and long arguments first',
-                                         formatter_class=RichHelpFormatter)
+        parser = argparse.ArgumentParser(prog='Akamai CLI utility',
+                                         formatter_class=AkamaiParser,
+                                         conflict_handler='resolve',
+                                         usage='Various akamai utilities to facilitate day to day work')
 
-        # https://stackoverflow.com/questions/12268602/sort-argparse-help-alphabetically
-        # parser = argparse.ArgumentParser(description='Available arguments', formatter_class=SortingHelpFormatter)
-
-        # https://stackoverflow.com/questions/52605094/python-argparse-increase-space-between-parameter-and-description
-        # formatter = lambda prog: argparse.HelpFormatter(prog, max_help_position=88)
-
-        # arguments with both short and long options
         parser.add_argument('-a', '--account-key', '--account-switchkey', '--accountswitchkey',
-                            metavar='', type=str, default=None,
-                            dest='account_switch_key',
+                            metavar='', type=str, dest='account_switch_key',
                             help='account switch key (Internal Only)')
 
-        parser.add_argument('-c', '--contract-id',
-                            metavar='', type=str, default=None,
-                            dest='contract_id',
-                            help='contract id without ctr_ prefix')
+        subparsers = parser.add_subparsers(title='Available commands', metavar='', dest='command')
 
-        parser.add_argument('-e', '--edgehostname-id',
-                            metavar='', type=int, default=None,
-                            dest='edgehostname_id',
-                            help='edge hostname id without ehn_ prefix')
+        actions = {}
+        actions['diff'] = cls.create_sub_command(subparsers,
+                            'diff',
+                            help='show compare report between two configurations',
+                            required_arguments=[{'name': 'config1', 'help': 'config to compare'}],
+                            optional_arguments=[{'name': 'config2', 'help': 'another config to be compared with config #1'},
+                                                {'name': 'left', 'help': 'config1 version'},
+                                                {'name': 'right', 'help': 'config2 version'},
+                                                {'name': 'kind', 'help': 'delivery or security', 'default': 'delivery'},
+                                                {'name': 'xml', 'help': 'compare metadata', 'action': 'store_false'},
+                                                {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'},
+                                                {'name': 'remove-tags', 'help': 'ignore json tags from comparison', 'nargs': '+'}
+                                                ])
 
-        parser.add_argument('-g', '--group-id',
-                            metavar='', type=int, default=None,
-                            dest='group_id',
-                            help='group id without grp_ prefix')
-
-        parser.add_argument('-s', '--search',
-                            metavar='', type=str, default=None,
-                            dest='search_value', action='append',
-                            help='search value. This can be property name, contract id, edgehostname, and etc.')
-
-        parser.add_argument('-i', '--id', '--property-id', '--config-id', '--search-id',
-                            metavar='', type=str, default=None,
-                            dest='search_id',
-                            help='search any id such as property ID or security ID')
-
-        parser.add_argument('-v', '--version', '--property-version', '--security-version',
-                            metavar='', type=int, default=None,
-                            dest='version',
-                            help='version for either property or security config')
-
-        # choices
-        parser.add_argument('--network', metavar='', default='STAGING',
-                            dest='network', choices=['STAGING', 'PRODUCTION'],
-                            help='choice is either STAGING or PRODUCTION')
-
-        # arguments without short options
-        parser.add_argument('--account-name', metavar='', type=str, default=None,
-                            dest='account_name',
-                            help='account name')
-        parser.add_argument('--comment', '--note', metavar='', type=str, default=None,
-                            dest='comment',
-                            help='comment/note for property or security config, or activation message')
-
-        # file types
-        parser.add_argument('--file', metavar='', type=str, default=None,
-                            dest='input_file',
-                            help='General any type of input file')
-        parser.add_argument('--csv', metavar='', type=str, default=None,
-                            dest='csv_file',
-                            help='CSV filename to be placed under output directory')
-        parser.add_argument('--json', metavar='', type=str, default=None,
-                            dest='json_file',
-                            help='JSON filename to be placed under output directory')
-        parser.add_argument('--log', metavar='', type=str, default=None,
-                            dest='log_file',
-                            help='LOG filename to be placed under logs directory')
-        parser.add_argument('--txt', metavar='', type=str, default=None,
-                            dest='text_file',
-                            help='TXT filename to be placed under logs directory')
-        parser.add_argument('--xlsx', metavar='', type=str, default=None,
-                            dest='xlsx_file',
-                            help='XLSX filename to be placed under output directory')
-
-        # https://stackoverflow.com/questions/11999416/python-argparse-metavar-and-action-store-true-together
-
-        parser.add_argument('--dryrun',
-                            action='store_true',
-                            dest='dryrun',
-                            default=False,
-                            help='True will not deactivate or delete configs.')
-        parser.add_argument('--show',
-                            action='store_true',
-                            dest='show',
-                            default=False,
-                            help='automatically open application')
-        parser.add_argument('--verbose',
-                            action='store_true',
-                            dest='verbose',
-                            default=False,
-                            help='increase output/logging verbosity')
-
-        subparsers = parser.add_subparsers(dest='command')
-        parser_offload = subparsers.add_parser('offload')
-        parser_offload.add_argument('-p',
-                            metavar='', type=str, default=None,
-                            dest='product',
-                            help='product list')
+        actions['contract'] = cls.create_sub_command(subparsers, 'contract', help='list active contracts for the account')
+        actions['contract-test'] = cls.create_sub_command(subparsers, 'contract-test', help='list active contracts for the account')
+        actions['offload-report'] = cls.create_sub_command(subparsers, 'offload-report', help='list traffic report')
+        actions['ruleformat'] = cls.create_sub_command(subparsers, 'ruleformat', help='download ruleformat version',
+                                                        required_arguments=[{'name': 'product-id', 'help': 'product_id, https://techdocs.akamai.com/property-mgr/reference/id-prefixes'}],
+                                                        optional_arguments=[{'name': 'version', 'help': 'version, https://techdocs.akamai.com/property-mgr/reference/get-schemas-product-rule-format'},
+                                                                            {'name': 'behavior', 'help': 'behavior name'},
+                                                                            {'name': 'save', 'help': 'save JSON file locally', 'action': 'store_true'},
+                                                                            {'name': 'xlsx', 'help': 'save XLSX file locally', 'action': 'store_true'},
+                                                                            {'name': 'json', 'help': 'display JSON result to terminal', 'action': 'store_true'}])
 
         return parser.parse_args()
+
+    @classmethod
+    def create_sub_command(cls, subparsers, name, help, required_arguments=None, optional_arguments=None):
+        action = subparsers.add_parser(prog=help, usage='%(prog)s',
+                                       name=name, help=help, add_help=True,
+                                       formatter_class=rap.ArgumentDefaultsRichHelpFormatter)
+
+        if required_arguments:
+            required = action.add_argument_group('required arguments')
+            for arg in required_arguments:
+                name = arg['name']
+                del arg['name']
+                required.add_argument(f'--{name}', metavar='', required=True, **arg)
+
+        if optional_arguments:
+            optional = action.add_argument_group('optional arguments')
+            for arg in optional_arguments:
+                name = arg['name']
+                del arg['name']
+                try:
+                    action_value = arg['action']
+                    del arg['action']
+                    optional.add_argument(f'--{name}', required=False, action=action_value, **arg)
+                except:
+                    optional.add_argument(f'--{name}', metavar='', required=False, **arg)
+
+            optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)
+            optional.add_argument('-p', '--print-width', action='store_true', help=argparse.SUPPRESS)
+            optional.add_argument('-v', '--verbose', action='store_true', help=argparse.SUPPRESS)
+        return action
