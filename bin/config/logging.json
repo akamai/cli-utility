@@ -19,7 +19,7 @@
     "file_handler": {
       "class": "logging.FileHandler",
       "level": "INFO",
-      "filename": "logs/xxx.log",
+      "filename": "logs/utility.log",
       "formatter": "long",
       "delay": true,
       "mode": "w"
