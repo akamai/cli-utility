@@ -37,6 +37,11 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
         subparsers = parser.add_subparsers(title='Available commands', metavar='', dest='command')
 
         actions = {}
+        actions['admin'] = cls.create_sub_command(subparsers,
+                                                  'admin',
+                                                  help='administrative lookup',
+                                                  required_arguments=[{'name': 'search', 'help': 'keyword search at least 3 characters', 'nargs': '+'}])
+
         actions['diff'] = cls.create_sub_command(subparsers,
                             'diff',
                             help='show compare report between two configurations',

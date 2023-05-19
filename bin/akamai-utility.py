@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from command import admin
 from command import delivery_config
 from command import diff
 from command import report
@@ -11,6 +12,9 @@ logger = setup_logger()
 
 if __name__ == '__main__':
     args = Parser.get_args()
+
+    if args.command == 'admin':
+        admin.lookup_account(args)
 
     if args.command == 'diff':
         diff.main(args)
