@@ -234,12 +234,12 @@ class Papi(AkamaiSession):
             t = response.text
             u = response.url
             z = response.content
-            logger.info(f'{s} {u} {headers}')
+            logger.debug(f'{s} {u} {headers}')
             print_json(data=headers)
             print_json(data=self.cookies)
 
             if 'Token is expired' in msg:
-                sys.exit(logger.error('please update 3 tokens [ XSRF-TOKEN, AKASSO, AKATOKEN ] and  in ~/.edgerc file'))
+                sys.exit(logger.error('please add/update 3 tokens [ XSRF-TOKEN, AKASSO, AKATOKEN ] in ~/.edgerc file'))
             else:
                 sys.exit(logger.error(msg))
 

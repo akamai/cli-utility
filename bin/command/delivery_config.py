@@ -45,7 +45,6 @@ def rollback(args):
 
 
 def activation_status(args):
-    start_time = perf_counter()
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
 
     # iterate over files in directory
@@ -104,9 +103,6 @@ def activation_status(args):
     df = df.reset_index(drop=True)
     logger.info(f'\n{df[columns]}')
 
-    end_time = lg.log_cli_timing(start_time)
-    logger.info(end_time)
-
 
 def main(args):
     '''
@@ -116,7 +112,6 @@ def main(args):
     '''
     pandarallel.initialize(progress_bar=False)
     logger.debug(f'{args.dryrun=}')
-    start_time = perf_counter()
 
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
@@ -220,9 +215,6 @@ def main(args):
             logger.info('--show argument is supported only on Mac OS')
         else:
             subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
-
-    end_time = lg.log_cli_timing(start_time)
-    logger.info(end_time)
 
 
 def load_config_from_xlsx(filepath: str, sheet_name: str, filter: str):

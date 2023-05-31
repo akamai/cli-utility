@@ -145,5 +145,6 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
 
             optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)
             optional.add_argument('-p', '--print-width', action='store_true', help=argparse.SUPPRESS)
+            optional.add_argument('-v', '--verbose', action='store_true', help=argparse.SUPPRESS)
 
         return action
