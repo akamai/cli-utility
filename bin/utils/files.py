@@ -51,23 +51,34 @@ def make_xlsx_hyperlink_to_another_sheet(filepath: str, url: str, cell: str) -> 
         return f'{url}'
 
 
+def make_xlsx_hyperlink_to_external_link(url: str, alias: str) -> str:
+    url = f'{url}{alias}'
+    if alias:
+        return f'=HYPERLINK("{url}", "{alias}")'
+    else:
+        return f'{url}'
+
+
 def write_xlsx(filepath: str, dict_value: dict,
                freeze_row: int | None = 1,
                freeze_column: int | None = 2,
                show_url: bool | None = True,
-               show_index: bool | None = False) -> None:
+               show_index: bool | None = False,
+               adjust_column_with: bool | None = True) -> None:
     with pd.ExcelWriter(path=filepath, engine='xlsxwriter',
                         engine_kwargs={'options': {'strings_to_urls': show_url}}) as writer:
         writer.book.use_zip64()  # to allow excel to store files larger than 4GB
         MAX_XLXS_ROW = 1000000   # 1 million rows per sheet
+        MAX_SHEETS = 89          # 89 sheets per excel
         for sheetname, df in dict_value.items():
             if df is not None:
                 if len(df.index) <= MAX_XLXS_ROW:
                     df.to_excel(writer, sheet_name=sheetname,
                                 freeze_panes=(freeze_row, freeze_column),
                                 index=show_index)
-                    auto_adjust_xlsx_column_width(df, writer, sheet_name=sheetname, margin=0,
-                                                  index=show_index)
+                    if adjust_column_with is True:
+                        auto_adjust_xlsx_column_width(df, writer, sheet_name=sheetname, margin=0,
+                                                    index=show_index)
                     workbook = writer.book
                     cell_format = workbook.add_format()
                     cell_format.set_bold()
@@ -93,53 +104,56 @@ def write_xlsx(filepath: str, dict_value: dict,
                 else:
                     total, last_sheet = divmod(len(df.index), MAX_XLXS_ROW)
                     logger.info(f'{total=} {last_sheet=} dataset={len(df.index)}')
-                    for sheet in (n + 1 for n in range(total)):
-                        sheet_no = sheet
-                        if sheet == 1:
-                            first_row = 0
-                        else:
-                            first_row = ((sheet - 1) * MAX_XLXS_ROW) + 1
-                        last_row = (sheet * MAX_XLXS_ROW) + 1
-                        # print(f'Sheet{sheet}: from {first_row} to {last_row}')
-                        df.iloc[first_row:last_row].to_excel(writer, sheet_name=f'{sheet_no}')
-                        if sheet == total and last_sheet > 0:
-                            first_row = last_row
-                            last_row = (total * MAX_XLXS_ROW) + last_sheet
-                            # print(f'Sheet{total+1}: from {first_row} to {last_row}')
-                            sheet_no = total + 1
-                            df.iloc[first_row:last_row].to_excel(writer, sheet_name=f'{sheet_no}')
-                            # df.columns = df.columns.str.upper()
-                        df.to_excel(writer, sheet_name=f'{sheetname}_{sheet_no}',
-                                    freeze_panes=(freeze_row, freeze_column),
-                                    index=show_index)
-                        auto_adjust_xlsx_column_width(df, writer, sheet_name=f'{sheetname}_{sheet_no}',
-                                                      index=show_index)
-
-                        workbook = writer.book
-                        cell_format = workbook.add_format()
-                        cell_format.set_bold()
-                        cell_format.set_font_color('blue')
-
-                        header_format = workbook.add_format({'bold': True,
-                                                            'text_wrap': True,
-                                                            'valign': 'top',
-                                                            'align': 'middle',
-                                                            'fg_color': '#FFC588',  # orange
-                                                            'border': 1,
-                                                            })
-
-                        # Write the column headers with the defined format.
-                        ws = writer.sheets[f'{sheetname}_{sheet_no}']
-                        for col_num, value in enumerate(df.columns.values):
-                            if show_index:
-                                ws.write(0, col_num + 1, value, header_format)
+                    last_sheet = 2
+                    if last_sheet <= MAX_SHEETS:
+                        for sheet in (n + 1 for n in range(total)):
+                            sheet_no = sheet
+                            if sheet == 1:
+                                first_row = 0
                             else:
-                                ws.write(0, col_num, value, header_format)
+                                first_row = ((sheet - 1) * MAX_XLXS_ROW) + 1
+                            last_row = (sheet * MAX_XLXS_ROW) + 1
+                            # print(f'Sheet{sheet}: from {first_row} to {last_row}')
+                            df.iloc[first_row:last_row].to_excel(writer, sheet_name=f'{sheet_no}')
+                            if sheet == total and last_sheet > 0:
+                                first_row = last_row
+                                last_row = (total * MAX_XLXS_ROW) + last_sheet
+                                # print(f'Sheet{total+1}: from {first_row} to {last_row}')
+                                sheet_no = total + 1
+                                df.iloc[first_row:last_row].to_excel(writer, sheet_name=f'{sheet_no}')
+                                # df.columns = df.columns.str.upper()
+                            df.to_excel(writer, sheet_name=f'{sheetname}_{sheet_no}',
+                                        freeze_panes=(freeze_row, freeze_column),
+                                        index=show_index)
+                            if adjust_column_with is True:
+                                auto_adjust_xlsx_column_width(df, writer, sheet_name=f'{sheetname}_{sheet_no}',
+                                                        index=show_index)
 
-                        format1 = workbook.add_format({'num_format': '#,##0'})
-                        ws.set_column(2, 2, None, format1)
+                            workbook = writer.book
+                            cell_format = workbook.add_format()
+                            cell_format.set_bold()
+                            cell_format.set_font_color('blue')
 
-    filepath = Path(f'{filepath}').absolute()
+                            header_format = workbook.add_format({'bold': True,
+                                                                'text_wrap': True,
+                                                                'valign': 'top',
+                                                                'align': 'middle',
+                                                                'fg_color': '#FFC588',  # orange
+                                                                'border': 1,
+                                                                })
+
+                            # Write the column headers with the defined format.
+                            ws = writer.sheets[f'{sheetname}_{sheet_no}']
+                            for col_num, value in enumerate(df.columns.values):
+                                if show_index:
+                                    ws.write(0, col_num + 1, value, header_format)
+                                else:
+                                    ws.write(0, col_num, value, header_format)
+
+                            format1 = workbook.add_format({'num_format': '#,##0'})
+                            ws.set_column(2, 2, None, format1)
+
+    filepath = str(Path(f'{filepath}').absolute())
     logger.info(f'{filepath=}')
 
 
