@@ -30,7 +30,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                                          conflict_handler='resolve',
                                          usage='Various akamai utilities to facilitate day to day work')
 
-        parser.add_argument('-v', '--verbose', action='store_true', help='set log level to DEBUG')
+        # parser.add_argument('-v', '--verbose', action='store_true', help='set log level to DEBUG')
 
         parser.add_argument('-a', '--account-key', '--account-switchkey', '--accountswitchkey',
                             metavar='', type=str, dest='account_switch_key',
@@ -65,7 +65,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                                                 {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}
                                                 ])
 
-        config_help = 'many things you may need to [know about/check on/perform on] configs for account'
+        config_help = 'many things you may need to (know about/check on/perform on) configs on the account'
         actions['delivery-config'] = cls.create_sub_command(
                             subparsers, 'delivery-config',
                             help=f'{config_help}',
@@ -93,7 +93,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
 
         actions['ruleformat'] = cls.create_sub_command(
                             subparsers, 'ruleformat',
-                            help='download ruleformat version',
+                            help='information about ruleformat and behavior catalog',
                             required_arguments=[{'name': 'product-id', 'help': 'product_id, https://techdocs.akamai.com/property-mgr/reference/id-prefixes#common-product-ids'}],
                             optional_arguments=[{'name': 'version', 'help': 'version, https://techdocs.akamai.com/property-mgr/reference/get-schemas-product-rule-format'},
                                                 {'name': 'behavior', 'help': 'behavior names contain', 'nargs': '+'},
@@ -103,7 +103,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
         actions['log'] = cls.create_sub_command(
                             subparsers,
                             'log',
-                            help='review logs',
+                            help='review ghost logs, excel friendly',
                             required_arguments=[{'name': 'input', 'help': 'location of file ending with gz extension'}],
                             optional_arguments=[{'name': 'output', 'help': 'location of excel file'},
                                                 {'name': 'search', 'help': 'search text', 'nargs': '+'}])
