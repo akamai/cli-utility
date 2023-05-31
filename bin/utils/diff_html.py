@@ -403,6 +403,7 @@ def main(fromfile: str, tofile: str, output_path: str, options):
     codeDiff.format(options)
     codeDiff.write(output_path)
 
+
 if __name__ == '__main__':
 
     description = """Given two source files this application creates an html page which highlights the differences between the two. """

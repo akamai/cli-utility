@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from akamai_api.papi import Appsec
-from utils._logging import setup_logger
+from utils import _logging as lg
 
-logger = setup_logger()
+
+logger = lg.setup_logger()
 
 
 class AppsecWrapper(Appsec):

@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 from command import admin
-from command import delivery_config
+from command import delivery_config as dc
 from command import diff
+from command import log
 from command import report
 from command import ruleformat
-from utils._logging import setup_logger
+from utils import _logging as lg
 from utils.parser import AkamaiParser as Parser
 
-logger = setup_logger()
+
+logger = lg.setup_logger()
+
 
 if __name__ == '__main__':
     args = Parser.get_args()
 
     if args.command == 'admin':
         admin.lookup_account(args)
+
+    if args.command == 'log':
+        log.main(args.input, args.output, args.search)
 
     if args.command == 'diff':
         diff.main(args)
@@ -26,4 +32,12 @@ if __name__ == '__main__':
         report.offload(args)
 
     if args.command == 'delivery-config':
-        delivery_config.main(args)
+
+        if args.activate is True:
+            dc.rollback(args)
+        elif args.load:
+            dc.activation_status(args)
+        elif args.ruletree:
+            dc.get_property_ruletree(args)
+        else:
+            dc.main(args)

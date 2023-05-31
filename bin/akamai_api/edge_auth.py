@@ -5,9 +5,10 @@ from pathlib import Path
 import requests
 from akamai.edgegrid import EdgeGridAuth
 from akamai.edgegrid import EdgeRc
-from utils._logging import setup_logger
+from utils import _logging as lg
 
-logger = setup_logger()
+
+logger = lg.setup_logger()
 
 
 class AkamaiSession:
@@ -30,6 +31,14 @@ class AkamaiSession:
         self.base_url = f'https://{self.host}'
         self.session = requests.Session()
         self.session.auth = EdgeGridAuth.from_edgerc(edgerc_file, section)
+
+        # required for pulsar API
+        # https://ac-aloha.akamai.com/home/ls/content/5296164953915392/polling-the-pulsar-api-for-pleasure-profit
+
+        self.cookies = {}
+        self.cookies['AKASSO'] = edgerc_file.get(section, 'AKASSO')
+        self.cookies['XSRF-TOKEN'] = edgerc_file.get(section, 'XSRF-TOKEN')
+        self.cookies['AKATOKEN'] = edgerc_file.get(section, 'AKATOKEN')
 
     @property
     def params(self) -> dict:
