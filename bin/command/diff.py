@@ -77,7 +77,7 @@ def compare_versions(v1: str, v2: str, outputfile: str):
 
 
 def main(args):
-    start_time = perf_counter()
+
     config1 = args.config1
     config2 = args.config2
     left = args.left
@@ -211,6 +211,3 @@ def main(args):
                 webbrowser.open(f'file://{os.path.abspath(xml_wafAfter_index_html)}')
             else:
                 logger.info(f'{title}{os.path.abspath(xml_wafAfter_index_html)}')
-
-    end_time = lg.log_cli_timing(start_time)
-    logger.info(end_time)

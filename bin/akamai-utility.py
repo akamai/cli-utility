@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from time import perf_counter
+
 from command import admin
 from command import delivery_config as dc
 from command import diff
@@ -15,6 +17,7 @@ logger = lg.setup_logger()
 
 if __name__ == '__main__':
     args = Parser.get_args()
+    start_time = perf_counter()
 
     if args.command == 'admin':
         admin.lookup_account(args)
@@ -41,3 +44,6 @@ if __name__ == '__main__':
             dc.get_property_ruletree(args)
         else:
             dc.main(args)
+
+    end_time = lg.log_cli_timing(start_time)
+    logger.info(end_time)
