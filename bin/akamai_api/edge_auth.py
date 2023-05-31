@@ -35,10 +35,22 @@ class AkamaiSession:
         # required for pulsar API
         # https://ac-aloha.akamai.com/home/ls/content/5296164953915392/polling-the-pulsar-api-for-pleasure-profit
 
+        # This is not required on .edgerc
         self.cookies = {}
-        self.cookies['AKASSO'] = edgerc_file.get(section, 'AKASSO')
-        self.cookies['XSRF-TOKEN'] = edgerc_file.get(section, 'XSRF-TOKEN')
-        self.cookies['AKATOKEN'] = edgerc_file.get(section, 'AKATOKEN')
+        try:
+            self.cookies['AKASSO'] = edgerc_file.get(section, 'AKASSO')
+        except:
+            pass
+
+        try:
+            self.cookies['XSRF-TOKEN'] = edgerc_file.get(section, 'XSRF-TOKEN')
+        except:
+            pass
+
+        try:
+            self.cookies['AKATOKEN'] = edgerc_file.get(section, 'AKATOKEN')
+        except:
+            pass
 
     @property
     def params(self) -> dict:
