@@ -51,8 +51,6 @@ def security_config_json(waf_config_name: str, config_id: int, version: int | No
     logger.debug(f'{waf_config_name} {config_id=} {status=} {version}')
     if status == 200:
         json_tree_status, sec_response = appsec.get_config_version_detail(config_id, version, exclude)
-
-    if json_tree_status == 200:
         return collect_json(f'{config_id}_{waf_config_name}', version, sec_response)
     else:
         print_json(data=sec_response)
