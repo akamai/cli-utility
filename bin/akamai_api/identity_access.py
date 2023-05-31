@@ -1,14 +1,14 @@
-# Reference API from techdoc
+# Techdocs reference
 # https://techdocs.akamai.com/iam-api/reference/get-client-account-switch-keys
 from __future__ import annotations
 
 import sys
 
 from akamai_api.edge_auth import AkamaiSession
-from utils._logging import setup_logger
+from utils import _logging as lg
 
 
-logger = setup_logger()
+logger = lg.setup_logger()
 
 
 class IdentityAccessManagement(AkamaiSession):
@@ -22,11 +22,14 @@ class IdentityAccessManagement(AkamaiSession):
         self.property_id = None
 
     def search_account_name(self, value: str) -> str:
-        qry = f'?search={value.lower()}'
-        url = self.form_url(f'{self.MODULE}/api-clients/self/account-switch-keys{qry}')
+        qry = f'?search={value.upper()}'
+        url = f'{self.MODULE}/api-clients/self/account-switch-keys{qry}'
         resp = self.session.get(url, headers=self.headers)
-        try:
-            logger.debug(resp.text)
+        if resp.status_code == 200:
             return resp.json()
-        except:
-            sys.exit(logger.error(f'Invalid account key {value}'))
+        else:
+            if 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
+                lg.countdown(540)
+                sys.exit(logger.error(resp.json()['detail']))
+            else:
+                sys.exit(logger.error(resp.json()['detail']))
