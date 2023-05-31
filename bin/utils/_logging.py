@@ -20,21 +20,10 @@ def setup_logger():
     Path('logs').mkdir(parents=True, exist_ok=True)
     Path('config').mkdir(parents=True, exist_ok=True)
 
-    docker_path = os.path.expanduser(Path('/cli'))
-    local_home_path = os.path.expanduser(Path('~/.akamai-cli'))
-
-    if Path(docker_path).exists():
-        origin_config = f'{docker_path}/.akamai-cli/src/cli-utility/config/logging.json'
-    elif Path(local_home_path).exists():
-        origin_config = f'{local_home_path}/src/cli-utility/config/logging.json'
-        origin_config = os.path.expanduser(origin_config)
-    else:
-        raise FileNotFoundError('Could not find logging.json')
-
-    try:
-        shutil.copy2(origin_config, 'bin/config/logging.json')
-    except FileNotFoundError as e:
-        origin_config = 'bin/config/logging.json'
+    load_local_config_file(config_file='ghost_r.txt')
+    load_local_config_file(config_file='ghost_f.txt')
+    load_local_config_file(config_file='logging.json')
+    origin_config = load_local_config_file(config_file='logging.json')
 
     with open(origin_config) as f:
         log_cfg = json.load(f)
@@ -43,8 +32,27 @@ def setup_logger():
 
     logger = logging.getLogger(__name__)
     coloredlogs.install(logger=logger, fmt='%(levelname)-7s: %(message)s')
-
     return logger
+
+
+def load_local_config_file(config_file: str) -> str:
+    docker_path = os.path.expanduser(Path('/cli'))
+    local_home_path = os.path.expanduser(Path('~/.akamai-cli'))
+
+    if Path(docker_path).exists():
+        origin_config = f'{docker_path}/.akamai-cli/src/cli-utility/bin/config/{config_file}'
+    elif Path(local_home_path).exists():
+        origin_config = f'{local_home_path}/src/cli-utility/bin/config/{config_file}'
+        origin_config = os.path.expanduser(origin_config)
+    else:
+        raise FileNotFoundError(f'Could not find {config_file}')
+
+    try:
+        shutil.copy2(origin_config, f'config/{config_file}')
+    except FileNotFoundError as e:
+        origin_config = f'config/{config_file}'
+
+    return origin_config
 
 
 def get_cli_root_directory():

@@ -57,7 +57,11 @@ def r_line(filename, search_keyword: list | None = None) -> pd.DataFrame:
     Convert r/R lines from QGREP log to excel
     """
 
-    r_columns, r_dict = gh.build_ghost_log_index('bin/config/ghost_r.txt')
+    try:
+        r_columns, r_dict = gh.build_ghost_log_index('bin/config/ghost_r.txt')
+    except:
+        r_columns, r_dict = gh.build_ghost_log_index('config/ghost_r.txt')
+
     r_dict[-1] = 'GMT'
 
     # https://pandas.pydata.org/docs/reference/api/pandas.errors.ParserWarning.html
@@ -147,7 +151,10 @@ def f_line(filename: str, search_keyword: list | None = None) -> tuple:
     Convert f/F lines from QGREP log to excel
     """
 
-    f_columns, f_dict = gh.build_ghost_log_index('bin/config/ghost_f.txt')
+    try:
+        f_columns, f_dict = gh.build_ghost_log_index('bin/config/ghost_f.txt')
+    except:
+        f_columns, f_dict = gh.build_ghost_log_index('config/ghost_f.txt')
 
     try:
         df = pd.read_csv(filename, header=0, sep=' ', names=f_columns,
