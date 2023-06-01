@@ -20,19 +20,20 @@ def homepage_url(account_id: str) -> str:
 
 def cleanup_arguments(value: str):
     if value == '*':
-        logger.warning(f'{value:<20}:not allow')
+        logger.error(f'not allow:             {value:<20}')
         return value
     elif len(value) < 3:
-        logger.warning(f'{value:<20}:minimum 3 characters lookup keyword search')
+        logger.error(f'minimum 3 characters:  {value:<20}')
         return value
 
 
 def lookup_account(args):
-    iam = IdentityAccessManagement(args.account_switch_key)
+    iam = IdentityAccessManagement(args.account_switch_key, args.section)
     searches = sorted(args.search)
 
     # cleanup keywords
-    logger.info(f'Lookup values: {searches}')
+    print()
+    logger.warning(f'Lookup values:           {searches}')
     removed = []
     for value in searches:
         value = cleanup_arguments(str(value))
@@ -43,7 +44,7 @@ def lookup_account(args):
     if len(final_searches) == 0:
         sys.exit()
     if not set(searches) == set(final_searches):
-        logger.info(f'Remaining lookup values: {final_searches}')
+        logger.warning(f'Remaining lookup values: {final_searches}')
 
     # display result
     print()

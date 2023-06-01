@@ -34,7 +34,13 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
 
         parser.add_argument('-a', '--account-key', '--account-switchkey', '--accountswitchkey',
                             metavar='', type=str, dest='account_switch_key',
-                            help='account switch key (Internal Only)')
+                            help='account switch key (Akamai Internal Only)')
+        parser.add_argument('-e', '--edgerc',
+                            metavar='', type=str, dest='section',
+                            help='location of the credentials file [$AKAMAI_EDGERC]')
+        parser.add_argument('-s', '--section',
+                            metavar='', type=str, dest='section',
+                            help='section of the credentials file [$AKAMAI_EDGERC_SECTION]')
 
         subparsers = parser.add_subparsers(title='Available commands', metavar='', dest='command')
 

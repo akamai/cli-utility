@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import sys
+from configparser import NoSectionError
 from pathlib import Path
 
 import requests
@@ -18,19 +21,19 @@ class AkamaiSession:
                  contract_id: int | None = None,
                  group_id: int | None = None):
 
+        self.edgerc_file = edgerc_file if edgerc_file else EdgeRc(f'{str(Path.home())}/.edgerc')
         self.account_switch_key = account_switch_key if account_switch_key else None
         self.contract_id = contract_id if contract_id else None
         self.group_id = group_id if group_id else None
+        self.section = section if section else 'default'
 
-        home = str(Path.home())
-        edgerc_file = EdgeRc(f'{home}/.edgerc')
-
-        if not section:
-            section = 'default'
-        self.host = edgerc_file.get(section, 'host')
-        self.base_url = f'https://{self.host}'
-        self.session = requests.Session()
-        self.session.auth = EdgeGridAuth.from_edgerc(edgerc_file, section)
+        try:
+            self.host = self.edgerc_file.get(self.section, 'host')
+            self.base_url = f'https://{self.host}'
+            self.session = requests.Session()
+            self.session.auth = EdgeGridAuth.from_edgerc(self.edgerc_file, self.section)
+        except NoSectionError as ex:
+            sys.exit(logger.error(f'edgerc section "{self.section}" not found'))
 
         # required for pulsar API
         # https://ac-aloha.akamai.com/home/ls/content/5296164953915392/polling-the-pulsar-api-for-pleasure-profit
