@@ -32,7 +32,11 @@ if __name__ == '__main__':
         ruleformat.get_ruleformat_schema(args)
 
     if args.command == 'report':
-        report.offload(args)
+
+        if args.url_offload is True:
+            report.url_offload(args)
+        else:
+            report.offload(args)
 
     if args.command == 'delivery-config':
 

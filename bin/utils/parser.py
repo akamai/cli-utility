@@ -87,9 +87,12 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                                                 ])
 
         actions['report'] = cls.create_sub_command(
-                            subparsers,
-                            'report',
-                            help='list traffic report')
+                            subparsers, 'report',
+                            help='list traffic report',
+                            optional_arguments=[
+                                {'name': 'url-offload', 'help': 'url hit offload', 'action': 'store_true'},
+                                {'name': 'cpcodes', 'help': '1 or more reporting cpcodes ', 'nargs': '+'}
+                            ])
 
         actions['ruleformat'] = cls.create_sub_command(
                             subparsers, 'ruleformat',

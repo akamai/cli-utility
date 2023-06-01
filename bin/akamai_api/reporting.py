@@ -43,6 +43,33 @@ class Reporting(AkamaiSession):
             logger.info(print_json(data=response.json()))
             return response.json()
 
+    def hits_by_url(self, start: str, end: str, cpcodes):
+        url = f'{self.MODULE}/reports/urlhits-by-url/versions/1/report-data'
+        params = {
+            'start': start,
+            'end': end,
+            'limit': 10000
+        }
+        if self.account_switch_key is not None:
+            params['accountSwitchKey'] = self.account_switch_key
+
+        payload = {
+            'objectIds': cpcodes,
+            'metrics': [
+                'allEdgeHits',
+                'allHitsOffload',
+                'allOriginHits'
+            ]
+        }
+
+        response = self.session.post(url, json=payload, params=params, headers=self.headers)
+        if response.status_code == 200:
+            files.write_json('output/reporting_trace.json', response.json())
+            return response.json()['data']
+        else:
+            logger.info(print_json(data=response.json()))
+            return response.json()
+
 
 if __name__ == '__main__':
     pass
