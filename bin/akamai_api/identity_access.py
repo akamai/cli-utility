@@ -21,10 +21,13 @@ class IdentityAccessManagement(AkamaiSession):
         self.account_switch_key = account_switch_key
         self.property_id = None
 
-    def search_account_name(self, value: str) -> str:
-        qry = f'?search={value.upper()}'
-        url = self.form_url(f'{self.MODULE}/api-clients/self/account-switch-keys{qry}')
+    def search_account_name(self, value: str | None = None) -> str:
+        qry = f'?search={value.upper()}' if value else None
+
+        # this endpoint doesn't use account switch key
+        url = f'{self.MODULE}/api-clients/self/account-switch-keys{qry}'
         resp = self.session.get(url, headers=self.headers)
+
         if resp.status_code == 200:
             return resp.json()
         elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':

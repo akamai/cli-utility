@@ -19,7 +19,7 @@ if __name__ == '__main__':
     args = Parser.get_args()
     start_time = perf_counter()
 
-    if args.command == 'admin':
+    if args.command == 'search':
         admin.lookup_account(args)
 
     if args.command == 'log':

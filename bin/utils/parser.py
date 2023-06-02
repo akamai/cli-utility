@@ -24,6 +24,42 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                          max_help_position=120)
 
     @classmethod
+    def create_sub_command(cls, subparsers, name, help, required_arguments=None, optional_arguments=None):
+        action = subparsers.add_parser(prog=help, usage='%(prog)s',
+                                       name=name, help=help, add_help=True,
+                                       formatter_class=rap.ArgumentDefaultsRichHelpFormatter)
+
+        if required_arguments:
+            required = action.add_argument_group('required arguments')
+            for arg in required_arguments:
+                name = arg['name']
+                del arg['name']
+                try:
+                    action_value = arg['action']
+                    del arg['action']
+                    required.add_argument(f'--{name}', required=True, action=action_value, **arg)
+                except:
+                    required.add_argument(f'--{name}', metavar='', required=True, **arg)
+
+        if optional_arguments:
+            optional = action.add_argument_group('optional arguments')
+            for arg in optional_arguments:
+                name = arg['name']
+                del arg['name']
+                try:
+                    action_value = arg['action']
+                    del arg['action']
+                    optional.add_argument(f'--{name}', required=False, action=action_value, **arg)
+                except:
+                    optional.add_argument(f'--{name}', metavar='', required=False, **arg)
+
+            optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)
+            optional.add_argument('-p', '--print-width', action='store_true', help=argparse.SUPPRESS)
+            optional.add_argument('-v', '--verbose', action='store_true', help=argparse.SUPPRESS)
+
+        return action
+
+    @classmethod
     def get_args(cls):
         parser = argparse.ArgumentParser(prog='Akamai CLI utility',
                                          formatter_class=AkamaiParser,
@@ -48,11 +84,11 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
         # If you want diff to show before admin,
         # move actions['diff] before line actions['admin]
         actions = {}
-        actions['admin'] = cls.create_sub_command(
+        actions['search'] = cls.create_sub_command(
                             subparsers,
-                            'admin',
+                            'search',
                             help='administrative lookup',
-                            required_arguments=[{'name': 'search', 'help': 'keyword search at least 3 characters', 'nargs': '+'}])
+                            optional_arguments=[{'name': 'accounts', 'help': 'keyword search at least 3 characters', 'nargs': '+'}])
 
         diff_help = 'show compare report between two configurations. By default, configuration is compared using JSON.\nIf you want to compare metadata, add --xml'
         actions['diff'] = cls.create_sub_command(
@@ -60,14 +96,15 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                             'diff',
                             help=f'{diff_help}',
                             required_arguments=[{'name': 'config1', 'help': 'config to compare'}],
-
                             optional_arguments=[{'name': 'xml', 'help': 'compare metadata', 'action': 'store_true'},
                                                 {'name': 'json', 'help': 'compare json', 'action': 'store_false'},
                                                 {'name': 'config2', 'help': 'another config to be compared with config #1'},
                                                 {'name': 'security', 'help': 'required argument if the comparison if for security config', 'action': 'store_true'},
+                                                {'name': 'name-contains', 'help': 'security config name keyword'},
                                                 {'name': 'left', 'help': 'config1 version'},
                                                 {'name': 'right', 'help': 'config2 version'},
                                                 {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'},
+                                                {'name': 'acc-cookies', 'help': '3 cookies value from control.akamai.com'},
                                                 {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}
                                                 ])
 
@@ -118,39 +155,3 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                                                 {'name': 'search', 'help': 'search text', 'nargs': '+'}])
 
         return parser.parse_args()
-
-    @classmethod
-    def create_sub_command(cls, subparsers, name, help, required_arguments=None, optional_arguments=None):
-        action = subparsers.add_parser(prog=help, usage='%(prog)s',
-                                       name=name, help=help, add_help=True,
-                                       formatter_class=rap.ArgumentDefaultsRichHelpFormatter)
-
-        if required_arguments:
-            required = action.add_argument_group('required arguments')
-            for arg in required_arguments:
-                name = arg['name']
-                del arg['name']
-                try:
-                    action_value = arg['action']
-                    del arg['action']
-                    required.add_argument(f'--{name}', required=True, action=action_value, **arg)
-                except:
-                    required.add_argument(f'--{name}', metavar='', required=True, **arg)
-
-        if optional_arguments:
-            optional = action.add_argument_group('optional arguments')
-            for arg in optional_arguments:
-                name = arg['name']
-                del arg['name']
-                try:
-                    action_value = arg['action']
-                    del arg['action']
-                    optional.add_argument(f'--{name}', required=False, action=action_value, **arg)
-                except:
-                    optional.add_argument(f'--{name}', metavar='', required=False, **arg)
-
-            optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)
-            optional.add_argument('-p', '--print-width', action='store_true', help=argparse.SUPPRESS)
-            optional.add_argument('-v', '--verbose', action='store_true', help=argparse.SUPPRESS)
-
-        return action

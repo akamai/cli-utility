@@ -17,8 +17,8 @@ logger = lg.setup_logger()
 
 
 class Papi(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None):
-        super().__init__()
+    def __init__(self, account_switch_key: str | None = None, section: str | None = None):
+        super().__init__(account_switch_key=account_switch_key, section=section)
         # https://techdocs.akamai.com/property-mgr/reference/api
         self.MODULE = f'{self.base_url}/papi/v1'
         self.headers = {'PAPI-Use-Prefixes': 'false',
@@ -26,7 +26,8 @@ class Papi(AkamaiSession):
                         'Content-Type': 'application/json'}
         self.contract_id = self.contract_id
         self.group_id = self.group_id
-        self.account_switch_key = account_switch_key
+        self.account_switch_key = account_switch_key if account_switch_key else None
+        self.account_id = None
         self.property_id = None
         self.property_name = None
         self.asset_id = None
@@ -43,6 +44,15 @@ class Papi(AkamaiSession):
         logger.warning(f'Collecting contracts {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
             return response.json()['products']['items']
+        else:
+            return response.json()
+
+    def get_account_id(self) -> list:
+        response = self.session.get(f'{self.MODULE}/contracts', params=self.params, headers=self.headers)
+        logger.debug(f'Retrieving account id {urlparse(response.url).path:<30} {response.status_code}')
+        if response.status_code == 200:
+            self.account_id = response.json()['accountId']
+            return self.account_id
         else:
             return response.json()
 
@@ -127,13 +137,16 @@ class Papi(AkamaiSession):
                 property_items = response.json()['versions']['items']
             except:
                 logger.info(print_json(response.json()))
-            self.contract_id = property_items[0]['contractId']
-            self.asset_id = property_items[0]['assetId']
-            self.group_id = int(property_items[0]['groupId'])
-            self.property_id = int(property_items[0]['propertyId'])
-            return 200, property_items
+
+            if len(property_items) == 0:
+                sys.exit(logger.error(f'{property_name} not found'))
+            else:
+                self.contract_id = property_items[0]['contractId']
+                self.asset_id = property_items[0]['assetId']
+                self.group_id = int(property_items[0]['groupId'])
+                self.property_id = int(property_items[0]['propertyId'])
+                return 200, property_items
         else:
-            logger.debug(print_json(response.json()))
             return response.status_code, response.json()
 
     def search_property_by_hostname(self, hostname: str) -> tuple:
@@ -205,43 +218,51 @@ class Papi(AkamaiSession):
                                             property_name: str,
                                             asset_id: int,
                                             group_id: int,
-                                            version: int) -> str:
+                                            version: int,
+                                            cookies: str | None = None) -> str:
 
         url = 'https://control.akamai.com/pm-backend-blue/service/v1/properties/version/metadata'
-        qry = f'?aid={asset_id}&gid={group_id}&v={version}&type=pm&dl=true&accountId={self.account_switch_key}'
+        if self.account_switch_key:
+            qry = f'?aid={asset_id}&gid={group_id}&v={version}&type=pm&dl=true&accountId={self.account_switch_key}'
+        else:
+            account_id = self.get_account_id()
+            qry = f'?aid={asset_id}&gid={group_id}&v={version}&type=pm&dl=true&accountId={account_id}'
         url = f'{url}{qry}'
-
         headers = {}
-        headers['X-Xsrf-Token'] = self.cookies['XSRF-TOKEN']
-        headers['Cookie'] = f"AKASSO={self.cookies['AKASSO']}; XSRF-TOKEN={self.cookies['XSRF-TOKEN']}; AKATOKEN={self.cookies['AKATOKEN']}"
+        if cookies:
+            headers['X-Xsrf-Token'] = 'ZTgzMWFjYzEtMjBjNy00NzM3LTlmMmMtNGExYWYzMTRkZDQ2'
+            headers['Cookie'] = cookies
+        else:
+            try:
+                headers['X-Xsrf-Token'] = self.cookies['XSRF-TOKEN']
+            except KeyError:
+                logger.error('missing X-Xsrf-Token')
+            try:
+                headers['Cookie'] = f"AKASSO={self.cookies['AKASSO']}; XSRF-TOKEN={self.cookies['XSRF-TOKEN']}; AKATOKEN={self.cookies['AKATOKEN']}"
+            except KeyError:
+                sys.exit(logger.error('invalid Cookie, a combination of AKASSO, XSRF-TOKEN, and XSRF-TOKEN'))
 
-        response = self.session.get(url, headers=headers, cookies=self.cookies)
+        response = self.session.get(url, headers=headers)
         if response.status_code == 200:
             filepath = f'output/diff/xml/{property_name}_v{version}.xml'
             with open(filepath, 'wb') as file:
                 file.write(response.content)
-        elif response.status_code == 401:
+        elif response.status_code in [400, 401]:
             msg = response.json()['title']
         elif response.status_code == 403:
-            msg = response.json()
+            msg = response.json()['errors'][0]['detail']
         else:
             msg = response.json()
 
         try:
             return filepath
         except:
-            s = response.status_code
             t = response.text
-            u = response.url
             z = response.content
-            logger.debug(f'{s} {u} {headers}')
+            logger.info(f'{response.url}')
             print_json(data=headers)
-            print_json(data=self.cookies)
-
-            if 'Token is expired' in msg:
-                sys.exit(logger.error('please add/update 3 tokens [ XSRF-TOKEN, AKASSO, AKATOKEN ] in ~/.edgerc file'))
-            else:
-                sys.exit(logger.error(msg))
+            logger.error(f'{response.status_code} {msg}')
+            sys.exit()
 
     def get_properties_ruletree_digest(self, property_id: int, version: int) -> list:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
@@ -288,7 +309,8 @@ class Papi(AkamaiSession):
             if prd_version == 0:
                 prd_version = max(dd['propertyVersion'])
 
-        logger.info(f'Found staging version {stg_version}, production version {prd_version}')
+        print()
+        logger.info(f'Found staging v{stg_version}, production v{prd_version}')
         return stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):

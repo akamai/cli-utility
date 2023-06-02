@@ -20,8 +20,8 @@ from utils.parser import AkamaiParser as Parser
 
 logger = lg.setup_logger()
 args = Parser.get_args()
-papi = Papi(account_switch_key=args.account_switch_key)
-appsec = Appsec(account_switch_key=args.account_switch_key)
+papi = Papi(account_switch_key=args.account_switch_key, section=args.section)
+appsec = Appsec(account_switch_key=args.account_switch_key, section=args.section)
 
 
 def collect_json(config_name: str, version: int, response_json):
@@ -50,7 +50,7 @@ def security_config_json(waf_config_name: str, config_id: int, version: int | No
     status, sec_response = appsec.get_config_version_detail(config_id, version)
     logger.debug(f'{waf_config_name} {config_id=} {status=} {version}')
     if status == 200:
-        json_tree_status, sec_response = appsec.get_config_version_detail(config_id, version, exclude)
+        _, sec_response = appsec.get_config_version_detail(config_id, version, exclude)
         return collect_json(f'{config_id}_{waf_config_name}', version, sec_response)
     else:
         print_json(data=sec_response)
@@ -76,14 +76,24 @@ def compare_versions(v1: str, v2: str, outputfile: str):
 
 def main(args):
 
-    config1 = args.config1
-    config2 = args.config2
-    left = args.left
-    right = args.right
-    logger.debug(f'{config1=} {config2=}')
+    config1, config2, left, right, cookies = args.config1, args.config2, args.left, args.right, args.acc_cookies
+    logger.debug(f'{config1=} {config2=} {cookies=}')
 
     if args.xml is True:
         Path('output/diff/xml').mkdir(parents=True, exist_ok=True)
+        papi.account_id = papi.get_account_id()
+
+        # First check X-Xsrf-Token
+        msg = 'Cookie information from control.akamai.com are required to compare XML metadata'
+        msg = f'{msg}\n\t Cookies name required: XSRF-TOKEN, AKASSO, and AKATOKEN'
+        msg = f'{msg}\n\n\t You can set them up inside .edgerc file or add additional arguments --acc-cookies'
+        if not papi.cookies:
+            if args.acc_cookies is None:
+                sys.exit(logger.error(msg))
+
+        if args.security and not appsec.cookies:
+            if args.acc_cookies is None:
+                sys.exit(logger.error(msg))
 
     if args.security is False:
         status, response = papi.search_property_by_name(config1)
@@ -125,14 +135,43 @@ def main(args):
         if status_code == 200:
             waf_config_name = response['name']
             waf_config_name = waf_config_name.replace(' ', '_')
+            print()
             logger.warning(f"Found security config name '{waf_config_name}' config_id {config1}")
         elif status_code in [400, 403]:
             # list all configs to user on terminal
-            status_code, x = appsec.list_waf_configs()
+            status_code, resp_1 = appsec.list_waf_configs()
             if status_code == 200:
-                df = pd.DataFrame(x)
-                print(tabulate(df[['name', 'id']], headers='keys', tablefmt='psql', showindex=False))
-                sys.exit(logger.error(f'Security config id {config1} not found, please review spelling from table shown'))
+                df = pd.DataFrame(resp_1)
+                df = df[df['name'] == config1].copy()
+                if not df.empty:
+                    status_code, resp_2 = appsec.get_config_detail(df['id'].values[0])
+                    if status_code == 200:
+                        waf_config_name = resp_2['name']
+                        waf_config_name = waf_config_name.replace(' ', '_')
+                        config1 = resp_2['id']
+                        response = resp_2
+                        logger.warning(f"Found security config name '{waf_config_name}' config_id {config1}")
+                else:
+                    if args.name_contains:
+                        df = pd.DataFrame(resp_1)
+                        df = df[df['name'].str.contains(args.name_contains, case=False)].copy()
+
+                        if not df.empty:
+                            if df.shape[0] == 1:
+                                config1 = df['id'].values[0]
+                                waf_config_name = df['name'].values[0]
+                                waf_config_name = waf_config_name.replace(' ', '_')
+                                config1 = df['id'].values[0]
+                                response = resp_1
+                            else:
+                                print(tabulate(df[['name', 'id']], headers='keys', tablefmt='psql', showindex=False))
+                                sys.exit(logger.error(f'Security config id "{config1}" not found, please review a list and use id from table shown'))
+
+                if df.empty:
+                    df = pd.DataFrame(resp_1)
+                    response = resp_1
+                    print(tabulate(df[['name', 'id']], headers='keys', tablefmt='psql', showindex=False))
+                    sys.exit(logger.error(f'Security config id "{config1}" not found, please review a list and use id from table shown'))
 
         if config2 is None:
             if left is None and right:
@@ -181,8 +220,8 @@ def main(args):
         logger.warning('Comparing XML Metadata')
         if args.security is False:
             logger.debug(f'{papi.property_id} {papi.asset_id} {papi.group_id}')
-            v1_xml = papi.get_properties_version_metadata_xml(property_name=config1, asset_id=papi.asset_id, group_id=papi.group_id, version=left)
-            v2_xml = papi.get_properties_version_metadata_xml(property_name=config1, asset_id=papi.asset_id, group_id=papi.group_id, version=right)
+            v1_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, left, cookies)
+            v2_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, right, cookies)
 
             xml_index_html = compare_versions(v1_xml, v2_xml, 'index_delivery')
             if not args.no_show:
@@ -191,8 +230,8 @@ def main(args):
                 logger.info(f'{title}{os.path.abspath(xml_index_html)}')
 
         if args.security is True:
-            v1_xml = appsec.get_config_version_metadata_xml(config_name=waf_config_name, version=left)
-            v2_xml = appsec.get_config_version_metadata_xml(config_name=waf_config_name, version=right)
+            v1_xml = appsec.get_config_version_metadata_xml(waf_config_name, left, cookies)
+            v2_xml = appsec.get_config_version_metadata_xml(waf_config_name, right, cookies)
 
             v1 = v1_xml['portalWaf']
             v2 = v2_xml['portalWaf']
