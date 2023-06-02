@@ -19,9 +19,6 @@ from utils.parser import AkamaiParser as Parser
 
 
 logger = lg.setup_logger()
-args = Parser.get_args()
-papi = Papi(account_switch_key=args.account_switch_key, section=args.section)
-appsec = Appsec(account_switch_key=args.account_switch_key, section=args.section)
 
 
 def collect_json(config_name: str, version: int, response_json):
@@ -34,7 +31,7 @@ def collect_json(config_name: str, version: int, response_json):
 
 
 # get delivery config json
-def delivery_config_json(config: str, version: int | None = None, exclude: list | None = None):
+def delivery_config_json(papi, config: str, version: int | None = None, exclude: list | None = None):
     status, _ = papi.search_property_by_name(config)
     if status == 200:
         json_tree_status, json_response = papi.property_ruletree(papi.property_id, version, exclude)
@@ -46,7 +43,7 @@ def delivery_config_json(config: str, version: int | None = None, exclude: list 
 
 
 # get security config json
-def security_config_json(waf_config_name: str, config_id: int, version: int | None = None, exclude: list | None = None):
+def security_config_json(appsec, waf_config_name: str, config_id: int, version: int | None = None, exclude: list | None = None):
     status, sec_response = appsec.get_config_version_detail(config_id, version)
     logger.debug(f'{waf_config_name} {config_id=} {status=} {version}')
     if status == 200:
@@ -57,7 +54,7 @@ def security_config_json(waf_config_name: str, config_id: int, version: int | No
         sys.exit(logger.error(sec_response['detail']))
 
 
-def compare_versions(v1: str, v2: str, outputfile: str):
+def compare_versions(v1: str, v2: str, outputfile: str, args):
     print('\n\n')
     cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
     subprocess.run(cmd_text, shell=True)
@@ -79,6 +76,9 @@ def main(args):
     config1, config2, left, right, cookies = args.config1, args.config2, args.left, args.right, args.acc_cookies
     logger.debug(f'{config1=} {config2=} {cookies=}')
 
+    papi = Papi(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies)
+    appsec = Appsec(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies)
+
     if args.xml is True:
         Path('output/diff/xml').mkdir(parents=True, exist_ok=True)
         papi.account_id = papi.get_account_id()
@@ -87,14 +87,13 @@ def main(args):
         msg = 'Cookie information from control.akamai.com are required to compare XML metadata'
         msg = f'{msg}\n\t Cookies name required: XSRF-TOKEN, AKASSO, and AKATOKEN'
         msg = f'{msg}\n\n\t You can set them up inside .edgerc file or add additional arguments --acc-cookies'
-        if not papi.cookies:
-            if args.acc_cookies is None:
-                sys.exit(logger.error(msg))
+        if not papi.cookies and args.acc_cookies is None:
+            sys.exit(logger.error(msg))
 
-        if args.security and not appsec.cookies:
-            if args.acc_cookies is None:
-                sys.exit(logger.error(msg))
+        if not appsec.cookies and args.acc_cookies is None and args.security:
+            sys.exit(logger.error(msg))
 
+    # compare delivery config
     if args.security is False:
         status, response = papi.search_property_by_name(config1)
 
@@ -118,17 +117,18 @@ def main(args):
                 sys.exit(logger.error('Same version, nothing to compare'))
             else:
                 print()
-                v1 = delivery_config_json(config1, left, args.remove_tags)
-                v2 = delivery_config_json(config1, right, args.remove_tags)
+                v1 = delivery_config_json(papi, config1, left, args.remove_tags)
+                v2 = delivery_config_json(papi, config1, right, args.remove_tags)
 
         if config2:
             if not all([left, right]):
                 sys.exit(logger.error('Missing --left and --right argument and integer value of version'))
             # this value will override config1.v2 when --config2 is provided
             print()
-            v1 = delivery_config_json(config1, left, args.remove_tags)
-            v2 = delivery_config_json(config2, right, args.remove_tags)
+            v1 = delivery_config_json(papi, config1, left, args.remove_tags)
+            v2 = delivery_config_json(papi, config2, right, args.remove_tags)
 
+    # compare security config
     if args.security is True:
         # input is config_id, not config name
         status_code, response = appsec.get_config_detail(config1)
@@ -196,20 +196,20 @@ def main(args):
                 if left == right:
                     sys.exit(logger.error(f'Same version {left}, nothing to compare'))
 
-            v1 = security_config_json(waf_config_name, config1, left, args.remove_tags)
-            v2 = security_config_json(waf_config_name, config1, right, args.remove_tags)
+            v1 = security_config_json(appsec, waf_config_name, config1, left, args.remove_tags)
+            v2 = security_config_json(appsec, waf_config_name, config1, right, args.remove_tags)
 
         if config2:
             if not all([left, right]):
                 sys.exit(logger.error('Missing --left and --right argument and integer value of version'))
-            v1 = security_config_json(waf_config_name, config1, left, args.remove_tags)
-            v2 = security_config_json(waf_config_name, config2, right, args.remove_tags)
+            v1 = security_config_json(appsec, waf_config_name, config1, left, args.remove_tags)
+            v2 = security_config_json(appsec, waf_config_name, config2, right, args.remove_tags)
 
     title = 'Compare report in HTML format is saved at: '
     if args.json is True:
         print()
         logger.warning('Comparing JSON configuration')
-        json_index_html = compare_versions(v1, v2, 'index_json')
+        json_index_html = compare_versions(v1, v2, 'index_json', args)
         if not args.no_show:
             webbrowser.open(f'file://{os.path.abspath(json_index_html)}')
         else:
@@ -220,22 +220,22 @@ def main(args):
         logger.warning('Comparing XML Metadata')
         if args.security is False:
             logger.debug(f'{papi.property_id} {papi.asset_id} {papi.group_id}')
-            v1_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, left, cookies)
-            v2_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, right, cookies)
+            v1_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, left)
+            v2_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, right)
 
-            xml_index_html = compare_versions(v1_xml, v2_xml, 'index_delivery')
+            xml_index_html = compare_versions(v1_xml, v2_xml, 'index_delivery', args)
             if not args.no_show:
                 webbrowser.open(f'file://{os.path.abspath(xml_index_html)}')
             else:
                 logger.info(f'{title}{os.path.abspath(xml_index_html)}')
 
         if args.security is True:
-            v1_xml = appsec.get_config_version_metadata_xml(waf_config_name, left, cookies)
-            v2_xml = appsec.get_config_version_metadata_xml(waf_config_name, right, cookies)
+            v1_xml = appsec.get_config_version_metadata_xml(waf_config_name, left)
+            v2_xml = appsec.get_config_version_metadata_xml(waf_config_name, right)
 
             v1 = v1_xml['portalWaf']
             v2 = v2_xml['portalWaf']
-            xml_portalWaf_index_html = compare_versions(v1, v2, 'index_xml_portalWaf')
+            xml_portalWaf_index_html = compare_versions(v1, v2, 'index_xml_portalWaf', args)
             if not args.no_show:
                 webbrowser.open(f'file://{os.path.abspath(xml_portalWaf_index_html)}')
             else:
@@ -243,7 +243,7 @@ def main(args):
 
             v1 = v1_xml['wafAfter']
             v2 = v2_xml['wafAfter']
-            xml_wafAfter_index_html = compare_versions(v1, v2, 'index_xml_wafAfter')
+            xml_wafAfter_index_html = compare_versions(v1, v2, 'index_xml_wafAfter', args)
             if not args.no_show:
                 webbrowser.open(f'file://{os.path.abspath(xml_wafAfter_index_html)}')
             else:

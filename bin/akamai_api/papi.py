@@ -17,8 +17,8 @@ logger = lg.setup_logger()
 
 
 class Papi(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None):
-        super().__init__(account_switch_key=account_switch_key, section=section)
+    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None):
+        super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
         # https://techdocs.akamai.com/property-mgr/reference/api
         self.MODULE = f'{self.base_url}/papi/v1'
         self.headers = {'PAPI-Use-Prefixes': 'false',
@@ -218,8 +218,7 @@ class Papi(AkamaiSession):
                                             property_name: str,
                                             asset_id: int,
                                             group_id: int,
-                                            version: int,
-                                            cookies: str | None = None) -> str:
+                                            version: int) -> str:
 
         url = 'https://control.akamai.com/pm-backend-blue/service/v1/properties/version/metadata'
         if self.account_switch_key:
@@ -228,21 +227,14 @@ class Papi(AkamaiSession):
             account_id = self.get_account_id()
             qry = f'?aid={asset_id}&gid={group_id}&v={version}&type=pm&dl=true&accountId={account_id}'
         url = f'{url}{qry}'
-        headers = {}
-        if cookies:
-            headers['X-Xsrf-Token'] = 'ZTgzMWFjYzEtMjBjNy00NzM3LTlmMmMtNGExYWYzMTRkZDQ2'
-            headers['Cookie'] = cookies
-        else:
-            try:
-                headers['X-Xsrf-Token'] = self.cookies['XSRF-TOKEN']
-            except KeyError:
-                logger.error('missing X-Xsrf-Token')
-            try:
-                headers['Cookie'] = f"AKASSO={self.cookies['AKASSO']}; XSRF-TOKEN={self.cookies['XSRF-TOKEN']}; AKATOKEN={self.cookies['AKATOKEN']}"
-            except KeyError:
-                sys.exit(logger.error('invalid Cookie, a combination of AKASSO, XSRF-TOKEN, and XSRF-TOKEN'))
 
-        response = self.session.get(url, headers=headers)
+        self.headers['X-Xsrf-Token'] = self.cookies['XSRF-TOKEN']
+        self.headers['Cookie'] = f"AKASSO={self.cookies['AKASSO']}; XSRF-TOKEN={self.cookies['XSRF-TOKEN']}; AKATOKEN={self.cookies['AKATOKEN']};"
+
+        if 'Accept' in self.headers.keys():
+            del self.headers['Accept']  # because we get XML content
+
+        response = self.session.get(url, headers=self.headers)
         if response.status_code == 200:
             filepath = f'output/diff/xml/{property_name}_v{version}.xml'
             with open(filepath, 'wb') as file:
@@ -257,11 +249,13 @@ class Papi(AkamaiSession):
         try:
             return filepath
         except:
+            s = response.status_code
             t = response.text
+            u = response.url
             z = response.content
-            logger.info(f'{response.url}')
-            print_json(data=headers)
-            logger.error(f'{response.status_code} {msg}')
+            logger.error(f'{s} [{msg}] {u}')
+            # logger.debug(print_json(data=self.headers))
+            # print_json(data=self.cookies)
             sys.exit()
 
     def get_properties_ruletree_digest(self, property_id: int, version: int) -> list:

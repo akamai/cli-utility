@@ -15,8 +15,8 @@ logger = lg.setup_logger()
 
 
 class Appsec(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None):
-        super().__init__(account_switch_key=account_switch_key, section=section)
+    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None):
+        super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
         self.MODULE = f'{self.base_url}/appsec/v1'
         self.headers = {'PAPI-Use-Prefixes': 'false',
                         'Accept': 'application/json',
@@ -58,26 +58,14 @@ class Appsec(AkamaiSession):
 
     def get_config_version_metadata_xml(self,
                                         config_name: str,
-                                        version: int,
-                                        cookies: str | None = None) -> dict:
+                                        version: int) -> dict:
 
         url = f'https://control.akamai.com/appsec-configuration/v1/configs/{self.config_id}/versions/{version}/metadata'
 
-        headers = {}
-        if cookies:
-            headers['X-Xsrf-Token'] = 'ZTgzMWFjYzEtMjBjNy00NzM3LTlmMmMtNGExYWYzMTRkZDQ2'
-            headers['Cookie'] = cookies
-        else:
-            try:
-                headers['X-Xsrf-Token'] = self.cookies['XSRF-TOKEN']
-            except KeyError:
-                logger.error('missing X-Xsrf-Token')
-            try:
-                headers['Cookie'] = f"AKASSO={self.cookies['AKASSO']}; XSRF-TOKEN={self.cookies['XSRF-TOKEN']}; AKATOKEN={self.cookies['AKATOKEN']};"
-            except KeyError:
-                sys.exit(logger.error('invalid Cookie, a combination of AKASSO, XSRF-TOKEN, and XSRF-TOKEN'))
+        self.headers['X-Xsrf-Token'] = self.cookies['XSRF-TOKEN']
+        self.headers['Cookie'] = f"AKASSO={self.cookies['AKASSO']}; XSRF-TOKEN={self.cookies['XSRF-TOKEN']}; AKATOKEN={self.cookies['AKATOKEN']};"
 
-        response = self.session.get(url, headers=headers)
+        response = self.session.get(url, headers=self.headers)
         if response.status_code == 200:
             filepaths = {}
             portalWaf_str = response.json()['portalWaf']
@@ -107,8 +95,8 @@ class Appsec(AkamaiSession):
             u = response.url
             z = response.content
             logger.error(f'{s} [{msg}] {u}')
-            logger.debug(print_json(data=headers))
-            logger.debug(print_json(data=self.cookies))
+            # logger.debug(print_json(data=self.headers))
+            # print_json(data=self.cookies)
             sys.exit()
 
 
