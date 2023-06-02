@@ -13,6 +13,7 @@ from time import perf_counter
 from time import strftime
 
 import coloredlogs
+from utils.cli_formatter import CLIFormatter
 
 
 def setup_logger():
@@ -22,11 +23,13 @@ def setup_logger():
 
     load_local_config_file(config_file='ghost_r.txt')
     load_local_config_file(config_file='ghost_f.txt')
-    load_local_config_file(config_file='logging.json')
     origin_config = load_local_config_file(config_file='logging.json')
 
     with open(origin_config) as f:
         log_cfg = json.load(f)
+
+    log_cfg['handlers']['file_handler']['filename'] = 'logs/utility.log'
+    log_cfg['formatters']['long']['()'] = 'utils.cli_formatter.CLIFormatter'
     dictConfig(log_cfg)
     logging.Formatter.converter = time.gmtime
 
@@ -104,3 +107,7 @@ def log_cli_timing(start_time) -> None:
     elapse_time = str(strftime('%H:%M:%S', gmtime(end_time - start_time)))
     msg = f'End Akamai CLI utility, TOTAL DURATION: {elapse_time}'
     return msg
+
+
+if __name__ == '__main__':
+    pass
