@@ -167,6 +167,9 @@ def prepare_excel_sheetname(original_string: str) -> str:
     • You did not leave the name blank.
     '''
     clean_string = original_string.replace(' - ', '-')
+    clean_string = clean_string.strip('-')
+    clean_string = clean_string.strip(':')
+    clean_string = clean_string.strip('.')
     clean_string = clean_string.strip(' ')
     if clean_string == original_string:
         logger.debug(f' {original_string:<50} {clean_string:<50} {len(clean_string)}')

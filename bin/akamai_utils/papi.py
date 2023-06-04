@@ -42,6 +42,9 @@ class PapiWrapper(Papi):
             df = pd.DataFrame()
         return groups, df
 
+    def get_all_groups(self):
+        return super().get_groups()
+
     def get_groups(self) -> tuple:
         status, groups = super().get_groups()
         if status == 200:
@@ -125,18 +128,7 @@ class PapiWrapper(Papi):
             return childs
 
     def get_properties_count_in_group(self, group_id: int, contract_id: str) -> int:
-        logger.debug(f'{group_id=} {contract_id=}')
-        # TODO groups with multiple contracts
-        '''
-        if group_id in [14777, 14786, 49036, 33877, 50009, 37733, 61564] \
-            or group_id in [14805, 47146]:
-            properties = []
-        else:
-        '''
-        try:
-            properties = self.get_propertyname_per_group(group_id, contract_id)
-        except:
-            0
+        properties = self.get_propertyname_per_group(group_id, contract_id)
         return len(properties)
 
     def get_propertyname_per_group(self, group_id: int, contract_id: str) -> list:
@@ -188,7 +180,7 @@ class PapiWrapper(Papi):
                         property_df = pd.DataFrame(properties)
                         df_list.append(property_df)
         else:
-            logger.warning(f'Collecting properties for {group_id=} {contract_id=}')
+            logger.debug(f'Collecting properties for {group_id=} {contract_id=}')
             properties = self.get_propertyname_per_group(group_id, contract_id)
             property_count[group_id] = len(properties)
             property_df = pd.DataFrame(properties)

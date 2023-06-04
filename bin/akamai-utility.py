@@ -5,6 +5,7 @@ from time import perf_counter
 from command import admin
 from command import delivery_config as dc
 from command import diff
+from command import ex
 from command import log
 from command import report
 from command import ruleformat
@@ -46,6 +47,9 @@ if __name__ == '__main__':
             dc.get_property_ruletree(args)
         else:
             dc.main(args)
+
+    if args.command == 'test':
+        ex.account_group_summary(args)
 
     end_time = lg.log_cli_timing(start_time)
     logger.info(end_time)

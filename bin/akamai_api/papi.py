@@ -173,7 +173,7 @@ class Papi(AkamaiSession):
 
     # PROPERTIES
     def get_propertyname_per_group(self, group_id: int, contract_id: str) -> list:
-        url = self.form_url(f'{self.MODULE}/properties?contractId={contract_id}&groupId={group_id}&contractId={contract_id}')
+        url = self.form_url(f'{self.MODULE}/properties?contractId={contract_id}&groupId={group_id}')
         response = self.session.get(url, headers=self.headers)
         logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
         if response.status_code == 200:

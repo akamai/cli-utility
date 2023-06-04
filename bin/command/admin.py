@@ -29,7 +29,7 @@ def cleanup_arguments(value: str):
 
 def lookup_account(args):
     iam = IdentityAccessManagement(args.account_switch_key, args.section)
-    searches = sorted(args.accounts)
+    searches = sorted(args.account)
 
     # cleanup keywords
     print()

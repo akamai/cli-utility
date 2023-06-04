@@ -63,12 +63,12 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
     def get_args(cls):
         parser = argparse.ArgumentParser(prog='Akamai CLI utility',
                                          formatter_class=AkamaiParser,
-                                         conflict_handler='resolve',
+                                         # conflict_handler='resolve',
                                          usage='Various akamai utilities to facilitate day to day work')
 
         # parser.add_argument('-v', '--verbose', action='store_true', help='set log level to DEBUG')
 
-        parser.add_argument('-a', '--account-key', '--account-switchkey', '--accountswitchkey',
+        parser.add_argument('-a', '--accountkey', '--accountswitchkey',
                             metavar='', type=str, dest='account_switch_key',
                             help='account switch key (Akamai Internal Only)')
         parser.add_argument('-e', '--edgerc',
@@ -88,7 +88,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                             subparsers,
                             'search',
                             help='administrative lookup',
-                            optional_arguments=[{'name': 'accounts', 'help': 'keyword search at least 3 characters', 'nargs': '+'}])
+                            optional_arguments=[{'name': 'account', 'help': 'keyword search at least 3 characters', 'nargs': '+'}])
 
         diff_help = 'show compare report between two configurations. By default, configuration is compared using JSON.\nIf you want to compare metadata, add --xml'
         actions['diff'] = cls.create_sub_command(
@@ -153,5 +153,11 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                             required_arguments=[{'name': 'input', 'help': 'location of file ending with gz extension'}],
                             optional_arguments=[{'name': 'output', 'help': 'location of excel file'},
                                                 {'name': 'search', 'help': 'search text', 'nargs': '+'}])
+
+        actions['test'] = cls.create_sub_command(
+                            subparsers,
+                            'test',
+                            help='',
+                            optional_arguments=[{'name': 'account', 'help': 'keyword search at least 3 characters', 'nargs': '+'}])
 
         return parser.parse_args()

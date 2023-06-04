@@ -142,10 +142,9 @@ def main(args):
 
     total = stat_df['total_properties'].sum()
     if total > 100:
-        msg = f'This account has {total} properties, please be patient\n'
-        msg = f'{msg} 800 properties will take at least 30 minutes,'
-        msg = f'{msg} please consider using --group-id to reduce total properties'
-        logger.critical(msg)
+        logger.error(f'This account has {total} properties, please be patient')
+        logger.error('800 properties will take at least 30 minutes')
+        logger.error('please consider using --group-id to reduce total properties')
 
     if args.group_id:
         groups = args.group_id
