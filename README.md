@@ -22,7 +22,8 @@ pip install -r requirements.txt
 python bin/akamai-utility.py -h
 
 # administrative
-python bin/akamai-utility.py admin --search "akamai internal" "direct customer"
+python bin/akamai-utility.py search --account "akamai internal" "direct customer"
+python bin/akamai-utility.py --section GOV search --account "akamai internal" "direct customer"
 
 # compare delivery/security config
 python bin/akamai-utility.py -a $account diff --config1 $config1 --left $left --right $right

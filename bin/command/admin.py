@@ -13,7 +13,9 @@ logger = setup_logger()
 def homepage_url(account_id: str) -> str:
     url = 'https://control.akamai.com/apps/home-page/#/manage-account?accountId='
     if account_id:
-        return f'{url}{account_id}&targetUrl=/'
+        url = f'{url}{account_id}&targetUrl='
+        # this clickable link using escape sequences may not work in all terminal emulators or environments
+        return f'\033]8;;{url}\033\\{url}\033]8;;\033\\'
     else:
         return ''
 
@@ -74,7 +76,6 @@ def lookup_account(args):
         flatten_df = flatten_df.replace(np.nan, '', regex=True)
         flatten_df[index_header] = flatten_df[index_header].astype(str).apply(lambda x: x[:-2])
         df = flatten_df
-        # logger.debug(f'\n{df}')
 
         # extract accountSwitchKey to generate direct url
         df['accountId'] = df['accountSwitchKey'].str.split(':').apply(lambda col: col[0] if len(col) > 0 else col)

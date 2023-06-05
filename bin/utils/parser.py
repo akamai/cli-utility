@@ -21,7 +21,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
     def __init__(self, prog):
         super().__init__(prog,
                          indent_increment=2,
-                         max_help_position=120)
+                         max_help_position=80)
 
     @classmethod
     def create_sub_command(cls, subparsers, name, help, required_arguments=None, optional_arguments=None):
@@ -63,13 +63,13 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
     def get_args(cls):
         parser = argparse.ArgumentParser(prog='Akamai CLI utility',
                                          formatter_class=AkamaiParser,
-                                         # conflict_handler='resolve',
+                                         conflict_handler='resolve',
                                          usage='Various akamai utilities to facilitate day to day work')
 
         # parser.add_argument('-v', '--verbose', action='store_true', help='set log level to DEBUG')
 
-        parser.add_argument('-a', '--accountkey', '--accountswitchkey',
-                            metavar='', type=str, dest='account_switch_key',
+        parser.add_argument('-a', '--accountkey',
+                            metavar='accountkey', type=str, dest='account_switch_key',
                             help='account switch key (Akamai Internal Only)')
         parser.add_argument('-e', '--edgerc',
                             metavar='', type=str, dest='section',
@@ -88,7 +88,8 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                             subparsers,
                             'search',
                             help='administrative lookup',
-                            optional_arguments=[{'name': 'account', 'help': 'keyword search at least 3 characters', 'nargs': '+'}])
+                            optional_arguments=[{'name': 'account', 'help': 'keyword search at least 3 characters', 'nargs': '+'},
+                                                {'name': 'accountkey', 'help': argparse.SUPPRESS}])
 
         diff_help = 'show compare report between two configurations. By default, configuration is compared using JSON.\nIf you want to compare metadata, add --xml'
         actions['diff'] = cls.create_sub_command(
