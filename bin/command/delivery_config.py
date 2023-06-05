@@ -3,19 +3,17 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 from pathlib import Path
 from subprocess import Popen
 from subprocess import STDOUT
-from time import perf_counter
 
 import numpy as np
 import pandas as pd
-import swifter
 from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import papi as p
-from pandarallel import pandarallel
 from rich import print_json
 from tabulate import tabulate
 from utils import _logging as lg
@@ -110,8 +108,6 @@ def main(args):
     2173 properties 90 minutes
      800 properties 30 minutes
     '''
-    pandarallel.initialize(progress_bar=False)
-    logger.debug(f'{args.dryrun=}')
 
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
@@ -126,88 +122,58 @@ def main(args):
         lg.countdown(540)
         sys.exit(logger.error(account['detail']))
 
-    # initialize PapiWrapper
+    # build group structure as displayed on control.akamai.com
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-
-    '''
-    x = papi.get_edgehostnames('1-5C13O2', 116576)
-    print_json(data=x[:3])
-    sys.exit()
-    '''
-
-    stat_df = papi.account_statistic()
+    allgroups_df, columns = papi.account_group_summary()
     sheet = {}
-    sheet['summary'] = stat_df
-    files.write_xlsx(filepath, sheet, freeze_column=6)
-
-    total = stat_df['total_properties'].sum()
-    if total > 100:
-        logger.error(f'This account has {total} properties, please be patient')
-        logger.error('800 properties will take at least 30 minutes')
-        logger.error('please consider using --group-id to reduce total properties')
+    sheet['summary'] = allgroups_df
 
     if args.group_id:
         groups = args.group_id
-        stat_df['groupId'] = stat_df['groupId'].astype(str)
-        stat_df = stat_df[~stat_df['groupId'].isin(groups)].copy()
-        stat_df = stat_df.reset_index(drop=True)
-        sheet['filter'] = stat_df
-        print()
-        files.write_xlsx(filepath, sheet)
-
-    # Get properties in group/contract combination
-    account_properties = []
-    groups_without_property = []
+        allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)
+        group_df = allgroups_df[allgroups_df['groupId'].isin(groups)].copy()
+        group_df = group_df.reset_index(drop=True)
+        sheet['filter'] = group_df
+    else:
+        group_df = allgroups_df[allgroups_df['propertyCount'] > 0].copy()
+        group_df = group_df.reset_index(drop=True)
     print()
-    for index, row in stat_df.iterrows():
-        logger.warning(f"{index:<5} {row['groupName']:<50} {row['total_properties']}")
-        properties = papi.get_properties_detail_per_group(row['groupId'], row['contractId'])
-        if not properties.empty:
-            properties['propertyId'] = properties['propertyId'].astype('Int64')
-            properties['groupName'] = row['groupName']  # add group name
+    print(tabulate(group_df, headers=columns, showindex=True, tablefmt='github'))
 
-            logger.debug(' Collecting hostname')
-            properties['hostname'] = properties[['propertyId']].parallel_apply(lambda x: papi.get_property_hostnames(*x), axis=1)
-            properties['hostname_count'] = properties['hostname'].str.len()
-
-            logger.debug(' Collecting updatedDate')
-            properties['updatedDate'] = properties.apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
-
-            logger.debug(' Collecting ruleFormat')
-            properties['ruleFormat'] = properties.apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['latestVersion'], 'ruleFormat'), axis=1)
-
-            logger.debug(' Collecting property url')
-            properties['propertyURL'] = properties.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
-
-            account_properties.append(properties)
-
-        else:
-            groups_without_property.append(row['groupName'])
-
-    if len(groups_without_property) > 0:
+    # warning for large account
+    if not args.group_id:
         print()
-        logger.warning('Groups without property')
-        logger.info(groups_without_property)
+        logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
+        total = allgroups_df['propertyCount'].sum()
+        if total > 100:
+            print()
+            logger.critical(f'This account has {total} properties, please be patient')
+            logger.critical('200 properties take ~ 7 minutes')
+            logger.critical('800 properties take ~ 30 minutes')
+            logger.critical('please consider using --group-id to reduce total properties')
 
-    if len(account_properties) > 0:
-        df = pd.concat(account_properties, axis=0)
-        logger.debug(df.dtypes)
-        columns = ['accountId', 'contractId', 'groupName', 'groupId',
-                   'assetId', 'propertyId', 'propertyName', 'propertyURL',
-                   'latestVersion', 'stagingVersion', 'productionVersion',
-                   'updatedDate', 'ruleFormat',
-                   'hostname_count', 'hostname']
-        df = df[columns]
-
-        good_df = df[df.productionVersion.notnull()].copy()
-        sheet['properties'] = good_df
-
-        prd_empty_df = df[~df.productionVersion.notnull()]
-        if not prd_empty_df.empty:
-            sheet['no_production_version'] = prd_empty_df
-        files.write_xlsx(filepath, sheet, freeze_column=6)
-
-        logger.debug(f'{df.shape} {good_df.shape} {prd_empty_df.shape}')
+    # collect properties detail for all groups
+    if group_df.empty:
+        logger.info('no property to collect.')
+    else:
+        print()
+        total = group_df['propertyCount'].sum()
+        if total == 0:
+            logger.info('no property to collect.')
+        else:
+            logger.warning('collecting properties ...')
+            account_properties = papi.property_summary(group_df)
+            if len(account_properties) > 0:
+                properties_df = pd.concat(account_properties, axis=0)
+                logger.debug(properties_df.dtypes)
+                columns = ['accountId', 'contractId', 'groupName', 'groupId',
+                        'assetId', 'propertyId', 'propertyName', 'propertyURL',
+                        'latestVersion', 'stagingVersion', 'productionVersion',
+                        'updatedDate', 'ruleFormat',
+                        'hostname_count', 'hostname']
+                properties_df = properties_df[columns]
+                sheet['properties'] = properties_df
+    files.write_xlsx(filepath, sheet, freeze_column=6)
 
     if args.show:
         if platform.system() != 'Darwin':

@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import re
+
+import numpy as np
 import pandas as pd
 from akamai_api.papi import Papi
+from pandarallel import pandarallel
 from utils import _logging as lg
 from utils import dataframe
+from utils import files
 
 logger = lg.setup_logger()
 
@@ -26,6 +31,79 @@ class PapiWrapper(Papi):
         return super().get_edgehostnames(contract_id, group_id)
 
     # GROUPS
+    def create_groups_dataframe(self, groups: list) -> pd.dataframe:
+        df = pd.DataFrame(groups)
+        df['path'] = df.apply(lambda row: self.build_path(row, groups), axis=1)
+        df['level'] = df['path'].str.count('>')
+        max_levels = df['level'].max() + 1
+        for level in range(max_levels):
+            df[f'L{level}'] = df['path'].apply(lambda x: self.get_level_value(x, level))
+        return df
+
+    def build_path(self, row, groups: list) -> str:
+        path = row['groupName']
+        parent_group_id = row.get('parentGroupId')
+        while parent_group_id and parent_group_id in [group['groupId'] for group in groups]:
+            parent_group = next(group for group in groups if group['groupId'] == parent_group_id)
+            path = f"{parent_group['groupName']} > {path}"
+            parent_group_id = parent_group.get('parentGroupId')
+        return path
+
+    def update_path(self, df, row, column_name):
+        '''
+        Function to update the path based on contractId
+        '''
+        if row.name > 0 and row[column_name] == df.at[row.name - 1, column_name]:
+            return df.at[row.name - 1, column_name] + '_' + row['contractId']
+        elif row.name < len(df) - 1 and row[column_name] == df.at[row.name + 1, column_name]:
+            return row[column_name] + '_' + row['contractId']
+        return row[column_name]
+
+    def get_level_value(self, path, level):
+        path_parts = path.split(' > ')
+        if len(path_parts) > level:
+            return path_parts[level]
+        return ''
+
+    def get_properties_count(self, row):
+        group_id = int(row['groupId'])
+        if 'contractIds' in list(row.index.values):
+            contract_ids = row['contractIds']
+        elif 'contractId' in list(row.index.values):
+            try:
+                contract_ids = row['contractId']
+            except:
+                contract_ids = None
+        count = 0
+        if contract_ids == 0 or contract_ids == '' or contract_ids is None:
+            count = 0
+        elif isinstance(contract_ids, list):
+            for contract_id in contract_ids:
+                count += self.get_properties_count_in_group(group_id, contract_id)
+        elif isinstance(contract_ids, str):
+            if contract_ids == ' ':
+                count = 0
+            else:
+                count = self.get_properties_count_in_group(group_id, contract_ids)
+        return count
+
+    def get_valid_contract(self, row) -> str:
+
+        group_id = int(row['groupId'])
+        contract_ids = row['contractIds']
+        contracts = []
+        for contract_id in contract_ids:
+            properties = self.get_properties_count_in_group(group_id, contract_id)
+            if properties > 0:
+                contracts.append(contract_id)
+
+        if len(contracts) == 1:
+            return contracts[0]
+        elif len(contracts) > 1:
+            return contracts
+        else:
+            return ''
+
     def get_top_groups(self) -> tuple:
         status, groups = super().get_groups()
         if status == 200:
@@ -187,23 +265,6 @@ class PapiWrapper(Papi):
             df_list.append(property_df)
         return pd.concat(df_list), property_count
 
-    def normarlize_rows(self, df):
-
-        mc = df[df['multiple_contracts'] > 1].copy()
-        mcx = pd.DataFrame()
-        if not mc.empty:
-            mcx = dataframe.explode(mc, 'groupId', 'contractIds', new_column='contractId')
-            mcx['groupId'] = mcx['groupId'].astype('Int64')
-            mcx['groupName'] = mcx[['groupId']].parallel_apply(lambda x: self.get_group_name(*x), axis=1)
-            mcx['parentGroupId'] = mcx[['groupId']].parallel_apply(lambda x: self.get_parent_group_id(*x), axis=1)
-            mcx['total_properties'] = mcx[['groupId', 'contractId']].parallel_apply(lambda x: self.get_properties_count_in_group(*x), axis=1)
-            mcx['properties'] = mcx[['groupId', 'contractId']].parallel_apply(lambda x: self.get_propertyname_per_group(*x), axis=1)
-            mcx = mcx.reset_index(drop=True)
-            columns = ['groupName', 'groupId', 'parentGroupId', 'contractId', 'total_properties']
-            mcx = mcx[columns]
-            logger.debug(f'normarlize_rows\n{mcx}')
-        return mcx
-
     # PROPERTIES
     def property_url(self, asset_id: int, group_id: int):
         return f'https://control.akamai.com/apps/property-manager/#/property/{asset_id}?gid={group_id}'
@@ -219,7 +280,7 @@ class PapiWrapper(Papi):
 
         if 'cnameFrom' not in df.columns:
             # logger.info(f'propertyId {property_id} without cName')
-            return [property_id]
+            return []
         else:
             return df['cnameFrom'].unique().tolist()
 
@@ -234,140 +295,98 @@ class PapiWrapper(Papi):
             return property_id
 
     # WHOLE ACCOUNT
-    def account_summary(self) -> pd.DataFrame:
-        _, top_groups = self.get_top_groups()
-        if not top_groups.empty:
-            sheets = {}
-            property_df, property_size = self.get_properties_in_group()
-            if 'note' in property_df.columns:
-                property_df.drop(columns=['note'], axis=1, inplace=True)
-            top_groups['total_properties'] = top_groups['groupId'].swifter.apply(lambda x: property_size[x])
-            top_groups['multiple_contracts'] = top_groups.contractIds.apply(lambda x: len(x))
-            sheets['parent_count'] = top_groups
-            logger.debug(f'\n{top_groups}')
+    def account_group_summary(self) -> tuple:
+        _, all_groups = self.get_all_groups()
+        df = self.create_groups_dataframe(all_groups)
 
-            # filter rows with multiple contracts
-            multiple_contract = self.normarlize_rows(top_groups)
+        df['name'] = df['L0'].str.lower()  # this column will be used for sorting later
+        df['groupId'] = df['groupId'].astype(int)  # API has groupId has interger
+        df['parentGroupId'] = pd.to_numeric(df['parentGroupId'], errors='coerce').fillna(0)  # API has groupId has interger
+        df['parentGroupId'] = df['parentGroupId'].astype(int)
 
-            single_contract = top_groups[top_groups['multiple_contracts'] == 1].copy()
-            single_contract['contractId'] = single_contract['contractIds'].apply(lambda col: col[0])
-            single_contract = single_contract.drop(['order', 'multiple_contracts', 'contractIds'], axis=1)
-            columns = ['groupName', 'groupId', 'parentGroupId', 'contractId', 'total_properties']
-            single_contract = single_contract[columns]
-            logger.debug(f'\n{single_contract}')
+        df = df.sort_values(by=['name', 'parentGroupId', 'L1', 'groupId'])
+        df = df.drop(['level'], axis=1)
+        df = df.fillna('')
+        df = df.reset_index(drop=True)
 
-            if not multiple_contract.empty:
-                df = pd.concat([single_contract, multiple_contract], axis=0)
-            else:
-                df = top_groups
-                df = df.rename({'contractIds': 'contractId'}, axis=1)
+        pandarallel.initialize(progress_bar=False)
+        df['account'] = self.account_switch_key
+        df['propertyCount'] = df.parallel_apply(lambda row: self.get_properties_count(row), axis=1)
+        df['contractId'] = df.parallel_apply(lambda row: self.get_valid_contract(row), axis=1)
 
-            df['subfolder'] = df[['groupId']].parallel_apply(lambda x: self.get_child_groups(*x), axis=1)
-            # issue with TC East, if remove comment, break Walmart
-            # df['contractId'] = df[['contractId']].apply(lambda col: col.str[0])
-            logger.debug(f'\n{df}')
+        columns = df.columns.tolist()
+        levels = [col for col in columns if col.startswith('L')]  # get hierachy
+        columns = ['path'] + levels + ['account', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount', 'name']
+        stag_df = df[columns].copy()
 
-            # order displayed on UI
-            df['groupname'] = df['groupName'].str.lower()
-            df.sort_values(by=['parentGroupId', 'groupname', 'total_properties'], inplace=True, na_position='first')
-            del df['groupname']
-            df = df.reset_index(drop=True)
-            df.index.name = 'portal_display_order'
-            columns = ['groupName', 'groupId', 'parentGroupId', 'contractId', 'total_properties', 'subfolder']
-            account = df[columns]
-            sheets['summary'] = account
-            logger.debug(f'\n{account}')
-        return account
+        # Split rows some groups/folders have multiple contracts
+        stag_df = stag_df.apply(lambda row: dataframe.split_rows(row, column_name='contractId'), axis=1)
+        stag_df = pd.concat(list(stag_df), ignore_index=True)
 
-    def normarlize_groups_hierarchy(self) -> dict:
-        account_df = self.account_summary()
-        ch = account_df[account_df['subfolder'].map(len) > 0]
-        ch = ch.reset_index(drop=True)
-        columns = ['groupName', 'groupId', 'parentGroupId', 'contractId', 'total_properties']
-        ch = ch[columns]
-        logger.debug(f'GROUPs with subfolders\n{ch}')
+        df = stag_df[columns].copy()
+        df = df.reset_index(drop=True)
+        df['propertyCount'] = df.parallel_apply(lambda row: self.get_properties_count(row), axis=1)
 
-        all_groups = []
-        temp_dict = {}
-        chunklen = 1
-        groups = ch.groupId.unique().tolist()
-        for parent_group_id in groups:
-            children = self.get_child_group_id(parent_group_id)
-            logger.debug(children)
-            temp_dict = {k: parent_group_id for k in children if len(children) > 0}
-            temp_list = list(temp_dict.items())
-            extract_list = [dict(temp_list[i:i + chunklen]) for i in range(0, len(temp_list), chunklen)]
-            if extract_list:
-                all_groups.extend(extract_list)
-            while len(children) > 0:
-                groups = children
-                for parent_group_id in groups:
-                    children = self.get_child_group_id(parent_group_id)
-                    logger.debug(children)
-                    temp_dict = {k: parent_group_id for k in children if len(children) > 0}
-                    temp_list = list(temp_dict.items())
-                    extract_list = [dict(temp_list[i:i + chunklen]) for i in range(0, len(temp_list), chunklen)]
-                    if extract_list:
-                        all_groups.extend(extract_list)
+        allgroups_df = df.copy()
 
-        # merge a list of dicts into a single dict
-        all_groups_dict = {k: v for d in all_groups for k, v in d.items()}
-        return all_groups_dict
+        allgroups_df = allgroups_df.reset_index(drop=True)
 
-    def account_statistic(self):
-        columns = ['groupName', 'groupId', 'parentGroupId', 'contractId', 'total_properties']
-        all_groups = self.normarlize_groups_hierarchy()
-        df = pd.DataFrame.from_dict(all_groups, orient='index', columns=['parentGroupId'])
-        df.index.name = 'groupId'
-        df = df.reset_index()
+        columns = ['index_1', 'updated_path', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount'] + levels
 
-        df['groupName'] = df[['groupId']].parallel_apply(lambda x: self.get_group_name(*x), axis=1)
-        df['contractIds'] = df[['groupId']].parallel_apply(lambda x: self.get_group_contract_id(*x), axis=1)
-        df['multiple_contracts'] = df.contractIds.apply(lambda x: len(x))
-        logger.debug(df)
+        allgroups_df['updated_path'] = allgroups_df.apply(lambda row: self.update_path(allgroups_df, row, column_name='path'), axis=1)
+        allgroups_df['index_1'] = allgroups_df.index
+        allgroups_df = allgroups_df[columns].copy()
+        first_non_empty = allgroups_df.replace('', np.nan).ffill(axis=1).iloc[:, -1]
+        allgroups_df['excel_sheet'] = ''
+        allgroups_df['excel_sheet'] = np.where(first_non_empty == '', allgroups_df['L0'], first_non_empty)
 
-        multiple_contract = self.normarlize_rows(df)
-        if not multiple_contract.empty:
-            multiple_contract = multiple_contract[multiple_contract['total_properties'] > 0].copy()
-            multiple_contract = multiple_contract.reset_index(drop=True)
-            # 1:M group:contracts
-            logger.debug(f'1:M group:contracts\n{multiple_contract}')
+        pattern = r'[A-Z0-9]-[A-Z0-9]+'
+        allgroups_df['excel_sheet'] = allgroups_df['excel_sheet'].apply(lambda x: re.sub(pattern, '', x))
+        allgroups_df['excel_sheet'] = allgroups_df['excel_sheet'].apply(lambda x: files.prepare_excel_sheetname(x))
+        allgroups_df = allgroups_df.sort_values(by='excel_sheet')
+        allgroups_df = allgroups_df.reset_index(drop=True)
+        columns = columns + ['excel_sheet']
 
-        single_contract = df[df['multiple_contracts'] == 1].copy()
-        single_contract['contractId'] = single_contract['contractIds'].apply(lambda col: col[0])
-        single_contract = single_contract.drop(['multiple_contracts', 'contractIds'], axis=1)
-        single_contract['total_properties'] = single_contract[['groupId', 'contractId']].parallel_apply(lambda x: self.get_properties_count_in_group(*x), axis=1)
-        single_contract = single_contract[columns]
-        single_contract = single_contract.reset_index(drop=True)
-        # 1:1 group:contract
-        logger.debug(f'1:1 group:contract\n{single_contract}')
+        allgroups_df = allgroups_df[columns].copy()
+        allgroups_df['sheet'] = ''
+        allgroups_df = files.update_sheet_column(allgroups_df)
+        columns = ['index_1', 'updated_path'] + ['groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount', 'sheet']
 
-        if not multiple_contract.empty:
-            childs = pd.concat([single_contract, multiple_contract], axis=0)
-        else:
-            childs = single_contract
-            childs = childs.rename({'contractIds': 'contractId'}, axis=1)
-            childs = childs.sort_values(by=['parentGroupId', 'groupId'], na_position='first')
-            childs = childs.reset_index(drop=True)
-            childs.index.name = 'portal_display_order'
-            # childs['groupId'] = childs['groupId'].astype(str)
-            childs = childs[columns]
-            childs = childs.reset_index()
-            logger.debug(f'\n{childs}')
+        allgroups_df = allgroups_df[columns].copy()
+        allgroups_df = allgroups_df.sort_values(by='index_1')
+        allgroups_df = allgroups_df.reset_index(drop=True)
 
-        account_df = self.account_summary()
-        account_df.index.name = 'portal_display_order'
-        # account_df['groupId'] = account_df['groupId'].astype(str)
-        account_df = account_df[columns]
-        account_df = account_df.reset_index()
-        logger.debug(f'\n{account_df}')
+        columns = ['updated_path', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount', 'sheet']
+        allgroups_df = allgroups_df[columns].copy()
+        return allgroups_df, columns
 
-        stat_df = pd.concat([account_df, childs], axis=0)
-        stat_df['groupId'] = stat_df['groupId'].astype(str)
-        stat_df = stat_df.reset_index(drop=True)
-        # Final Groups Stats
-        logger.debug(f'Final Groups Stats\n{stat_df}')
-        return stat_df
+    def property_summary(self, df: pd.DataFrame) -> list:
+        account_properties = []
+        print()
+        for index, row in df.iterrows():
+            logger.warning(f"{index:<5} {row['groupName']:<50} {row['propertyCount']}")
+            properties = self.get_properties_detail_per_group(row['groupId'], row['contractId'])
+            if not properties.empty:
+                properties['propertyId'] = properties['propertyId'].astype('Int64')
+                properties['groupName'] = row['groupName']  # add group name
+
+                logger.debug(' Collecting hostname')
+                properties['hostname'] = properties[['propertyId']].parallel_apply(lambda x: self.get_property_hostnames(*x), axis=1)
+                properties['hostname_count'] = properties['hostname'].str.len()
+                # show one hostname per list and remove list syntax
+                properties['hostname'] = properties[['hostname']].parallel_apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
+
+                logger.debug(' Collecting updatedDate')
+                properties['updatedDate'] = properties.apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
+
+                logger.debug(' Collecting ruleFormat')
+                properties['ruleFormat'] = properties.apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'ruleFormat'), axis=1)
+
+                logger.debug(' Collecting property url')
+                properties['propertyURL'] = properties.apply(lambda row: self.property_url(row['assetId'], row['groupId']), axis=1)
+
+                account_properties.append(properties)
+        return account_properties
 
     # RULETREE
     def get_properties_ruletree_digest(self, property_id: int, version: int):

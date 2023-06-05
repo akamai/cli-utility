@@ -183,6 +183,16 @@ def prepare_excel_sheetname(original_string: str) -> str:
     return result
 
 
+def update_sheet_column(df: pd.dataFrame) -> pd.dataFrame:
+    '''
+    Function to update the sheet column based on contractId
+    '''
+    df['sheet'] = df['excel_sheet']
+    duplicate_mask = df['excel_sheet'].duplicated(keep=False)
+    df.loc[duplicate_mask, 'sheet'] += '_' + df.loc[duplicate_mask, 'contractId']
+    return df
+
+
 def remove_first_line_txt(filename: str) -> None:
     with open(filename) as f:
         data = f.read().splitlines(True)

@@ -48,8 +48,5 @@ if __name__ == '__main__':
         else:
             dc.main(args)
 
-    if args.command == 'test':
-        ex.account_group_summary(args)
-
     end_time = lg.log_cli_timing(start_time)
     logger.info(end_time)
