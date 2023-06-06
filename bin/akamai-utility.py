@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     if args.command == 'delivery-config':
         if args.activate is True:
-            dc.rollback(args)
+            dc.activate_from_excel(args)
         elif args.load:
             dc.activation_status(args)
         elif args.ruletree:

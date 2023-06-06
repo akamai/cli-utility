@@ -413,8 +413,10 @@ class PapiWrapper(Papi):
 
     # ACTIVATION
     def activate_property_version(self, property_id: int, version: int, network: str, note: str, emails: list):
-        _, response = super().activate_property_version(property_id, version, network, note, emails)
-        return response
+        status, response = super().activate_property_version(property_id, version, network, note, emails)
+        if status == 201:
+            return response.split('?')[0].split('/')[-1]
+        return status
 
     def activation_status(self, property_id: int, activation_id: int, version: int):
 

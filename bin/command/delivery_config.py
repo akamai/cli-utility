@@ -12,6 +12,7 @@ from subprocess import STDOUT
 
 import numpy as np
 import pandas as pd
+import swifter
 from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import papi as p
 from rich import print_json
@@ -27,14 +28,35 @@ pd.set_option('display.expand_frame_repr', False)
 pd.set_option('display.max_rows', None)
 
 
-def rollback(args):
+def activate_from_excel(args):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     if args.load:
-        pass
+        df = load_config_from_xlsx(args.load, args.sheet, args.filter, papi)
+        network = args.network[0]
+        note = args.note
+        emails = args.email
+
+        df['activationId'] = df[['propertyId', 'stagingVersion']].apply(lambda x: papi.activate_property_version(*x, network, note, emails), axis=1)
+        df['activationId'] = df['activationId'].astype(int)
+
+        logger.warning(f'Row count: {len(df)}')
+        logger.warning(f'New activationId\n{df}')
+
+        active = pd.DataFrame()
+        while len(df) > len(active):
+            df['production_status'] = df[['propertyId', 'activationId', 'stagingVersion']].swifter.apply(lambda x: papi.activation_status(*x), axis=1)
+            active = df[df['production_status'] == 'ACTIVE'].copy()
+            print()
+            if len(df) == len(active):
+                logger.critical(f'Activation Completed\n{active}')
+            else:
+                logger.info(f'Activation In Progress\n{df}')
+                lg.countdown(60, msg='Checking again ... ')
+
     else:
         network = args.network[0]
         for property_id in args.property_id:
-            status_code, resp = papi.activation_property_version(args.property_id, args.version, network, list(args.note), list(args.emails))
+            status_code, resp = papi.activation_property_version(args.property_id, args.version, network, list(args.note), list(args.email))
             try:
                 activation_id = resp.json()['activationLink'].split('?')[0].split('/')[-1]
             except:
@@ -65,7 +87,7 @@ def activation_status(args):
                 df['groupId'] = df['groupId'].astype(str)
                 df['propertyId'] = df['propertyId'].astype(str)
                 if not df.empty:
-                    logger.info(df)
+                    logger.debug(df)
                     df = df.sort_values(by=['groupId', 'propertyName'])
                     df = df.reset_index(drop=True)
                     failed_configs.append(df)
@@ -119,7 +141,7 @@ def main(args):
         filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
     except:
         print_json(data=account)
-        lg.countdown(540)
+        lg.countdown(540, msg='Oopsie! You just hit rate limit.')
         sys.exit(logger.error(account['detail']))
 
     # build group structure as displayed on control.akamai.com
@@ -182,15 +204,27 @@ def main(args):
             subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
 
 
-def load_config_from_xlsx(filepath: str, sheet_name: str, filter: str):
+def load_config_from_xlsx(filepath: str, sheet_name: str, filter: str, papi):
     '''
     excel must have headers assetId and groupId
     '''
-    df = pd.read_excel(f'{filepath}', sheet_name=sheet_name, index_col=0)
+    df = pd.read_excel(f'{filepath}', sheet_name=sheet_name, index_col=None)
+
     mask = np.column_stack([df[col].astype(str).str.contains(fr'{filter}', na=False) for col in df])
     df = df.loc[mask.any(axis=1)]
-    df['url'] = df.apply(lambda row: p.property_url(row['assetId'], row['groupId']), axis=1)
-    return df
+    df['stagingVersion'] = df['stagingVersion'].astype(int)
+    df['productionVersion'] = df['productionVersion'].astype(int)
+    if 'activationId' in df.columns.values.tolist():
+        df['activationId'] = df['activationId'].astype(int)
+
+    df['url'] = df.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
+
+    columns = ['propertyName', 'propertyId', 'stagingVersion', 'productionVersion', 'url']
+    if 'activationId' in df.columns.values.tolist():
+        columns.append('activationId')
+    df = df[columns].copy()
+    logger.info(f'Original Data from Excel\n{df}')
+    return df[columns]
 
 
 def get_property_ruletree(args):

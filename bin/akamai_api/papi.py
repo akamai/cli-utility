@@ -385,11 +385,11 @@ class Papi(AkamaiSession):
         payload['propertyVersion'] = version
         payload['note'] = note[0]
         payload['notifyEmails'] = emails
-        logger.info(payload)
-        logger.info(self.headers)
+        logger.debug(payload)
+        logger.debug(self.headers)
 
         resp = self.session.post(url, json=payload, headers=self.headers)
-        logger.info(resp.url)
+        logger.debug(resp.url)
         if resp.status_code == 201:
             return resp.status_code, resp.json()['activationLink']
         elif resp.status_code == 422:
