@@ -125,7 +125,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                                                 {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'},
                                                 {'name': 'network', 'help': 'options: staging, production', 'default': 'staging', 'nargs': '+'},
                                                 {'name': 'note', 'help': 'activation note', 'nargs': '+'},
-                                                {'name': 'emails', 'help': 'notificatin emails for activations', 'nargs': '+'},
+                                                {'name': 'email', 'help': 'notificatin email(s) for activations', 'nargs': '+'},
                                                 {'name': 'group-id', 'help': 'provide at least one group without prefix grp_ ', 'nargs': '+'},
                                                 {'name': 'property-id', 'help': 'provide at least one property with out prefix prp_', 'nargs': '+'},
                                                 ])
