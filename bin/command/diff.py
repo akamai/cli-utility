@@ -5,7 +5,6 @@ import subprocess
 import sys
 import webbrowser
 from pathlib import Path
-from time import perf_counter
 
 import pandas as pd
 from akamai_api.appsec import Appsec

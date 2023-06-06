@@ -34,6 +34,8 @@ python bin/akamai-utility.py -a $account diff --config1 $config1 --left $config1
 # miscelleanouse tools about delivery config
 python bin/akamai-utility.py -a $account delivery-config -h
 python bin/akamai-utility.py -a $account delivery-config --show
+python bin/akamai-utility.py -a $account delivery-config --show --group-id $group1 $group2
+python bin/akamai-utility.py -a AANA-2NUHEA delivery-config --advancedmetadata --property-id 743088 670262 --version 10
 python bin/akamai-utility.py -a $account delivery-config --ruletree --property-id 861132 --version 1 --show
 
 # reports
