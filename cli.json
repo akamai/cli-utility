@@ -6,7 +6,7 @@
         {
             "name": "utility",
             "aliases": [
-                "utility"
+                "util"
             ],
             "version": "0.0.0",
             "description": "Provides a collection of useful tools"
