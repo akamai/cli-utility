@@ -45,6 +45,8 @@ if __name__ == '__main__':
             dc.activation_status(args)
         elif args.ruletree:
             dc.get_property_ruletree(args)
+        elif args.advancedmetadata:
+            dc.get_property_advanced_metadata(args)
         else:
             dc.main(args)
 

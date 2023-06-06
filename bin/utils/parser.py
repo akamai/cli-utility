@@ -118,6 +118,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                                                 {'name': 'load', 'help': 'filename'},
                                                 {'name': 'directory', 'help': 'directory where all CSVs are located'},
                                                 {'name': 'ruletree', 'help': 'view ruletree structure format', 'action': 'store_true'},
+                                                {'name': 'advancedmetadata', 'help': 'view XML for all advanced metadata', 'action': 'store_true'},
                                                 {'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
                                                 {'name': 'version', 'help': 'version to activate'},
                                                 {'name': 'sheet', 'help': 'sheet name of the excel'},

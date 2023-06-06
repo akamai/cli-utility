@@ -294,6 +294,23 @@ class PapiWrapper(Papi):
         except:
             return property_id
 
+    def find_name_and_xml(self, json_data, target_data, grandparent=None, parent=None):
+        if isinstance(json_data, list):
+            for item in json_data:
+                self.find_name_and_xml(item, target_data, parent=parent, grandparent=grandparent)
+        elif isinstance(json_data, dict):
+            for key, value in json_data.items():
+                if key == 'name':
+                    grandparent = parent
+                    parent = value
+                elif key == 'xml':
+                    target_data.append({
+                        'name': grandparent,
+                        'xml': value
+                    })
+                if isinstance(value, (dict, list)):
+                    self.find_name_and_xml(value, target_data, grandparent=grandparent, parent=parent)
+
     # WHOLE ACCOUNT
     def account_group_summary(self) -> tuple:
         _, all_groups = self.get_all_groups()

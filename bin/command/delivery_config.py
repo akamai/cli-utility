@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -16,10 +15,11 @@ import swifter
 from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import papi as p
 from rich import print_json
+from rich.console import Console
+from rich.syntax import Syntax
 from tabulate import tabulate
 from utils import _logging as lg
 from utils import files
-
 
 logger = lg.setup_logger()
 pd.set_option('display.max_colwidth', None)
@@ -318,3 +318,122 @@ def get_property_ruletree(args):
                     Popen(command, stdout=os.open(os.devnull, os.O_RDWR), stderr=STDOUT)
                 except:
                     subprocess.call(['open', '-a', 'TextEdit', Path(TREE_FILE).absolute()])
+
+
+def get_property_advanced_metadata(args):
+    '''
+    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config --advancedmetadata --property-id 743088 672055 --version 10
+    '''
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    property_dict = {}
+    console = Console()
+    property_list = []
+    sheet = {}
+    for property_id in args.property_id:
+        ruletree = papi.get_property_ruletree(property_id, args.version)
+        config, version = ruletree['propertyName'], ruletree['propertyVersion']
+        title = f'{config}_v{version}'
+
+        files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree)
+
+        with open(f'output/ruletree/{title}_ruletree.json') as f:
+            json_object = json.load(f)
+
+        property_name = f"{property_id}_{json_object['propertyName']}_v{json_object['propertyVersion']}"
+        excel_sheet = f"{property_id}_v{json_object['propertyVersion']}"
+        logger.warning(property_name)
+
+        target_data = []
+        ruletree_json = json_object['rules']
+        papi.find_name_and_xml(ruletree_json, target_data)
+
+        xml_data = {}
+        for index, item in enumerate(target_data):
+            xml_data[item['name']] = item['xml']
+            logger.debug(f"{index:>3}: {item['name']}")
+
+            property_dict[property_name] = [xml_data]
+            '''
+            if args.filter:
+                if item['name'] == args.filter:
+                    syntax = Syntax(item['xml'], "xml", theme="solarized-dark", line_numbers=True)
+                    console.print(syntax)
+            '''
+        property_list.append(property_dict)
+
+        sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=[f'xml_{excel_sheet}'])
+        sheet_df.index.name = excel_sheet
+        sheet[excel_sheet] = sheet_df
+
+    logger.info(property_dict.keys())
+    first = list(property_dict.keys())[0]
+    second = list(property_dict.keys())[1]
+
+    logger.critical('Same rule name but have different XML')
+    rules = same_rule(property_dict, first, second)
+    for rule in rules:
+        if not compare_xml(property_dict, first, second, rule):
+            print()
+            logger.warning(f' {rule}')
+            v1 = 'xml_first.xml'
+            v2 = 'xml_second.xml'
+            xml1 = property_dict[first][0][rule]
+            with open(v1, 'w') as f:
+                f.write(xml1)
+            # syntax = Syntax(xml1, "xml", theme="solarized-dark", line_numbers=True)
+            # console.print(syntax)
+
+            xml2 = property_dict[second][0][rule]
+            with open(v2, 'w') as f:
+                f.write(xml2)
+            # syntax = Syntax(xml2, "xml", theme="solarized-dark", line_numbers=True)
+            # console.print(syntax)
+            cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
+            subprocess.run(cmd_text, shell=True)
+
+    print()
+    logger.critical('Checking XML with different rule name')
+    rules = different_rule(property_dict, first, second)
+    for rule in rules:
+        compare_xml(property_dict, first, second, rule)
+
+    df = pd.DataFrame(property_list)
+    sheet['complete'] = df
+    filepath = 'test.xlsx'
+    print()
+    files.write_xlsx(filepath, sheet, freeze_column=1, show_index=True)
+
+    if args.show:
+        if platform.system() != 'Darwin':
+            logger.info('--show argument is supported only on Mac OS')
+        else:
+            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+
+
+def same_rule(properties: dict, first: str, second: str) -> list:
+    left = list(properties[first][0].keys())
+    right = list(properties[second][0].keys())
+    same_rule = list(set(left) & set(right))
+    return same_rule
+
+
+def different_rule(properties: dict, first: str, second: str) -> list:
+    left = list(properties[first][0].keys())
+    right = list(properties[second][0].keys())
+    different_rule = list(set(left) - set(right))
+    different_rule.extend(list(set(right) - set(left)))
+    return different_rule
+
+
+def compare_xml(properties: dict, first: str, second: str, rule: str) -> bool:
+    try:
+        xml_1 = properties[first][0][rule]
+    except KeyError:
+        xml_1 = 0
+        logger.info(f' {rule:<30} not found in {first}')
+    try:
+        xml_2 = properties[second][0][rule]
+    except KeyError:
+        xml_2 = 0
+        logger.info(f' {rule:<30} not found in {second}')
+    return xml_1 == xml_2
