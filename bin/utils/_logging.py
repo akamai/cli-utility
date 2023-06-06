@@ -89,10 +89,11 @@ def log_df(logger, level, df, headers: str) -> None:
         logger.info(f'{headers}\n{df}')
 
 
-def countdown(time_sec):
+def countdown(time_sec: int, msg: str):
     print()
     time_min = int(time_sec / 60)
-    setup_logger().critical(f'Oopsie! You just hit rate limit. {time_min} minutes count down')
+    msg = f'{msg} {time_min} minutes count down'
+    setup_logger().critical(msg)
     while time_sec:
         mins, secs = divmod(time_sec, 60)
         timeformat = f'{mins:02d}:{secs:02d}'

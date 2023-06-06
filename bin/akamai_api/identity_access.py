@@ -33,7 +33,7 @@ class IdentityAccessManagement(AkamaiSession):
         elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':
             sys.exit(logger.error('You do not have permission to lookup other accounts'))
         elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
-            lg.countdown(540)
+            lg.countdown(540, msg='Oopsie! You just hit rate limit.')
             sys.exit(logger.error(resp.json()['detail']))
         else:
             sys.exit(logger.error(resp.json()['detail']))
