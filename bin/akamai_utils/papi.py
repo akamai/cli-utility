@@ -311,6 +311,32 @@ class PapiWrapper(Papi):
                 if isinstance(value, (dict, list)):
                     self.find_name_and_xml(value, target_data, grandparent=grandparent, parent=parent)
 
+    def same_rule(self, properties: dict, first: str, second: str) -> list:
+        left = list(properties[first][0].keys())
+        right = list(properties[second][0].keys())
+        same_rule = list(set(left) & set(right))
+        return same_rule
+
+    def different_rule(self, properties: dict, first: str, second: str) -> list:
+        left = list(properties[first][0].keys())
+        right = list(properties[second][0].keys())
+        different_rule = list(set(left) - set(right))
+        different_rule.extend(list(set(right) - set(left)))
+        return different_rule
+
+    def compare_xml(self, properties: dict, first: str, second: str, rule: str) -> bool:
+        try:
+            xml_1 = properties[first][0][rule]
+        except KeyError:
+            xml_1 = 0
+            logger.info(f' {rule:<30} not found in {first}')
+        try:
+            xml_2 = properties[second][0][rule]
+        except KeyError:
+            xml_2 = 0
+            logger.info(f' {rule:<30} not found in {second}')
+        return xml_1 == xml_2
+
     # WHOLE ACCOUNT
     def account_group_summary(self) -> tuple:
         _, all_groups = self.get_all_groups()

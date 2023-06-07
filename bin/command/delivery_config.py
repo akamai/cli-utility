@@ -28,6 +28,87 @@ pd.set_option('display.expand_frame_repr', False)
 pd.set_option('display.max_rows', None)
 
 
+def main(args):
+    '''
+    python bin/akamai-utility.py -a 1-1IY5Z delivery-config --show --group-id 14803 163889 162428 90428 14805 82695
+    2173 properties 90 minutes
+     800 properties 30 minutes
+    '''
+
+    # display full account name
+    iam = IdentityAccessManagement(args.account_switch_key)
+    account = iam.search_account_name(value=args.account_switch_key)
+    try:
+        account = f"{account[0]['accountName']}".replace(' ', '_')
+        logger.warning(f'Found account: {account}')
+        account = account.replace('.', '_')
+        filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
+    except:
+        print_json(data=account)
+        lg.countdown(540, msg='Oopsie! You just hit rate limit.')
+        sys.exit(logger.error(account['detail']))
+
+    # build group structure as displayed on control.akamai.com
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    allgroups_df, columns = papi.account_group_summary()
+
+    sheet = {}
+    allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)  # change groupId to str before load into excel
+    sheet['summary'] = allgroups_df
+
+    if args.group_id:
+        groups = args.group_id
+        group_df = allgroups_df[allgroups_df['groupId'].isin(groups)].copy()
+        group_df = group_df.reset_index(drop=True)
+        sheet['filter'] = group_df
+    else:
+        group_df = allgroups_df[allgroups_df['propertyCount'] > 0].copy()
+        group_df = group_df.reset_index(drop=True)
+    print()
+    print(tabulate(group_df, headers=columns, showindex=True, tablefmt='github'))
+
+    # warning for large account
+    if not args.group_id:
+        print()
+        logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
+        total = allgroups_df['propertyCount'].sum()
+        if total > 100:
+            print()
+            logger.critical(f'This account has {total} properties, please be patient')
+            logger.critical('200 properties take ~ 7 minutes')
+            logger.critical('800 properties take ~ 30 minutes')
+            logger.critical('please consider using --group-id to reduce total properties')
+
+    # collect properties detail for all groups
+    if group_df.empty:
+        logger.info('no property to collect.')
+    else:
+        print()
+        total = group_df['propertyCount'].sum()
+        if total == 0:
+            logger.info('no property to collect.')
+        else:
+            logger.warning('collecting properties ...')
+            account_properties = papi.property_summary(group_df)
+            if len(account_properties) > 0:
+                properties_df = pd.concat(account_properties, axis=0)
+                logger.debug(properties_df.dtypes)
+                columns = ['accountId', 'contractId', 'groupName', 'groupId',
+                        'assetId', 'propertyId', 'propertyName', 'propertyURL',
+                        'latestVersion', 'stagingVersion', 'productionVersion',
+                        'updatedDate', 'ruleFormat',
+                        'hostname_count', 'hostname']
+                properties_df = properties_df[columns]
+                sheet['properties'] = properties_df
+    files.write_xlsx(filepath, sheet, freeze_column=6)
+
+    if args.show:
+        if platform.system() != 'Darwin':
+            logger.info('--show argument is supported only on Mac OS')
+        else:
+            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+
+
 def activate_from_excel(args):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     if args.load:
@@ -123,110 +204,6 @@ def activation_status(args):
     df = df.sort_values(by=['staging_activation_id', 'comment', 'propertyName'])
     df = df.reset_index(drop=True)
     logger.info(f'\n{df[columns]}')
-
-
-def main(args):
-    '''
-    python bin/akamai-utility.py -a 1-1IY5Z delivery-config --show --group-id 14803 163889 162428 90428 14805 82695
-    2173 properties 90 minutes
-     800 properties 30 minutes
-    '''
-
-    # display full account name
-    iam = IdentityAccessManagement(args.account_switch_key)
-    account = iam.search_account_name(value=args.account_switch_key)
-    try:
-        account = f"{account[0]['accountName']}".replace(' ', '_')
-        logger.warning(f'Found account: {account}')
-        account = account.replace('.', '_')
-        filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
-    except:
-        print_json(data=account)
-        lg.countdown(540, msg='Oopsie! You just hit rate limit.')
-        sys.exit(logger.error(account['detail']))
-
-    # build group structure as displayed on control.akamai.com
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-    allgroups_df, columns = papi.account_group_summary()
-
-    sheet = {}
-    allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)  # change groupId to str before load into excel
-    sheet['summary'] = allgroups_df
-
-    if args.group_id:
-        groups = args.group_id
-        group_df = allgroups_df[allgroups_df['groupId'].isin(groups)].copy()
-        group_df = group_df.reset_index(drop=True)
-        sheet['filter'] = group_df
-    else:
-        group_df = allgroups_df[allgroups_df['propertyCount'] > 0].copy()
-        group_df = group_df.reset_index(drop=True)
-    print()
-    print(tabulate(group_df, headers=columns, showindex=True, tablefmt='github'))
-
-    # warning for large account
-    if not args.group_id:
-        print()
-        logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
-        total = allgroups_df['propertyCount'].sum()
-        if total > 100:
-            print()
-            logger.critical(f'This account has {total} properties, please be patient')
-            logger.critical('200 properties take ~ 7 minutes')
-            logger.critical('800 properties take ~ 30 minutes')
-            logger.critical('please consider using --group-id to reduce total properties')
-
-    # collect properties detail for all groups
-    if group_df.empty:
-        logger.info('no property to collect.')
-    else:
-        print()
-        total = group_df['propertyCount'].sum()
-        if total == 0:
-            logger.info('no property to collect.')
-        else:
-            logger.warning('collecting properties ...')
-            account_properties = papi.property_summary(group_df)
-            if len(account_properties) > 0:
-                properties_df = pd.concat(account_properties, axis=0)
-                logger.debug(properties_df.dtypes)
-                columns = ['accountId', 'contractId', 'groupName', 'groupId',
-                        'assetId', 'propertyId', 'propertyName', 'propertyURL',
-                        'latestVersion', 'stagingVersion', 'productionVersion',
-                        'updatedDate', 'ruleFormat',
-                        'hostname_count', 'hostname']
-                properties_df = properties_df[columns]
-                sheet['properties'] = properties_df
-    files.write_xlsx(filepath, sheet, freeze_column=6)
-
-    if args.show:
-        if platform.system() != 'Darwin':
-            logger.info('--show argument is supported only on Mac OS')
-        else:
-            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
-
-
-def load_config_from_xlsx(filepath: str, sheet_name: str, filter: str, papi):
-    '''
-    excel must have headers assetId and groupId
-    '''
-    df = pd.read_excel(f'{filepath}', sheet_name=sheet_name, index_col=None)
-    if filter:
-        mask = np.column_stack([df[col].astype(str).str.contains(fr'{filter}', na=False) for col in df])
-        df = df.loc[mask.any(axis=1)]
-    df['stagingVersion'] = df['stagingVersion'].astype(int)
-    df['productionVersion'] = df['productionVersion'].astype(int)
-    if 'activationId' in df.columns.values.tolist():
-        df['activationId'] = df['activationId'].astype(int)
-
-    # df['url'] = df.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
-
-    columns = ['propertyName', 'propertyId', 'Batch', 'stagingVersion', 'productionVersion']
-    if 'activationId' in df.columns.values.tolist():
-        columns.append('activationId')
-    df = df[columns].copy()
-    logger.info(f'Original Data from Excel\n{df}')
-    return df[columns]
 
 
 def get_property_ruletree(args):
@@ -373,9 +350,9 @@ def get_property_advanced_metadata(args):
         second = list(property_dict.keys())[1]
 
         logger.critical('Same rule name but have different XML')
-        rules = same_rule(property_dict, first, second)
+        rules = papi.same_rule(property_dict, first, second)
         for rule in rules:
-            if not compare_xml(property_dict, first, second, rule):
+            if not papi.compare_xml(property_dict, first, second, rule):
                 print()
                 logger.warning(f' {rule}')
                 v1 = 'xml_first.xml'
@@ -396,9 +373,9 @@ def get_property_advanced_metadata(args):
 
         print()
         logger.critical('Checking XML with different rule name')
-        rules = different_rule(property_dict, first, second)
+        rules = papi.different_rule(property_dict, first, second)
         for rule in rules:
-            compare_xml(property_dict, first, second, rule)
+            papi.compare_xml(property_dict, first, second, rule)
 
     df = pd.DataFrame(property_list)
     sheet['complete'] = df
@@ -413,30 +390,27 @@ def get_property_advanced_metadata(args):
             subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
 
 
-def same_rule(properties: dict, first: str, second: str) -> list:
-    left = list(properties[first][0].keys())
-    right = list(properties[second][0].keys())
-    same_rule = list(set(left) & set(right))
-    return same_rule
+# BEGIN helper method
+def load_config_from_xlsx(filepath: str, sheet_name: str, filter: str, papi):
+    '''
+    excel must have header rows
+    '''
+    df = pd.read_excel(f'{filepath}', sheet_name=sheet_name, index_col=None)
+    if filter:
+        mask = np.column_stack([df[col].astype(str).str.contains(fr'{filter}', na=False) for col in df])
+        df = df.loc[mask.any(axis=1)]
+    df['stagingVersion'] = df['stagingVersion'].astype(int)
+    df['productionVersion'] = df['productionVersion'].astype(int)
+    if 'activationId' in df.columns.values.tolist():
+        df['activationId'] = df['activationId'].astype(int)
 
+    df['url'] = df.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
 
-def different_rule(properties: dict, first: str, second: str) -> list:
-    left = list(properties[first][0].keys())
-    right = list(properties[second][0].keys())
-    different_rule = list(set(left) - set(right))
-    different_rule.extend(list(set(right) - set(left)))
-    return different_rule
+    columns = ['propertyName', 'propertyId', 'Batch', 'stagingVersion', 'productionVersion']
+    if 'activationId' in df.columns.values.tolist():
+        columns.append('activationId')
+    df = df[columns].copy()
+    logger.info(f'Original Data from Excel\n{df}')
+    return df[columns]
 
-
-def compare_xml(properties: dict, first: str, second: str, rule: str) -> bool:
-    try:
-        xml_1 = properties[first][0][rule]
-    except KeyError:
-        xml_1 = 0
-        logger.info(f' {rule:<30} not found in {first}')
-    try:
-        xml_2 = properties[second][0][rule]
-    except KeyError:
-        xml_2 = 0
-        logger.info(f' {rule:<30} not found in {second}')
-    return xml_1 == xml_2
+# END helper method
