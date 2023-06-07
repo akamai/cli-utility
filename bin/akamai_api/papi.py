@@ -282,7 +282,6 @@ class Papi(AkamaiSession):
     def property_version(self, items: dict) -> tuple:
         prd_version = 0
         stg_version = 0
-
         for item in items:
 
             if item['stagingStatus'] == 'ACTIVE':
@@ -313,8 +312,9 @@ class Papi(AkamaiSession):
         self.headers['Accept'] = 'application/vnd.akamai.papirules.latest+json'
 
         ruletree_response = self.session.get(url, headers=self.headers)
+        logger.debug(f'{urlparse(resp.url).path:<30} {resp.status_code}')
         if resp.status_code == 200:
-            logger.debug(f'{urlparse(resp.url).path:<30} {resp.status_code}')
+
             self.property_name = ruletree_response.json()['propertyName']
             # https://github.com/psf/requests/issues/1380
             # rate_limiting_dict = json.loads(response.headers)
@@ -350,7 +350,7 @@ class Papi(AkamaiSession):
         else:
             return resp.status_code, resp.json()
 
-    def get_ruleformat_schema(self, product_id: str, format_version: str):
+    def get_ruleformat_schema(self, product_id: str, format_version: str | None = 'latest'):
         url = self.form_url(f'{self.MODULE}/schemas/products/{product_id}/{format_version}')
         logger.debug(url)
         resp = self.session.get(url, headers=self.headers)
@@ -394,6 +394,8 @@ class Papi(AkamaiSession):
             return resp.status_code, resp.json()['activationLink']
         elif resp.status_code == 422:
             return resp.status_code, resp.json()['detail']
+        elif resp.status_code == 429:
+            return resp.status_code, resp.json()['title']
         else:
             return resp.status_code, resp.json()
 

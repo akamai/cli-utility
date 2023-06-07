@@ -32,6 +32,7 @@ def activate_from_excel(args):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     if args.load:
         df = load_config_from_xlsx(args.load, args.sheet, args.filter, papi)
+
         network = args.network[0]
         note = args.note
         emails = args.email
@@ -147,12 +148,13 @@ def main(args):
     # build group structure as displayed on control.akamai.com
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     allgroups_df, columns = papi.account_group_summary()
+
     sheet = {}
+    allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)  # change groupId to str before load into excel
     sheet['summary'] = allgroups_df
 
     if args.group_id:
         groups = args.group_id
-        allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)
         group_df = allgroups_df[allgroups_df['groupId'].isin(groups)].copy()
         group_df = group_df.reset_index(drop=True)
         sheet['filter'] = group_df
@@ -209,17 +211,17 @@ def load_config_from_xlsx(filepath: str, sheet_name: str, filter: str, papi):
     excel must have headers assetId and groupId
     '''
     df = pd.read_excel(f'{filepath}', sheet_name=sheet_name, index_col=None)
-
-    mask = np.column_stack([df[col].astype(str).str.contains(fr'{filter}', na=False) for col in df])
-    df = df.loc[mask.any(axis=1)]
+    if filter:
+        mask = np.column_stack([df[col].astype(str).str.contains(fr'{filter}', na=False) for col in df])
+        df = df.loc[mask.any(axis=1)]
     df['stagingVersion'] = df['stagingVersion'].astype(int)
     df['productionVersion'] = df['productionVersion'].astype(int)
     if 'activationId' in df.columns.values.tolist():
         df['activationId'] = df['activationId'].astype(int)
 
-    df['url'] = df.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
+    # df['url'] = df.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
 
-    columns = ['propertyName', 'propertyId', 'stagingVersion', 'productionVersion', 'url']
+    columns = ['propertyName', 'propertyId', 'Batch', 'stagingVersion', 'productionVersion']
     if 'activationId' in df.columns.values.tolist():
         columns.append('activationId')
     df = df[columns].copy()
@@ -367,35 +369,36 @@ def get_property_advanced_metadata(args):
 
     logger.info(property_dict.keys())
     first = list(property_dict.keys())[0]
-    second = list(property_dict.keys())[1]
+    if len(property_list) > 1:
+        second = list(property_dict.keys())[1]
 
-    logger.critical('Same rule name but have different XML')
-    rules = same_rule(property_dict, first, second)
-    for rule in rules:
-        if not compare_xml(property_dict, first, second, rule):
-            print()
-            logger.warning(f' {rule}')
-            v1 = 'xml_first.xml'
-            v2 = 'xml_second.xml'
-            xml1 = property_dict[first][0][rule]
-            with open(v1, 'w') as f:
-                f.write(xml1)
-            # syntax = Syntax(xml1, "xml", theme="solarized-dark", line_numbers=True)
-            # console.print(syntax)
+        logger.critical('Same rule name but have different XML')
+        rules = same_rule(property_dict, first, second)
+        for rule in rules:
+            if not compare_xml(property_dict, first, second, rule):
+                print()
+                logger.warning(f' {rule}')
+                v1 = 'xml_first.xml'
+                v2 = 'xml_second.xml'
+                xml1 = property_dict[first][0][rule]
+                with open(v1, 'w') as f:
+                    f.write(xml1)
+                # syntax = Syntax(xml1, "xml", theme="solarized-dark", line_numbers=True)
+                # console.print(syntax)
 
-            xml2 = property_dict[second][0][rule]
-            with open(v2, 'w') as f:
-                f.write(xml2)
-            # syntax = Syntax(xml2, "xml", theme="solarized-dark", line_numbers=True)
-            # console.print(syntax)
-            cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
-            subprocess.run(cmd_text, shell=True)
+                xml2 = property_dict[second][0][rule]
+                with open(v2, 'w') as f:
+                    f.write(xml2)
+                # syntax = Syntax(xml2, "xml", theme="solarized-dark", line_numbers=True)
+                # console.print(syntax)
+                cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
+                subprocess.run(cmd_text, shell=True)
 
-    print()
-    logger.critical('Checking XML with different rule name')
-    rules = different_rule(property_dict, first, second)
-    for rule in rules:
-        compare_xml(property_dict, first, second, rule)
+        print()
+        logger.critical('Checking XML with different rule name')
+        rules = different_rule(property_dict, first, second)
+        for rule in rules:
+            compare_xml(property_dict, first, second, rule)
 
     df = pd.DataFrame(property_list)
     sheet['complete'] = df
