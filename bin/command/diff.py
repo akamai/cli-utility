@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -23,7 +24,8 @@ logger = lg.setup_logger()
 def collect_json(config_name: str, version: int, response_json):
     Path('output/diff/json').mkdir(parents=True, exist_ok=True)
     config_name = config_name.replace(' ', '_')
-    json_file = f'output/diff/json/{config_name}_v{version}.json'
+    dt_string = datetime.now().strftime('%Y%m%d_%H%M%s')
+    json_file = f'output/diff/json/{config_name}_v{version}_{dt_string}.json'
     logger.debug(json_file)
     files.write_json(json_file, response_json)
     return json_file
