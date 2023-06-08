@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from akamai_api.papi import Papi
 from pandarallel import pandarallel
+from rich import print_json
 from utils import _logging as lg
 from utils import dataframe
 from utils import files
@@ -286,8 +287,14 @@ class PapiWrapper(Papi):
 
     def get_property_version_detail(self, property_id: int, version: int, dict_key: str):
         '''
-        df['updatedDate'] = df[['propertyId', 'latestVersion']].parallel_apply(lambda x, y: papi.get_properties_detail(x,y, 'updatedDate'), axis=1)
+        df['ruleFormat'] = df.parallel_apply(
+            lambda row: papi.get_property_version_detail(
+            row['propertyId'],
+            int(row['productionVersion'])
+            if pd.notnull(row['productionVersion']) else row['latestVersion'],
+            'ruleFormat'), axis=1)
         '''
+        logger.debug(f'{property_id} {version} {dict_key}')
         detail = super().get_property_version_detail(property_id, version)
         try:
             return detail[0][dict_key]
@@ -399,7 +406,9 @@ class PapiWrapper(Papi):
         allgroups_df = allgroups_df.sort_values(by='index_1')
         allgroups_df = allgroups_df.reset_index(drop=True)
 
-        columns = ['updated_path', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount', 'sheet']
+        columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+        allgroups_df = allgroups_df.rename(columns={'updated_path': 'group_structure'})
+        allgroups_df['parentGroupId'] = allgroups_df['parentGroupId'].astype(str)
         allgroups_df = allgroups_df[columns].copy()
         return allgroups_df, columns
 
@@ -422,11 +431,20 @@ class PapiWrapper(Papi):
                 logger.debug(' Collecting updatedDate')
                 properties['updatedDate'] = properties.apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
 
+                logger.debug(' Collecting productId')
+                properties['productId'] = properties.parallel_apply(
+                    lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
+                                                                 if pd.notnull(row['productionVersion']) else row['latestVersion'],
+                                                                 'productId'), axis=1)
                 logger.debug(' Collecting ruleFormat')
-                properties['ruleFormat'] = properties.apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'ruleFormat'), axis=1)
+                properties['ruleFormat'] = properties.parallel_apply(
+                    lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
+                                                                 if pd.notnull(row['productionVersion']) else row['latestVersion'],
+                                                                 'ruleFormat'), axis=1)
 
                 logger.debug(' Collecting property url')
                 properties['propertyURL'] = properties.apply(lambda row: self.property_url(row['assetId'], row['groupId']), axis=1)
+                properties['url'] = properties.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
 
                 account_properties.append(properties)
         return account_properties
@@ -443,16 +461,57 @@ class PapiWrapper(Papi):
         limit, _ = super().property_rate_limiting(property_id, version)
         return limit
 
-    def get_property_ruletree(self, property_id: int, version: int):
-        _, ruletree = super().property_rate_limiting(property_id, version)
-        return ruletree
+    def get_property_ruletree(self, property_id: int, version: int, remove_tags: list | None = None):
+        status, ruletree = super().property_ruletree(property_id, version, remove_tags)
+        if status == 200:
+            return ruletree
+        else:
+            return 'XXX'
+
+    def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
+        status, response = super().get_ruleformat_schema(product_id, format_version)
+        if status == 200:
+            return response
+        else:
+            return 'XXX'
 
     # BEHAVIORS
     def get_behavior(self, rule_dict: dict, behavior: str) -> dict:
         rule_dict = rule_dict['definitions']['catalog']['behaviors']
-        data = {key: value for (key, value) in rule_dict.items() if behavior in key}
-        # options = data[behavior]['properties']['options']['properties']
+        matching = [key for key in rule_dict if behavior.lower() in key.lower()]
+        if not matching:
+            logger.critical(f'{behavior} not in catalog')
+            return {}
+        data = {key: rule_dict[key] for key in matching}
         return data
+
+    def get_behavior_option(self, behavior_dict: dict, behavior: str) -> dict:
+        matching = [key for key in behavior_dict if behavior.lower() in key.lower()]
+        if not matching:
+            logger.warning(f'{behavior} not in catalog\n')
+            return {}
+        matched_key = matching[0]
+        if 'options' not in behavior_dict[matched_key]['properties']:
+            logger.warning(f'{behavior} has no options')
+            return {}
+        else:
+            return behavior_dict[matched_key]['properties']['options']['properties']
+
+    @staticmethod
+    def behavior_count(property_name: str, rules: dict, target_behavior: str):
+        parent_count = 0
+
+        if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
+            for behavior in rules['behaviors']:
+                # if property_name == 'www.honda.com':
+                #    logger.info(behavior['name'])
+                if behavior['name'] == target_behavior:
+                    parent_count += 1
+            if 'children' in rules and isinstance(rules['children'], list):
+                for child_rule in rules['children']:
+                    child_count = PapiWrapper.behavior_count(property_name, child_rule, target_behavior)
+                    parent_count += child_count
+        return parent_count
 
     # ACTIVATION
     def activate_property_version(self, property_id: int, version: int, network: str, note: str, emails: list):

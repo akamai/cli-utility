@@ -14,6 +14,7 @@ import pandas as pd
 import swifter
 from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import papi as p
+from pandarallel import pandarallel
 from rich import print_json
 from rich.console import Console
 from rich.syntax import Syntax
@@ -42,6 +43,7 @@ def main(args):
         account = f"{account[0]['accountName']}".replace(' ', '_')
         logger.warning(f'Found account: {account}')
         account = account.replace('.', '_')
+        account = account.replace(',', '_')
         filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
     except:
         print_json(data=account)
@@ -75,8 +77,9 @@ def main(args):
         if total > 100:
             print()
             logger.critical(f'This account has {total} properties, please be patient')
-            logger.critical('200 properties take ~ 7 minutes')
-            logger.critical('800 properties take ~ 30 minutes')
+            logger.critical(' 200 properties take ~  7 minutes')
+            logger.critical(' 800 properties take ~ 30 minutes')
+            logger.critical('2200 properties take ~ 80 minutes')
             logger.critical('please consider using --group-id to reduce total properties')
 
     # collect properties detail for all groups
@@ -92,13 +95,27 @@ def main(args):
             account_properties = papi.property_summary(group_df)
             if len(account_properties) > 0:
                 properties_df = pd.concat(account_properties, axis=0)
-                logger.debug(properties_df.dtypes)
-                columns = ['accountId', 'contractId', 'groupName', 'groupId',
-                        'assetId', 'propertyId', 'propertyName', 'propertyURL',
-                        'latestVersion', 'stagingVersion', 'productionVersion',
-                        'updatedDate', 'ruleFormat',
-                        'hostname_count', 'hostname']
-                properties_df = properties_df[columns]
+
+                properties_df['ruletree'] = properties_df.parallel_apply(
+                    lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
+                                                           if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
+
+                columns = ['groupName', 'propertyName',
+                           'latestVersion', 'stagingVersion', 'productionVersion',
+                           'productId', 'ruleFormat']
+
+                if args.behavior:
+                    for behavior in args.behavior:
+                        properties_df[behavior] = properties_df.parallel_apply(
+                            lambda row: papi.behavior_count(row['propertyName'],
+                            row['ruletree']['rules'], behavior), axis=1)
+                    columns.extend(args.behavior)
+
+                del properties_df['propertyName']  # drop original column
+                properties_df = properties_df.rename(columns={'url': 'propertyName'})  # show column with hyperlink instead
+                properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
+                properties_df = properties_df[columns].copy()
+                properties_df = properties_df.reset_index(drop=True)
                 sheet['properties'] = properties_df
     files.write_xlsx(filepath, sheet, freeze_column=6)
 

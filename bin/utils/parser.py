@@ -114,21 +114,21 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                             subparsers, 'delivery-config',
                             help=f'{config_help}',
                             optional_arguments=[{'name': 'activate', 'help': 'activate property version', 'action': 'store_true'},
-                                                {'name': 'dryrun', 'help': 'verification only', 'action': 'store_true'},
-                                                {'name': 'load', 'help': 'filename'},
                                                 {'name': 'directory', 'help': 'directory where all CSVs are located'},
+                                                {'name': 'input', 'help': 'input excel file'},
+                                                {'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
                                                 {'name': 'ruletree', 'help': 'view ruletree structure format', 'action': 'store_true'},
                                                 {'name': 'advancedmetadata', 'help': 'view XML for all advanced metadata', 'action': 'store_true'},
-                                                {'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
-                                                {'name': 'version', 'help': 'version to activate'},
                                                 {'name': 'sheet', 'help': 'sheet name of the excel'},
                                                 {'name': 'filter', 'help': 'lookup keyword'},
                                                 {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'},
-                                                {'name': 'network', 'help': 'options: staging, production', 'default': 'staging', 'nargs': '+'},
-                                                {'name': 'note', 'help': 'activation note', 'nargs': '+'},
+                                                {'name': 'behavior', 'help': 'behaviors you want to audit on the property', 'nargs': '+'},
+                                                {'name': 'column', 'help': 'show column in excel output file ie url propertyId groupId contractId productId ruleFormat', 'nargs': '+'},
                                                 {'name': 'email', 'help': 'notificatin email(s) for activations', 'nargs': '+'},
-                                                {'name': 'group-id', 'help': 'provide at least one group without prefix grp_ ', 'nargs': '+'},
+                                                {'name': 'network', 'help': 'options: staging, production', 'default': 'staging', 'nargs': '+'},
                                                 {'name': 'property-id', 'help': 'provide at least one property with out prefix prp_', 'nargs': '+'},
+                                                {'name': 'group-id', 'help': 'provide at least one group without prefix grp_ ', 'nargs': '+'},
+                                                {'name': 'note', 'help': 'activation note', 'nargs': '+'},
                                                 ])
 
         actions['report'] = cls.create_sub_command(
@@ -142,9 +142,15 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
         actions['ruleformat'] = cls.create_sub_command(
                             subparsers, 'ruleformat',
                             help='information about ruleformat and behavior catalog',
-                            required_arguments=[{'name': 'product-id', 'help': 'product_id, https://techdocs.akamai.com/property-mgr/reference/id-prefixes#common-product-ids'}],
+                            required_arguments=[{'name': 'product-id', 'choices': ['prd_Site_Accel', 'prd_Fresca', 'prd_SPM',
+                                                                                   'prd_Site_Del', 'prd_Rich_Media_Accel', 'prd_IoT',
+                                                                                   'prd_Site_Defender',
+                                                                                   'prd_Download_Delivery', 'prd_Object_Delivery',
+                                                                                   'prd_Adaptive_Media_Delivery'],
+                                                 'help': 'product_id, https://techdocs.akamai.com/property-mgr/reference/id-prefixes#common-product-ids'}],
                             optional_arguments=[{'name': 'version', 'help': 'version, https://techdocs.akamai.com/property-mgr/reference/get-schemas-product-rule-format'},
                                                 {'name': 'behavior', 'help': 'behavior names contain', 'nargs': '+'},
+                                                {'name': 'show-behavior', 'help': 'only show behavior name', 'action': 'store_true'},
                                                 {'name': 'xlsx', 'help': 'save XLSX file locally', 'action': 'store_true'},
                                                 {'name': 'json', 'help': 'display JSON result to terminal', 'action': 'store_true'}])
 
@@ -160,6 +166,8 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter):
                             subparsers,
                             'test',
                             help='',
-                            optional_arguments=[{'name': 'account', 'help': 'keyword search at least 3 characters', 'nargs': '+'}])
+                            optional_arguments=[{'name': 'filter', 'help': 'lookup keyword'},
+                                                {'name': 'load', 'help': 'filename'},
+                                                {'name': 'sheet', 'help': 'sheet name of the excel'}])
 
         return parser.parse_args()
