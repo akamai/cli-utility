@@ -128,39 +128,28 @@ def main(args):
 
 def activate_from_excel(args):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-    if args.load:
-        df = load_config_from_xlsx(args.load, args.sheet, args.filter, papi)
+    df = load_config_from_xlsx(papi, args.file, args.sheet, args.filter)
 
-        network = args.network[0]
-        note = args.note
-        emails = args.email
+    network = args.network[0]
+    note = args.note
+    emails = args.email
 
-        df['activationId'] = df[['propertyId', 'stagingVersion']].apply(lambda x: papi.activate_property_version(*x, network, note, emails), axis=1)
-        df['activationId'] = df['activationId'].astype(int)
+    df['activationId'] = df[['propertyId', 'stagingVersion']].apply(lambda x: papi.activate_property_version(*x, network, note, emails), axis=1)
+    df['activationId'] = df['activationId'].astype(int)
 
-        logger.warning(f'Row count: {len(df)}')
-        logger.warning(f'New activationId\n{df}')
+    logger.warning(f'Row count: {len(df)}')
+    logger.warning(f'New activationId\n{df}')
 
-        active = pd.DataFrame()
-        while len(df) > len(active):
-            df['production_status'] = df[['propertyId', 'activationId', 'stagingVersion']].swifter.apply(lambda x: papi.activation_status(*x), axis=1)
-            active = df[df['production_status'] == 'ACTIVE'].copy()
-            print()
-            if len(df) == len(active):
-                logger.critical(f'Activation Completed\n{active}')
-            else:
-                logger.info(f'Activation In Progress\n{df}')
-                lg.countdown(60, msg='Checking again ... ')
-
-    else:
-        network = args.network[0]
-        for property_id in args.property_id:
-            status_code, resp = papi.activation_property_version(args.property_id, args.version, network, list(args.note), list(args.email))
-            try:
-                activation_id = resp.json()['activationLink'].split('?')[0].split('/')[-1]
-            except:
-                activation_id = 0
-            logger.info(f'{property_id},{args.version},{network},{status_code},{activation_id},{resp}')
+    active = pd.DataFrame()
+    while len(df) > len(active):
+        df['production_status'] = df[['propertyId', 'activationId', 'stagingVersion']].swifter.apply(lambda x: papi.activation_status(*x), axis=1)
+        active = df[df['production_status'] == 'ACTIVE'].copy()
+        print()
+        if len(df) == len(active):
+            logger.critical(f'Activation Completed\n{active}')
+        else:
+            logger.info(f'Activation In Progress\n{df}')
+            lg.countdown(60, msg='Checking again ... ')
 
 
 def activation_status(args):
@@ -318,97 +307,105 @@ def get_property_ruletree(args):
 
 def get_property_advanced_metadata(args):
     '''
-    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config --advancedmetadata --property-id 743088 672055 --version 10
+    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config advancedmetadata --property-id 743088 672055 --version 10
     '''
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     property_dict = {}
     console = Console()
     property_list = []
     sheet = {}
-    for property_id in args.property_id:
-        ruletree = papi.get_property_ruletree(property_id, args.version)
-        config, version = ruletree['propertyName'], ruletree['propertyVersion']
-        title = f'{config}_v{version}'
 
-        files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree)
+    for property_id in args.property_id:
+        ruletree_json = papi.get_property_ruletree(property_id, args.version)
+
+        property_name = papi.property_name
+        title = f'{property_name}_v{args.version}'
+        files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree_json)
 
         with open(f'output/ruletree/{title}_ruletree.json') as f:
             json_object = json.load(f)
 
-        property_name = f"{property_id}_{json_object['propertyName']}_v{json_object['propertyVersion']}"
-        excel_sheet = f"{property_id}_v{json_object['propertyVersion']}"
-        logger.warning(property_name)
+        property_name = f'{property_id}_{property_name}_v{args.version}'
+        excel_sheet = f'{property_id}_v{args.version}'
+        print('\n\n')
+        logger.info(property_name)
 
         target_data = []
-        ruletree_json = json_object['rules']
         papi.find_name_and_xml(ruletree_json, target_data)
 
         xml_data = {}
         for index, item in enumerate(target_data):
             xml_data[item['name']] = item['xml']
-            logger.debug(f"{index:>3}: {item['name']}")
-
             property_dict[property_name] = [xml_data]
-            '''
+
             if args.filter:
-                if item['name'] == args.filter:
-                    syntax = Syntax(item['xml'], "xml", theme="solarized-dark", line_numbers=True)
-                    console.print(syntax)
-            '''
+                for filter in args.filter:
+                    if filter in item['name']:
+                        logger.warning(f"{index:>3}: {item['name']}")
+                        syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=True)
+                        console.print(syntax)
+
+            else:
+                logger.info(f"{index:>3}: {item['name']}")
+                syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=True)
+                console.print(syntax)
+
         property_list.append(property_dict)
 
         sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=[f'xml_{excel_sheet}'])
         sheet_df.index.name = excel_sheet
         sheet[excel_sheet] = sheet_df
 
-    logger.info(property_dict.keys())
-    first = list(property_dict.keys())[0]
-    if len(property_list) > 1:
-        second = list(property_dict.keys())[1]
+    if property_dict:
+        logger.debug(property_dict.keys())
+        if len(property_list) == 2:
+            first = list(property_dict.keys())[0]
+            second = list(property_dict.keys())[1]
 
-        logger.critical('Same rule name but have different XML')
-        rules = papi.same_rule(property_dict, first, second)
-        for rule in rules:
-            if not papi.compare_xml(property_dict, first, second, rule):
-                print()
-                logger.warning(f' {rule}')
-                v1 = 'xml_first.xml'
-                v2 = 'xml_second.xml'
-                xml1 = property_dict[first][0][rule]
-                with open(v1, 'w') as f:
-                    f.write(xml1)
-                # syntax = Syntax(xml1, "xml", theme="solarized-dark", line_numbers=True)
-                # console.print(syntax)
+            rules = papi.same_rule(property_dict, first, second)
+            for rule in rules:
+                if not papi.compare_xml(property_dict, first, second, rule):
+                    print('\n\n\n')
+                    logger.critical('Same rule name but have different XML')
+                    logger.warning(f' {rule}')
+                    v1 = f'{first}.xml'
+                    v2 = f'{second}.xml'
+                    xml1 = property_dict[first][0][rule]
+                    with open(v1, 'w') as f:
+                        f.write(xml1)
+                    if args.noxml:
+                        syntax = Syntax(xml1, 'xml', theme='solarized-dark', line_numbers=True)
+                        console.print(syntax)
 
-                xml2 = property_dict[second][0][rule]
-                with open(v2, 'w') as f:
-                    f.write(xml2)
-                # syntax = Syntax(xml2, "xml", theme="solarized-dark", line_numbers=True)
-                # console.print(syntax)
-                cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
-                subprocess.run(cmd_text, shell=True)
+                    xml2 = property_dict[second][0][rule]
+                    with open(v2, 'w') as f:
+                        f.write(xml2)
+                    # syntax = Syntax(xml2, "xml", theme="solarized-dark", line_numbers=True)
+                    # console.print(syntax)
+                    cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
+                    subprocess.run(cmd_text, shell=True)
 
+            print('\n\n\n')
+            logger.critical('Checking XML with different rule name')
+            rules = papi.different_rule(property_dict, first, second)
+            for rule in rules:
+                papi.compare_xml(property_dict, first, second, rule)
+
+        df = pd.DataFrame(property_list)
+        sheet['complete'] = df
+        filepath = 'test.xlsx'
         print()
-        logger.critical('Checking XML with different rule name')
-        rules = papi.different_rule(property_dict, first, second)
-        for rule in rules:
-            papi.compare_xml(property_dict, first, second, rule)
+        files.write_xlsx(filepath, sheet, freeze_column=1, show_index=True)
 
-    df = pd.DataFrame(property_list)
-    sheet['complete'] = df
-    filepath = 'test.xlsx'
-    print()
-    files.write_xlsx(filepath, sheet, freeze_column=1, show_index=True)
-
-    if args.show:
-        if platform.system() != 'Darwin':
-            logger.info('--show argument is supported only on Mac OS')
-        else:
-            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+        if args.show:
+            if platform.system() != 'Darwin':
+                logger.info('--show argument is supported only on Mac OS')
+            else:
+                subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
 
 
 # BEGIN helper method
-def load_config_from_xlsx(filepath: str, sheet_name: str, filter: str, papi):
+def load_config_from_xlsx(papi, filepath: str, sheet_name: str | None = None, filter: str | None = None):
     '''
     excel must have header rows
     '''
@@ -423,7 +420,7 @@ def load_config_from_xlsx(filepath: str, sheet_name: str, filter: str, papi):
 
     df['url'] = df.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
 
-    columns = ['propertyName', 'propertyId', 'Batch', 'stagingVersion', 'productionVersion']
+    columns = ['propertyId', 'propertyName', 'stagingVersion', 'productionVersion']
     if 'activationId' in df.columns.values.tolist():
         columns.append('activationId')
     df = df[columns].copy()

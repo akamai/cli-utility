@@ -100,13 +100,16 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
                                          {'name': 'noxml', 'help': 'use this argument to hide XML from the terminal', 'action': 'store_false'}]},
                  {'name': 'activate',
                   'help': 'activate property',
-                  'required_arguments': [{'name': 'email', 'help': 'notificatin email(s) for activations', 'nargs': '+'},
+                  'required_arguments': [{'name': 'file', 'help': 'excel file'},
+                                         {'name': 'email', 'help': 'notificatin email(s) for activations', 'nargs': '+'},
                                          {'name': 'network', 'help': 'options: staging, production', 'default': 'staging', 'nargs': '+'},
-                                         {'name': 'property-id', 'help': 'provide at least one property with out prefix prp_', 'nargs': '+'},
-                                         {'name': 'note', 'help': 'activation note', 'nargs': '+'}]},
+                                         {'name': 'note', 'help': 'activation note', 'nargs': '+'}],
+                  'optional_arguments': [{'name': 'sheet', 'help': 'excel sheetname'},
+                                         {'name': 'filter-column', 'help': 'filter column of the excel table'},
+                                         {'name': 'property-id', 'help': 'provide at least one property without prefix prp_', 'nargs': '+'}]},
                  {'name': 'ruletree',
                   'help': 'view ruletree structure format',
-                  'required_arguments': [{'name': 'property-id', 'help': 'provide at least one property with out prefix prp_', 'nargs': '+'}],
+                  'required_arguments': [{'name': 'property-id', 'help': 'provide at least one property without prefix prp_', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'version', 'help': 'version'}]}
                 ]
 
@@ -135,8 +138,8 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
                                                                                    'prd_Adaptive_Media_Delivery'],
                                                  'help': 'product_id, https://techdocs.akamai.com/property-mgr/reference/id-prefixes#common-product-ids'}],
                             optional_arguments=[{'name': 'version', 'help': 'version, https://techdocs.akamai.com/property-mgr/reference/get-schemas-product-rule-format'},
+                                                {'name': 'nameonly', 'help': 'only show behavior name', 'action': 'store_true'},
                                                 {'name': 'behavior', 'help': 'behavior names contain', 'nargs': '+'},
-                                                {'name': 'show-behavior', 'help': 'only show behavior name', 'action': 'store_true'},
                                                 {'name': 'xlsx', 'help': 'save XLSX file locally', 'action': 'store_true'},
                                                 {'name': 'json', 'help': 'display JSON result to terminal', 'action': 'store_true'}])
 

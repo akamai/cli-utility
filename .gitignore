@@ -8,5 +8,6 @@
 .sh
 *.csv
 *.xlsx
+*.xml
 output
 config

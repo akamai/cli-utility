@@ -59,61 +59,74 @@ def get_ruleformat_schema(args):
     status_code, rule_dict = papi.get_ruleformat_schema(args.product_id, args.version)
     if status_code == 200:
         papi_wrapper = PapiWrapper()
-        if args.json and not args.behavior:
-            print_json(data=rule_dict)
-
-        displayed_columns = ['type', 'default', 'enum', 'minimum', 'maximum', 'items', 'maxItems', '$ref']
         if not args.behavior:
-            all_behaviors = list(rule_dict['definitions']['catalog']['behaviors'].keys())
+            behaviors_in_catalog = list(rule_dict['definitions']['catalog']['behaviors'].keys())
+            bic = list({v.lower(): v for v in behaviors_in_catalog}.keys())
+
+            behaviors_tmp = sorted(rule_dict['definitions']['behavior']['allOf'][0]['properties']['name']['enum'])
+            behaviors = list({v.lower(): v for v in behaviors_tmp}.keys())
+
+            if args.nameonly:
+                notin_catalog_temp = sorted(list(set(behaviors) - set(bic)))
+                notin_all_temp = sorted(list(set(bic) - set(behaviors)))
+
+                notin_catalog = list({v.lower(): v for v in notin_catalog_temp}.keys())
+                notin_all = list({v.lower(): v for v in notin_all_temp}.keys())
+
+                max_length = max(len(behaviors), len(behaviors_in_catalog), len(notin_catalog), len(notin_all))
+                behaviors_df = pd.DataFrame({
+                    'all': behaviors + [''] * (max_length - len(behaviors)),
+                    'has_catalog': behaviors_in_catalog + [''] * (max_length - len(behaviors_in_catalog)),
+                    'notin_catalog': notin_catalog + [None] * (max_length - len(notin_catalog)),
+                    'notin_all': notin_all + [None] * (max_length - len(notin_all)),
+
+                })
+
+                print()
+                print(tabulate(behaviors_df, headers=['all', 'has_catalog', 'notin_catalog', 'notin_all'], tablefmt='simple', showindex='always'))
+                sys.exit()
         else:
             behaviors = [tag for tag in args.behavior]
-
             all_data = []
             for behavior in behaviors:
-                tmp_data = papi_wrapper.get_behavior(rule_dict, behavior=behavior)
+                tmp_data = papi_wrapper.get_behavior(rule_dict, behavior)
                 all_data.append(tmp_data)
 
-            all_behaviors = []
+            behaviors = []
             for data in all_data:
-                all_behaviors.extend(list(data.keys()))
+                behaviors.extend(list(data.keys()))
 
         sheets = {}
-        for behavior in all_behaviors:
+        # for behavior in behaviors_in_catalog:
+        for behavior in behaviors:
             data = papi_wrapper.get_behavior(rule_dict, behavior)
-            options = data[behavior]['properties']['options']['properties']
-            df = pd.DataFrame.from_dict(options, orient='index')
-            df = df.fillna('')
-
-            behavior_options = list(df.columns)
-            diff = list(set(behavior_options) - set(displayed_columns))
-            if len(diff) > 0:
-                sys.exit(logger.error(f'{diff} not in chosen column'))
-            columns = sorted(list(set(behavior_options).intersection(displayed_columns)), reverse=True)
-            df = df[columns]
-            if 'type' in df.columns:
-                df = df.rename_axis('options').sort_values(by=['options', 'type'], ascending=[True, False])
-
-            if df.empty:
-                logger.error(f'{behavior:<50} no information available')
-            else:
-                width = []
-                for x in columns:
-                    if x in ['enum', 'items', 'maxItems', 'default']:
-                        width.append(30)
-                    else:
-                        width.append(None)
-                width.insert(0, None)
-                if not df.empty:
-                    logger.warning(behavior)
-                    df.index.name = behavior
-                    print(tabulate(df, headers='keys', tablefmt='grid', numalign='center', showindex='always', maxcolwidths=width))
+            if data:
+                options = papi_wrapper.get_behavior_option(data, behavior)
+                df = pd.DataFrame.from_dict(options, orient='index')
+                df = df.fillna('')
+                columns = list(df.columns)
+                df = df[columns]
+                if 'type' in df.columns:
+                    df = df.rename_axis('options').sort_values(by=['options', 'type'], ascending=[True, False])
+                if df.empty:
+                    logger.error(f'{behavior:<50} no information available')
                     print()
-                    updated_behavior = files.prepare_excel_sheetname(behavior)
-                    df = df.reset_index()
-                    sheets[updated_behavior] = df
-
-            # df = pd.DataFrame(all_behaviors, columns = ['behavior'])
-            # print(tabulate(df, headers='keys', tablefmt='github', numalign='center'))
+                else:
+                    width = []
+                    for x in columns:
+                        if x in ['enum', 'items', 'maxItems', 'default']:
+                            width.append(30)
+                        else:
+                            width.append(None)
+                    width.insert(0, None)
+                    if not df.empty:
+                        logger.warning(behavior)
+                        df.index.name = behavior
+                        print(tabulate(df, headers='keys', tablefmt='grid', numalign='center', showindex='always', maxcolwidths=width))
+                        print()
+                        updated_behavior = files.prepare_excel_sheetname(behavior)
+                        df = df.reset_index()
+                        sheets[updated_behavior] = df
 
         if args.xlsx:
             filepath = 'output/ruleformat.xlsx'
@@ -125,7 +138,7 @@ def get_ruleformat_schema(args):
                 toc_dict['TOC'] = df
             sheets = {**toc_dict, **sheets}
             files.write_xlsx(filepath, dict_value=sheets, freeze_column=0, show_index=True)
-            logger.debug(f'{all_behaviors=}')
+            logger.debug(f'{behaviors=}')
 
             if platform.system() != 'Darwin':
                 logger.info('--show argument is supported only on Mac OS')
