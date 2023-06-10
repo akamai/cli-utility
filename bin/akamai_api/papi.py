@@ -157,19 +157,15 @@ class Papi(AkamaiSession):
             if hostname == 'Others':
                 logger.critical(f'{hostname=}')
                 files.write_json('output/error_others.json', response.json())
-                return 'ERROR-Others'
-
+                return 'ERROR_Others'
             try:
                 property_items = response.json()['versions']['items'][0]
                 return property_items['propertyName']
             except:
-                if hostname == 'minor-qa-www.samsclub.com':
-                    logger.critical(f'{hostname=}')
-                    files.write_json('output/error_x.json', response.json())
-                return 'ERROR-X'
+                return 'ERROR_X'
         else:
             files.write_json(f'output/error_{response.status_code}.json', response.json())
-            return 'ERROR'
+            return f'ERROR_{response.status_code}'
 
     # PROPERTIES
     def get_propertyname_per_group(self, group_id: int, contract_id: str) -> list:
@@ -321,7 +317,7 @@ class Papi(AkamaiSession):
             return resp.headers, ruletree_response.json()
 
     # RULETREE
-    def property_ruletree(self, property_id: str, version: int, remove_tags: list | None = None):
+    def property_ruletree(self, property_id: int, version: int, remove_tags: list | None = None):
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
         params = {'contractId': self.contract_id,
                   'groupId': self.group_id,
@@ -329,7 +325,7 @@ class Papi(AkamaiSession):
                   'validateMode': 'full',
                  }
         resp = self.session.get(url, headers=self.headers, params=params)
-
+        logger.debug(f'{resp.url}')
         # tags we are not interested to compare
         self.property_name = resp.json()['propertyName']
         ignore_keys = ['etag', 'errors', 'warnings', 'ruleFormat', 'comments',
@@ -392,9 +388,10 @@ class Papi(AkamaiSession):
         logger.debug(resp.url)
         if resp.status_code == 201:
             return resp.status_code, resp.json()['activationLink']
-        elif resp.status_code == 422:
+        elif resp.status_code == 422:  # pending activation or deactivation.
+            logger.critical(resp.json()['detail'])
             return resp.status_code, resp.json()['detail']
-        elif resp.status_code == 429:
+        elif resp.status_code == 429:  # Hit rate limit
             return resp.status_code, resp.json()['title']
         else:
             return resp.status_code, resp.json()

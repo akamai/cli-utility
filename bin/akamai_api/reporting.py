@@ -26,16 +26,21 @@ class Reporting(AkamaiSession):
 
     def hits_by_hostname(self, start: str, end: str):
         url = f'{self.MODULE}/reports/hostname-hits-by-hostname/versions/1/report-data'
-        # start = '2023-02-17T00:00:00Z'
-        # end = '2023-05-17T00:00:00Z'
-        query_params = f'?start={start}&end={end}&internal=DAY&trace=true'
-        url = self.form_url(f'{url}{query_params}')
+        params = {
+            'start': start,
+            'end': end,
+            'internal': 'DAY',
+            'trace': 'true'
+        }
+        if self.account_switch_key is not None:
+            params['accountSwitchKey'] = self.account_switch_key
+
         payload = {'objectType': 'cpcode',
                    'objectIds': ['all'],
                    'metrics': ['edgeHits'],
                    'limit': 10000}
 
-        response = self.session.post(f'{url}', json=payload, headers=self.headers)
+        response = self.session.post(f'{url}', json=payload, params=params, headers=self.headers)
         if response.status_code == 200:
             files.write_json('output/reporting_trace.json', response.json())
             return response.json()['data']

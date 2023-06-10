@@ -12,11 +12,12 @@ from pandarallel import pandarallel
 from rich import print_json
 from rich.console import Console
 from rich.table import Table
+from tabulate import tabulate
+from utils import _logging as lg
 from utils import files
-from utils._logging import setup_logger
 
 
-logger = setup_logger()
+logger = lg.setup_logger()
 
 
 def offload(args):
@@ -40,6 +41,10 @@ def offload(args):
     sheets = {}
     sheets['hostname_hit'] = df
     sheets['hit_by_property'] = stat_df
+    top_five = stat_df.head(5)
+    logger.warning('Top 5 hits, for a full list please check excel file')
+    print(tabulate(top_five, headers=['hostname', 'edgeHits'], tablefmt='simple', showindex='false'))
+    print()
     files.write_xlsx('output/reporting_offload_by_host.xlsx', sheets)
 
 

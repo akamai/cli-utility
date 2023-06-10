@@ -5,7 +5,6 @@ from time import perf_counter
 from command import admin
 from command import delivery_config as dc
 from command import diff
-from command import ex
 from command import log
 from command import report
 from command import ruleformat
