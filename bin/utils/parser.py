@@ -29,8 +29,16 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
                          max_help_position=30)
 
     @classmethod
-    def create_main_command(cls, subparsers, name, help, required_arguments=None, optional_arguments=None, subcommands=None, options=None):
-        action = subparsers.add_parser(name=name, help=help, add_help=True, formatter_class=OnelineArgumentFormatter)
+    def create_main_command(cls, subparsers, name, help,
+                            required_arguments=None,
+                            optional_arguments=None,
+                            subcommands=None,
+                            options=None):
+
+        action = subparsers.add_parser(name=name,
+                                       help=help,
+                                       add_help=True,
+                                       formatter_class=OnelineArgumentFormatter)
 
         if subcommands:
             subparsers = action.add_subparsers(title='Available Commands', metavar='', dest='subcommand')
@@ -133,11 +141,12 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
         actions['ruleformat'] = cls.create_main_command(
                             subparsers, 'ruleformat',
                             help='information about ruleformat and behavior catalog',
-                            required_arguments=[{'name': 'product-id', 'choices': ['prd_Site_Accel', 'prd_Fresca', 'prd_SPM',
-                                                                                   'prd_Site_Del', 'prd_Rich_Media_Accel', 'prd_IoT',
-                                                                                   'prd_Site_Defender',
-                                                                                   'prd_Download_Delivery', 'prd_Object_Delivery',
-                                                                                   'prd_Adaptive_Media_Delivery'],
+                            required_arguments=[{'name': 'product-id',
+                                                 'choices': ['prd_Site_Accel', 'prd_Fresca', 'prd_SPM',
+                                                             'prd_Site_Del', 'prd_Rich_Media_Accel', 'prd_IoT',
+                                                             'prd_Site_Defender',
+                                                             'prd_Download_Delivery', 'prd_Object_Delivery',
+                                                             'prd_Adaptive_Media_Delivery'],
                                                  'help': 'product_id, https://techdocs.akamai.com/property-mgr/reference/id-prefixes#common-product-ids'}],
                             optional_arguments=[{'name': 'version', 'help': 'version, https://techdocs.akamai.com/property-mgr/reference/get-schemas-product-rule-format'},
                                                 {'name': 'nameonly', 'help': 'only show behavior name', 'action': 'store_true'},

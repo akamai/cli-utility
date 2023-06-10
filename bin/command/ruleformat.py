@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from akamai_api.papi import Papi
 from akamai_utils.papi import PapiWrapper
@@ -59,49 +60,60 @@ def get_ruleformat_schema(args):
     status_code, rule_dict = papi.get_ruleformat_schema(args.product_id, args.version)
     if status_code == 200:
         papi_wrapper = PapiWrapper()
-        if not args.behavior:
-            behaviors_in_catalog = list(rule_dict['definitions']['catalog']['behaviors'].keys())
-            bic = list({v.lower(): v for v in behaviors_in_catalog}.keys())
 
-            behaviors_tmp = sorted(rule_dict['definitions']['behavior']['allOf'][0]['properties']['name']['enum'])
-            behaviors = list({v.lower(): v for v in behaviors_tmp}.keys())
+        behaviors_in_catalog = list(rule_dict['definitions']['catalog']['behaviors'].keys())
+        bic = list({v.lower(): v for v in behaviors_in_catalog}.keys())
 
-            if args.nameonly:
-                notin_catalog_temp = sorted(list(set(behaviors) - set(bic)))
-                notin_all_temp = sorted(list(set(bic) - set(behaviors)))
+        behaviors_tmp = sorted(rule_dict['definitions']['behavior']['allOf'][0]['properties']['name']['enum'])
+        behaviors = list({v.lower(): v for v in behaviors_tmp}.keys())
 
-                notin_catalog = list({v.lower(): v for v in notin_catalog_temp}.keys())
-                notin_all = list({v.lower(): v for v in notin_all_temp}.keys())
+        notin_catalog_temp = sorted(list(set(behaviors) - set(bic)))
+        notin_all_temp = sorted(list(set(bic) - set(behaviors)))
 
-                max_length = max(len(behaviors), len(behaviors_in_catalog), len(notin_catalog), len(notin_all))
-                behaviors_df = pd.DataFrame({
-                    'all': behaviors + [''] * (max_length - len(behaviors)),
-                    'has_catalog': behaviors_in_catalog + [''] * (max_length - len(behaviors_in_catalog)),
-                    'notin_catalog': notin_catalog + [None] * (max_length - len(notin_catalog)),
-                    'notin_all': notin_all + [None] * (max_length - len(notin_all)),
+        notin_catalog = list({v.lower(): v for v in notin_catalog_temp}.keys())
+        notin_all = list({v.lower(): v for v in notin_all_temp}.keys())
 
-                })
+        max_length = max(len(behaviors), len(behaviors_in_catalog), len(notin_catalog), len(notin_all))
+        behaviors_df = pd.DataFrame({
+            'all': behaviors + [''] * (max_length - len(behaviors)),
+            'has_catalog': behaviors_in_catalog + [''] * (max_length - len(behaviors_in_catalog)),
+            'notin_catalog': notin_catalog + [None] * (max_length - len(notin_catalog)),
+            'notin_all': notin_all + [None] * (max_length - len(notin_all)),
 
-                print()
-                print(tabulate(behaviors_df, headers=['all', 'has_catalog', 'notin_catalog', 'notin_all'], tablefmt='simple', showindex='always'))
-                sys.exit()
+        })
+
+        if args.behavior:
+            mask = np.column_stack([behaviors_df[col].astype(str).str.contains('|'.join(args.behavior), na=False) for col in behaviors_df])
+            behaviors_df = behaviors_df.loc[mask.any(axis=1)]
+            behaviors_df = behaviors_df.reset_index(drop=True)
+
+        print()
+        if not behaviors_df.empty:
+            print(tabulate(behaviors_df, headers=['all', 'has_catalog', 'notin_catalog', 'notin_all'], tablefmt='simple', showindex='always'))
+        else:
+            logger.info(f'{args.behavior} not found, try another behavior')
+
+        print()
+        if args.nameonly is True:
+            sys.exit()
         else:
             behaviors = [tag for tag in args.behavior]
             all_data = []
             for behavior in behaviors:
                 tmp_data = papi_wrapper.get_behavior(rule_dict, behavior)
-                all_data.append(tmp_data)
+                if tmp_data:
+                    all_data.append(tmp_data)
 
-            behaviors = []
+            behaviors = []  # get actual behaviors returned because cli only use name contains
             for data in all_data:
                 behaviors.extend(list(data.keys()))
 
         sheets = {}
-        # for behavior in behaviors_in_catalog:
         for behavior in behaviors:
-            data = papi_wrapper.get_behavior(rule_dict, behavior)
+            behavior_json = papi_wrapper.get_behavior(rule_dict, behavior)
             if data:
-                options = papi_wrapper.get_behavior_option(data, behavior)
+
+                options = papi_wrapper.get_behavior_option(behavior_json, behavior)
                 df = pd.DataFrame.from_dict(options, orient='index')
                 df = df.fillna('')
                 columns = list(df.columns)
@@ -120,15 +132,18 @@ def get_ruleformat_schema(args):
                             width.append(None)
                     width.insert(0, None)
                     if not df.empty:
+                        print()
                         logger.warning(behavior)
                         df.index.name = behavior
                         print(tabulate(df, headers='keys', tablefmt='grid', numalign='center', showindex='always', maxcolwidths=width))
-                        print()
+                        if args.json:
+                            behavior_option_json = behavior_json[behavior]['properties']['options']['properties']
+                            print_json(data=behavior_option_json)
                         updated_behavior = files.prepare_excel_sheetname(behavior)
                         df = df.reset_index()
                         sheets[updated_behavior] = df
 
-        if args.xlsx:
+        if args.xlsx and sheets:
             filepath = 'output/ruleformat.xlsx'
             toc = list(sheets.keys())
             toc_dict = {}
@@ -149,7 +164,8 @@ def get_ruleformat_schema(args):
         Path('output/ruleformat').mkdir(parents=True, exist_ok=True)
         local_file = f'output/ruleformat/{args.product_id}_{args.version}.json'
         files.write_json(local_file, rule_dict)
-        logger.info(f'Rule JSON format downloaded: {cwd}/{local_file}')
+        print()
+        logger.info(f'Full rule JSON format downloaded: {cwd}/{local_file}')
 
     elif status_code == 404:
         logger.error(f'version {args.version} not found')
