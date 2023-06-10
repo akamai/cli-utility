@@ -214,20 +214,20 @@ def activation_status(args):
 
 def get_property_ruletree(args):
     '''
-    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config --property-id 219351 --version 27 --ruletree --show
+    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config ruletree --property-id 219351 --version 27 --ruletree --show
     '''
 
     Path('output/ruletree').mkdir(parents=True, exist_ok=True)
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     for property_id in args.property_id:
-        limit = papi.get_property_limit(property_id, args.version)
-
-        df = pd.DataFrame.from_dict(limit, orient='index')
-        print(tabulate(df, headers='keys', tablefmt='github', numalign='center', showindex='always'))
+        limit, full_ruletree = papi.get_property_limit(property_id, args.version)
+        if args.show_limit:
+            df = pd.DataFrame.from_dict(limit, orient='index')
+            print(tabulate(df, headers=['value'], tablefmt='github', showindex='always'))
 
         ruletree = papi.get_property_ruletree(property_id, args.version)
-        config, version = ruletree['propertyName'], ruletree['propertyVersion']
+        config, version = full_ruletree['propertyName'], full_ruletree['propertyVersion']
         title = f'{config}_v{version}'
 
         files.write_json(f'output/ruletree/{title}_limit.json', limit)
@@ -264,7 +264,8 @@ def get_property_ruletree(args):
                 description_limit = 130
                 max_depth = max(depth)
                 logger.debug(f'{max_depth=}')
-                logger.warning('To display max depth, add --show y')
+                if args.show_depth is False:
+                    logger.warning('To display max depth, add --show-depth')
                 tree_depth_dict = dict(zip(rules, depth))
 
                 if max_depth > 0:
@@ -281,7 +282,7 @@ def get_property_ruletree(args):
                 # override TREE_FILE and include line number
                 # Default rule is considered Zero
                 # Print line number starts at 1
-                if max_depth > 0 and args.show:
+                if max_depth > 0 and args.show_depth:
                     with open(TREE_FILE, 'w') as file:
                         header_1 = f'Max nested tree: {max_depth}'
                         header_2 = 'Line No.    Rule #    Tree Depth.Rule #    Rule Name'

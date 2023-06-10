@@ -110,7 +110,9 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
                  {'name': 'ruletree',
                   'help': 'view ruletree structure format',
                   'required_arguments': [{'name': 'property-id', 'help': 'provide at least one property without prefix prp_', 'nargs': '+'}],
-                  'optional_arguments': [{'name': 'version', 'help': 'version'}]}
+                  'optional_arguments': [{'name': 'version', 'help': 'version'},
+                                         {'name': 'show-depth', 'help': 'to display max depth', 'action': 'store_true'},
+                                         {'name': 'show-limit', 'help': 'show config limit ie. max-nested-rules-limit', 'action': 'store_true'}]}
                 ]
 
         actions['delivery-config'] = cls.create_main_command(

@@ -458,8 +458,8 @@ class PapiWrapper(Papi):
         return super().get_properties_ruletree_digest(property_id, version)
 
     def get_property_limit(self, property_id: int, version: int):
-        limit, _ = super().property_rate_limiting(property_id, version)
-        return limit
+        limit, full_ruletree = super().property_rate_limiting(property_id, version)
+        return limit, full_ruletree
 
     def get_property_ruletree(self, property_id: int, version: int, remove_tags: list | None = None):
         status, ruletree = super().property_ruletree(property_id, version, remove_tags)
