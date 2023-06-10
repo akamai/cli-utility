@@ -20,9 +20,6 @@ if __name__ == '__main__':
     args = Parser.get_args()
     start_time = perf_counter()
 
-    if args.command == 'test':
-        ex.main(args)
-
     if args.command == 'search':
         admin.lookup_account(args)
 
@@ -42,12 +39,12 @@ if __name__ == '__main__':
             report.offload(args)
 
     if args.command == 'delivery-config':
-        if args.activate is True:
-            dc.activate_from_excel(args)
-        elif args.ruletree:
-            dc.get_property_ruletree(args)
-        elif args.advancedmetadata:
+        if args.subcommand == 'advancedmetadata':
             dc.get_property_advanced_metadata(args)
+        elif args.subcommand == 'activate':
+            dc.activate_from_excel(args)
+        elif args.subcommand == 'ruletree':
+            dc.get_property_ruletree(args)
         else:
             dc.main(args)
 
