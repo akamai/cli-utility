@@ -152,7 +152,10 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
                                                 {'name': 'nameonly', 'help': 'only show behavior name', 'action': 'store_true'},
                                                 {'name': 'behavior', 'help': 'behavior names contain', 'nargs': '+'},
                                                 {'name': 'xlsx', 'help': 'save XLSX file locally', 'action': 'store_true'},
-                                                {'name': 'json', 'help': 'display JSON result to terminal', 'action': 'store_true'}])
+                                                {'name': 'sample', 'help': 'show json with sample data', 'action': 'store_true'},
+                                                {'name': 'json', 'help': 'display result in JSON format', 'action': 'store_true'},
+                                                {'name': 'table', 'help': 'display result as table', 'action': 'store_true'}
+                                                ])
 
         actions['log'] = cls.create_main_command(
                             subparsers,

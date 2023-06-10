@@ -488,14 +488,20 @@ class PapiWrapper(Papi):
     def get_behavior_option(self, behavior_dict: dict, behavior: str) -> dict:
         matching = [key for key in behavior_dict if behavior.lower() in key.lower()]
         if not matching:
-            logger.warning(f'{behavior} not in catalog\n')
+            logger.critical(f'{behavior} not in catalog')
             return {}
         matched_key = matching[0]
         if 'options' not in behavior_dict[matched_key]['properties']:
             logger.warning(f'{behavior} has no options')
             return {}
         else:
-            return behavior_dict[matched_key]['properties']['options']['properties']
+            value = behavior_dict[matched_key]['properties']['options']['properties']
+            if not value:
+                logger.error(f'{behavior} has no options')
+                print()
+                return value
+            else:
+                return value
 
     @staticmethod
     def behavior_count(property_name: str, rules: dict, target_behavior: str):
