@@ -47,7 +47,10 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
                 subcommand_help = subcommand['help']
                 subcommand_required = subcommand.get('required_arguments', None)
                 subcommand_optional = subcommand.get('optional_arguments', None)
-                cls.create_main_command(subparsers, subcommand_name, subcommand_help, subcommand_required, subcommand_optional, subcommands=subcommand.get('subcommands', None))
+                cls.create_main_command(subparsers, subcommand_name, subcommand_help,
+                                        subcommand_required,
+                                        subcommand_optional,
+                                        subcommands=subcommand.get('subcommands', None))
 
         cls.add_arguments(action, required_arguments, optional_arguments)
 
@@ -194,6 +197,7 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
 
     @classmethod
     def add_arguments(cls, action, required_arguments=None, optional_arguments=None):
+
         if required_arguments:
             required = action.add_argument_group('Required Arguments')
             for arg in required_arguments:
@@ -220,3 +224,4 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
 
             optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)
             optional.add_argument('-p', '--print-width', action='store_true', help=argparse.SUPPRESS)
+            optional.add_argument('-v', '--verbose', action='store_true', help=argparse.SUPPRESS)
