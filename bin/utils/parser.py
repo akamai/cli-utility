@@ -217,3 +217,6 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
                     optional.add_argument(f'--{name}', required=False, action=action_value, **arg)
                 except KeyError:
                     optional.add_argument(f'--{name}', metavar='', required=False, **arg)
+
+            optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)
+            optional.add_argument('-p', '--print-width', action='store_true', help=argparse.SUPPRESS)
