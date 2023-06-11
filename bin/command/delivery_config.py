@@ -97,7 +97,7 @@ def main(args):
                 properties_df = pd.concat(account_properties, axis=0)
 
                 properties_df['ruletree'] = properties_df.parallel_apply(
-                    lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
+                    lambda row: papi.property_rate_limiting(row['propertyId'], int(row['productionVersion'])
                                                            if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
 
                 columns = ['groupName', 'propertyName',
