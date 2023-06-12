@@ -1,20 +1,8 @@
 from __future__ import annotations
 
 import argparse
-from argparse import HelpFormatter
-from operator import attrgetter
 
 import rich_argparse as rap
-from utils._logging import setup_logger
-
-logger = setup_logger()
-
-
-class SortingHelpFormatter(HelpFormatter):
-    # https://stackoverflow.com/questions/12268602/sort-argparse-help-alphabetically
-    def add_arguments(self, actions):
-        actions = sorted(actions, key=attrgetter('help'))
-        super().add_arguments(actions)
 
 
 class OnelineArgumentFormatter(rap.ArgumentDefaultsRichHelpFormatter):
@@ -206,9 +194,9 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
                 try:
                     action_value = arg['action']
                     del arg['action']
-                    required.add_argument(f'--{name}', required=True, action=action_value, **arg)
+                    required.add_argument(f'--{name}', action=action_value, **arg)
                 except KeyError:
-                    required.add_argument(f'--{name}', metavar='', required=True, **arg)
+                    required.add_argument(f'--{name}', metavar='', **arg)
 
         if optional_arguments:
             optional = action.add_argument_group('Optional Arguments')
