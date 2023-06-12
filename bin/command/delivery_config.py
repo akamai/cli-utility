@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -42,8 +43,7 @@ def main(args):
     try:
         account = f"{account[0]['accountName']}".replace(' ', '_')
         logger.warning(f'Found account: {account}')
-        account = account.replace('.', '_')
-        account = account.replace(',', '_')
+        account = re.sub(r'[.,]|_{2}|Direct_Customer|Indirect_Customer|_(?=\.\w+)', '', account)  # shorten account name
         filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
     except:
         print_json(data=account)
@@ -56,13 +56,12 @@ def main(args):
 
     sheet = {}
     allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)  # change groupId to str before load into excel
-    sheet['summary'] = allgroups_df
 
     if args.group_id:
         groups = args.group_id
         group_df = allgroups_df[allgroups_df['groupId'].isin(groups)].copy()
         group_df = group_df.reset_index(drop=True)
-        sheet['filter'] = group_df
+
     else:
         group_df = allgroups_df[allgroups_df['propertyCount'] > 0].copy()
         group_df = group_df.reset_index(drop=True)
@@ -97,26 +96,56 @@ def main(args):
                 properties_df = pd.concat(account_properties, axis=0)
 
                 properties_df['ruletree'] = properties_df.parallel_apply(
-                    lambda row: papi.property_rate_limiting(row['propertyId'], int(row['productionVersion'])
+                    lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
                                                            if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
 
-                columns = ['groupName', 'propertyName', 'propertyId',
+                columns = ['accountId', 'groupName', 'propertyName', 'propertyId',
                            'latestVersion', 'stagingVersion', 'productionVersion',
-                           'productId', 'ruleFormat']
+                           'productId', 'ruleFormat', 'hostname_count', 'hostname']
 
                 if args.behavior:
                     for behavior in args.behavior:
                         properties_df[behavior] = properties_df.parallel_apply(
                             lambda row: papi.behavior_count(row['propertyName'],
                             row['ruletree']['rules'], behavior), axis=1)
-                    columns.extend(args.behavior)
 
                 del properties_df['propertyName']  # drop original column
                 properties_df = properties_df.rename(columns={'url': 'propertyName'})  # show column with hyperlink instead
+                properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
                 properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
+
+                if 'cpCode' in properties_df.columns.values:
+                    properties_df['cpCode_unique_value'] = properties_df.apply(
+                            lambda row: papi.behavior_value(row['propertyName'],
+                            row['ruletree']['rules'], target_behavior='cpCode'), axis=1)
+                properties_df['cpCode_unique_value'] = properties_df[['cpCode_unique_value']].parallel_apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
+
+                behavior_columns = sorted(args.behavior + ['cpCode_unique_value'])
+                columns.extend(behavior_columns)
+
+                properties_df['propertyId'] = properties_df['propertyId'].astype(str)
                 properties_df = properties_df[columns].copy()
                 properties_df = properties_df.reset_index(drop=True)
                 sheet['properties'] = properties_df
+
+    # add hyperlink to groupName column
+    group_df['groupURL'] = group_df.apply(lambda row: papi.group_url(row['groupId']), axis=1)
+    group_df['groupName_url'] = group_df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['groupName']), axis=1)
+    del group_df['groupURL']
+    del group_df['groupName']
+    group_df = group_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
+    summary_columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+    sheet['filter'] = group_df[summary_columns]
+
+    # add hyperlink to groupName column
+    allgroups_df['groupURL'] = allgroups_df.apply(lambda row: papi.group_url(row['groupId']), axis=1)
+    allgroups_df['groupName_url'] = allgroups_df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['groupName']), axis=1)
+    del allgroups_df['groupURL']
+    del allgroups_df['groupName']
+    allgroups_df = allgroups_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
+    summary_columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+    sheet['summary'] = allgroups_df[summary_columns]
+
     files.write_xlsx(filepath, sheet, freeze_column=6)
 
     if args.show:

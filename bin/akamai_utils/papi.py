@@ -35,6 +35,9 @@ class PapiWrapper(Papi):
         return super().get_edgehostnames(contract_id, group_id)
 
     # GROUPS
+    def group_url(self, group_id: int):
+        return f'https://control.akamai.com/apps/property-manager/#/groups/{group_id}/properties'
+
     def create_groups_dataframe(self, groups: list) -> pd.dataframe:
         df = pd.DataFrame(groups)
         df['path'] = df.apply(lambda row: self.build_path(row, groups), axis=1)
@@ -419,7 +422,7 @@ class PapiWrapper(Papi):
         account_properties = []
         print()
         for index, row in df.iterrows():
-            logger.warning(f"{index:<5} {row['groupName']:<50} {row['propertyCount']}")
+            logger.warning(f"{index:<5} {row['groupId']:<12} {row['groupName']:<50} {row['propertyCount']}")
             properties = self.get_properties_detail_per_group(row['groupId'], row['contractId'])
             if not properties.empty:
                 properties['propertyId'] = properties['propertyId'].astype('Int64')
@@ -552,8 +555,6 @@ class PapiWrapper(Papi):
 
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
-                # if property_name == 'www.honda.com':
-                #    logger.info(behavior['name'])
                 if behavior['name'] == target_behavior:
                     parent_count += 1
             if 'children' in rules and isinstance(rules['children'], list):
@@ -561,6 +562,20 @@ class PapiWrapper(Papi):
                     child_count = PapiWrapper.behavior_count(property_name, child_rule, target_behavior)
                     parent_count += child_count
         return parent_count
+
+    @staticmethod
+    def behavior_value(property_name: str, rules: dict, target_behavior: str):
+        values = []
+
+        if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
+            for behavior in rules['behaviors']:
+                if behavior['name'] == target_behavior:
+                    values.append(str(behavior['options']['value']['id']))
+            if 'children' in rules and isinstance(rules['children'], list):
+                for child_rule in rules['children']:
+                    child_values = PapiWrapper.behavior_value(property_name, child_rule, target_behavior)
+                    values.extend(child_values)
+        return list(set(values))
 
     # ACTIVATION
     def activate_property_version(self, property_id: int, version: int, network: str, note: str, emails: list):

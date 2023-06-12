@@ -52,7 +52,6 @@ def make_xlsx_hyperlink_to_another_sheet(filepath: str, url: str, cell: str) -> 
 
 
 def make_xlsx_hyperlink_to_external_link(url: str, alias: str) -> str:
-    url = f'{url}{alias}'
     if alias:
         return f'=HYPERLINK("{url}", "{alias}")'
     else:
