@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 import rich_argparse as rap
 
@@ -10,11 +11,40 @@ class OnelineArgumentFormatter(rap.ArgumentDefaultsRichHelpFormatter):
         super().__init__(prog, **kwargs)
         self._max_help_position = max_help_position
 
+    def print_usage(self, file=None):
+        if file is None:
+            file = sys.stdout
+        self._print_message(self.usage, file, False)
 
-class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.ArgumentParser):
+    def _format_usage(self, usage, actions, groups, prefix):
+        # Do not include the default usage line
+        return 'Usage:'
+
+
+class CustomHelpFormatter(rap.RichHelpFormatter):
+    def __init__(self, prog, indent_increment=2, max_help_position=30, width=None):
+        super().__init__(prog, indent_increment, max_help_position, width)
+
+
+class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
     def __init__(self, prog):
         super().__init__(prog,
                          max_help_position=30)
+
+    def format_usage(self):
+        # Check if the current command is a subcommand
+        is_subcommand = self._is_subcommand()
+
+        # Return the default usage for subcommands
+        if is_subcommand:
+            return ''
+
+        # Return the original usage for the main command
+        return super().format_usage()
+
+    def _is_subcommand(self):
+        # Check if the current command is a subcommand by examining the presence of subparsers
+        return hasattr(self, '_subparsers') and self._subparsers is not None
 
     @classmethod
     def create_main_command(cls, subparsers, name, help,
@@ -27,9 +57,11 @@ class AkamaiParser(rap.RichHelpFormatter, argparse.HelpFormatter, argparse.Argum
                                        help=help,
                                        add_help=True,
                                        formatter_class=OnelineArgumentFormatter)
+        action.description = help  # Set the subcommand's help message as the description
+        action.usage = f'%(prog)s {name} [options]'  # Set a custom usage format
 
         if subcommands:
-            subparsers = action.add_subparsers(title='Available Commands', metavar='', dest='subcommand')
+            subparsers = action.add_subparsers(title=name, metavar='', dest='subcommand')
             for subcommand in subcommands:
                 subcommand_name = subcommand['name']
                 subcommand_help = subcommand['help']
