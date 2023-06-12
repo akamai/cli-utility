@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 
 import numpy as np
@@ -7,6 +8,8 @@ import pandas as pd
 from akamai_api.papi import Papi
 from pandarallel import pandarallel
 from rich import print_json
+from rich.console import Console
+from rich.syntax import Syntax
 from utils import _logging as lg
 from utils import dataframe
 from utils import files
@@ -467,6 +470,46 @@ class PapiWrapper(Papi):
             return ruletree
         else:
             return 'XXX'
+
+    def get_property_advanced_xml(self, property_id: int, version: int, type: str, displayxml: bool) -> dict:
+        ruletree_json = self.get_property_ruletree(property_id, version)
+        title = f'{self.property_name}_v{version}'
+        logger.debug(f'{self.property_name} {property_id=}')
+        files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree_json)
+
+        with open(f'output/ruletree/{title}_ruletree.json') as f:
+            json_object = json.load(f)
+
+        excel_sheet = f'{self.property_name}_v{version}'
+        target_data = []
+        self.find_name_and_xml(ruletree_json, target_data)
+        xml_data = {}
+        for index, item in enumerate(target_data):
+            if type == 'advancedMatch':
+                if item['xml'].startswith('<match:'):
+                    xml_data[item['name']] = item['xml']
+                    if displayxml:
+                        logger.warning(f"{index:>3}: {item['name']}")
+                        syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=True)
+                        console = Console()
+                        console.print(syntax)
+            elif type == 'advancedBehavior':
+                if not item['xml'].startswith('<match:'):
+                    xml_data[item['name']] = item['xml']
+                    if displayxml:
+                        logger.warning(f"{index:>3}: {item['name']}")
+                        syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=True)
+                        console = Console()
+                        console.print(syntax)
+        return excel_sheet, xml_data
+
+    def get_property_advanced_override(self, property_id: int, version: int):
+        _, full_ruletree = super().property_rate_limiting(property_id, version)
+        try:
+            advancedOverride = full_ruletree['rules']['advancedOverride']
+            return advancedOverride
+        except:
+            return ''
 
     def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
         status, response = super().get_ruleformat_schema(product_id, format_version)

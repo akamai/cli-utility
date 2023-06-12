@@ -120,15 +120,15 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             ])
 
         config_help = 'many things you may need to (know about/check on/perform on) configs on the account'
-        dc_sc = [{'name': 'advancedmetadata',
+        dc_sc = [{'name': 'metadata',
                   'help': 'view XML for all advanced metadata',
                   'required_arguments': [{'name': 'property-id', 'help': 'propertyId', 'nargs': '+'},
                                          {'name': 'version', 'help': 'property version'}],
-                  'optional_arguments': [{'name': 'behavior', 'help': 'advanced behavior', 'action': 'store_true'},
-                                         {'name': 'match', 'help': 'advanced match/criteria', 'action': 'store_true'},
-                                         {'name': 'override', 'help': 'advanced override', 'action': 'store_true'},
+                  'optional_arguments': [{'name': 'advBehavior', 'help': 'advanced behavior', 'action': 'store_true'},
+                                         {'name': 'advMatch', 'help': 'advanced match/criteria', 'action': 'store_true'},
+                                         {'name': 'advOverride', 'help': 'advanced override', 'action': 'store_true'},
                                          {'name': 'filter', 'help': 'rulename keyword search', 'nargs': '+'},
-                                         {'name': 'noxml', 'help': 'use this argument to hide XML from the terminal', 'action': 'store_false'}]},
+                                         {'name': 'hidexml', 'help': 'use this argument to hide XML result from the terminal', 'action': 'store_false'}]},
                  {'name': 'activate',
                   'help': 'activate property',
                   'required_arguments': [{'name': 'file', 'help': 'excel file'},

@@ -38,8 +38,13 @@ if __name__ == '__main__':
             report.offload(args)
 
     if args.command == 'delivery-config':
-        if args.subcommand == 'advancedmetadata':
-            dc.get_property_advanced_metadata(args)
+        if args.subcommand == 'metadata':
+            if args.advBehavior:
+                dc.get_property_advanced_behavior(args)
+            if args.advMatch:
+                dc.get_property_advanced_match(args)
+            if args.advOverride:
+                dc.get_property_advanced_override(args)
         elif args.subcommand == 'activate':
             dc.activate_from_excel(args)
         elif args.subcommand == 'ruletree':

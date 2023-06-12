@@ -100,7 +100,7 @@ def main(args):
                     lambda row: papi.property_rate_limiting(row['propertyId'], int(row['productionVersion'])
                                                            if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
 
-                columns = ['groupName', 'propertyName',
+                columns = ['groupName', 'propertyName', 'propertyId',
                            'latestVersion', 'stagingVersion', 'productionVersion',
                            'productId', 'ruleFormat']
 
@@ -306,103 +306,114 @@ def get_property_ruletree(args):
                     subprocess.call(['open', '-a', 'TextEdit', Path(TREE_FILE).absolute()])
 
 
-def get_property_advanced_metadata(args):
+def get_property_advanced_behavior(args):
     '''
-    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config advancedmetadata --property-id 743088 672055 --version 10
+    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property-id 743088 672055 --version 10 --advBehavior
     '''
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     property_dict = {}
-    console = Console()
     property_list = []
     sheet = {}
+    logger.warning('Searching for advanced behavior ...')
 
     for property_id in args.property_id:
-        ruletree_json = papi.get_property_ruletree(property_id, args.version)
+        excel_sheet, xml_data = papi.get_property_advanced_xml(
+            property_id, args.version, type='advancedBehavior', displayxml=args.hidexml)
 
-        property_name = papi.property_name
-        title = f'{property_name}_v{args.version}'
-        files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree_json)
+        if not xml_data:
+            logger.warning(f'{excel_sheet:<50} not found')
+        else:
+            logger.warning(excel_sheet)
+            property_dict[papi.property_name] = [xml_data]
+            property_list.append(property_dict)
+            sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=['advancedBehavior'])
+            sheet_df.index.name = excel_sheet
+            sheet_df = sheet_df.reset_index()
+            sheet[property_id] = sheet_df
+            '''
+            if not sheet_df.empty:
+                highlighted_tags = []
+                # add highlighted tags as a new column in the DataFrame
+                for xml_string in sheet_df['advancedBehavior']:
+                    syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=True)
+                    highlighted_tags.append(str(syntax.highlight(code=xml_string)))
 
-        with open(f'output/ruletree/{title}_ruletree.json') as f:
-            json_object = json.load(f)
+                sheet_df['advancedBehavior'] = highlighted_tags
+                sheet[excel_sheet] = sheet_df
 
-        property_name = f'{property_id}_{property_name}_v{args.version}'
-        excel_sheet = f'{property_id}_v{args.version}'
-        print('\n\n')
-        logger.info(property_name)
+                # print the table with syntax highlighting
+                # table = tabulate(sheet_df, headers='keys', tablefmt='simple')
+                # if args.noxml is True:
+                #    console = Console()
+                #    console.print(table)
+            '''
+    print()
+    files.write_xlsx('advancedBehavior.xlsx', sheet, show_index=True)
 
-        target_data = []
-        papi.find_name_and_xml(ruletree_json, target_data)
 
-        xml_data = {}
-        for index, item in enumerate(target_data):
-            xml_data[item['name']] = item['xml']
-            property_dict[property_name] = [xml_data]
+def get_property_advanced_match(args):
+    '''
+    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property-id 743088 672055 --version 10 --advMatch
+    '''
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    property_dict = {}
+    property_list = []
+    sheet = {}
+    print()
+    logger.warning('Searhing for advanced match ...')
 
-            if args.filter:
-                for filter in args.filter:
-                    if filter in item['name']:
-                        logger.warning(f"{index:>3}: {item['name']}")
-                        syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=True)
-                        console.print(syntax)
+    for property_id in args.property_id:
+        excel_sheet, xml_data = papi.get_property_advanced_xml(
+            property_id, args.version, type='advancedMatch', displayxml=args.hidexml)
+        if not xml_data:
+            logger.warning(f'{excel_sheet:<50} not found')
+        else:
+            logger.warning(excel_sheet)
+            property_dict[papi.property_name] = [xml_data]
+            property_list.append(property_dict)
+            sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=['advancedMatch'])
+            sheet_df.index.name = excel_sheet
+            sheet_df = sheet_df.reset_index()
+            sheet[property_id] = sheet_df
 
-            else:
-                logger.info(f"{index:>3}: {item['name']}")
-                syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=True)
+    print()
+    files.write_xlsx('advancedMatch.xlsx', sheet, show_index=True)
+
+
+def get_property_advanced_override(args):
+    '''
+    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property-id 743088 672055 --version 10 --advOverride
+    '''
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    console = Console()
+    property_dict = {}
+    property_list = []
+    sheet = {}
+    print()
+    logger.warning('Searching for advanced override ...')
+
+    for property_id in args.property_id:
+        _ = papi.get_property_ruletree(property_id, args.version)
+
+        title = f'{papi.property_name}_v{args.version}'
+        adv_override = papi.get_property_advanced_override(property_id, args.version)
+        if adv_override:
+            logger.warning(title)
+            property_dict[title] = [adv_override]
+            property_list.append(property_dict)
+            sheet_df = pd.DataFrame.from_dict({'advancedOverride': adv_override}, orient='index', columns=['adv_override'])
+            sheet_df.index.name = title
+            sheet_df = sheet_df.reset_index()
+            sheet[property_id] = sheet_df
+
+            if args.hidexml is True:
+                syntax = Syntax(adv_override, 'xml', theme='solarized-dark', line_numbers=True)
                 console.print(syntax)
-
-        property_list.append(property_dict)
-
-        sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=[f'xml_{excel_sheet}'])
-        sheet_df.index.name = excel_sheet
-        sheet[excel_sheet] = sheet_df
-
-    if property_dict:
-        logger.debug(property_dict.keys())
-        if len(property_list) == 2:
-            first = list(property_dict.keys())[0]
-            second = list(property_dict.keys())[1]
-
-            rules = papi.same_rule(property_dict, first, second)
-            for rule in rules:
-                if not papi.compare_xml(property_dict, first, second, rule):
-                    print('\n\n\n')
-                    logger.critical('Same rule name but have different XML')
-                    logger.warning(f' {rule}')
-                    v1 = f'{first}.xml'
-                    v2 = f'{second}.xml'
-                    xml1 = property_dict[first][0][rule]
-                    with open(v1, 'w') as f:
-                        f.write(xml1)
-                    if args.noxml:
-                        syntax = Syntax(xml1, 'xml', theme='solarized-dark', line_numbers=True)
-                        console.print(syntax)
-
-                    xml2 = property_dict[second][0][rule]
-                    with open(v2, 'w') as f:
-                        f.write(xml2)
-                    # syntax = Syntax(xml2, "xml", theme="solarized-dark", line_numbers=True)
-                    # console.print(syntax)
-                    cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
-                    subprocess.run(cmd_text, shell=True)
-
-            print('\n\n\n')
-            logger.critical('Checking XML with different rule name')
-            rules = papi.different_rule(property_dict, first, second)
-            for rule in rules:
-                papi.compare_xml(property_dict, first, second, rule)
-
-        df = pd.DataFrame(property_list)
-        sheet['complete'] = df
-        filepath = 'test.xlsx'
-        print()
-        files.write_xlsx(filepath, sheet, freeze_column=1, show_index=True)
-
-        if args.show:
-            if platform.system() != 'Darwin':
-                logger.info('--show argument is supported only on Mac OS')
-            else:
-                subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+        else:
+            logger.warning(f'{title:<50} not found')
+    print()
+    if sheet:
+        files.write_xlsx('advancedOverride.xlsx', sheet, show_index=True)
 
 
 # BEGIN helper method
