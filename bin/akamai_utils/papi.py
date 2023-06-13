@@ -324,6 +324,26 @@ class PapiWrapper(Papi):
                 if isinstance(value, (dict, list)):
                     self.find_name_and_xml(value, target_data, grandparent=grandparent, parent=parent)
 
+    def find_name_and_openxml(self, json_data, target_data, grandparent=None, parent=None):
+        if isinstance(json_data, list):
+            for item in json_data:
+                self.find_name_and_openxml(item, target_data, parent=parent, grandparent=grandparent)
+        elif isinstance(json_data, dict):
+            for key, value in json_data.items():
+                if key == 'name':
+                    grandparent = parent
+                    parent = value
+                elif 'Xml' in key and isinstance(value, str):
+                    target_data.append({
+                        'name': grandparent,
+                        'openXml': value,
+                        'closeXml': json_data.get('closeXml', value)
+                    })
+                    return  # Continue to the next iteration
+
+                if isinstance(value, (dict, list)):
+                    self.find_name_and_openxml(value, target_data, grandparent=grandparent, parent=parent)
+
     def same_rule(self, properties: dict, first: str, second: str) -> list:
         left = list(properties[first][0].keys())
         right = list(properties[second][0].keys())
@@ -474,7 +494,39 @@ class PapiWrapper(Papi):
         else:
             return 'XXX'
 
-    def get_property_advanced_xml(self, property_id: int, version: int, type: str, displayxml: bool) -> dict:
+    def get_property_advanced_match_xml(self, property_id: int, version: int,
+                                    displayxml: bool | None = True,
+                                    showlineno: bool | None = False) -> dict:
+
+        ruletree_json = self.get_property_ruletree(property_id, version)
+        title = f'{self.property_name}_v{version}'
+        logger.debug(f'{self.property_name} {property_id=}')
+        files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree_json)
+
+        with open(f'output/ruletree/{title}_ruletree.json') as f:
+            json_object = json.load(f)
+
+        excel_sheet = f'{self.property_name}_v{version}'
+        target_data = []
+        self.find_name_and_openxml(ruletree_json, target_data)
+        xml_data = {}
+        for index, item in enumerate(target_data):
+            logger.debug(item)
+            xml_data[item['name']] = f"{item['openXml']}{item['closeXml']}"
+            if displayxml:
+                logger.warning(f"{index:>3}: {item['name']}")
+                print()
+                xml_str = f"{item['openXml']}{item['closeXml']}"
+                syntax = Syntax(xml_str, 'xml', theme='solarized-dark', line_numbers=showlineno)
+                console = Console()
+                console.print(syntax)
+                print()
+
+        return excel_sheet, xml_data
+
+    def get_property_advanced_behavior_xml(self, property_id: int, version: int,
+                                           displayxml: bool | None = True,
+                                           showlineno: bool | None = False) -> dict:
         ruletree_json = self.get_property_ruletree(property_id, version)
         title = f'{self.property_name}_v{version}'
         logger.debug(f'{self.property_name} {property_id=}')
@@ -487,23 +539,19 @@ class PapiWrapper(Papi):
         target_data = []
         self.find_name_and_xml(ruletree_json, target_data)
         xml_data = {}
+
+        # print_json(data=ruletree_json)
+        # logger.debug(target_data)
+        print()
         for index, item in enumerate(target_data):
-            if type == 'advancedMatch':
-                if item['xml'].startswith('<match:'):
-                    xml_data[item['name']] = item['xml']
-                    if displayxml:
-                        logger.warning(f"{index:>3}: {item['name']}")
-                        syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=True)
-                        console = Console()
-                        console.print(syntax)
-            elif type == 'advancedBehavior':
-                if not item['xml'].startswith('<match:'):
-                    xml_data[item['name']] = item['xml']
-                    if displayxml:
-                        logger.warning(f"{index:>3}: {item['name']}")
-                        syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=True)
-                        console = Console()
-                        console.print(syntax)
+            xml_data[item['name']] = item['xml']
+            if displayxml:
+                logger.warning(f"{index:>3}: {item['name']}")
+                print()
+                syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=showlineno)
+                console = Console()
+                console.print(syntax)
+                print()
         return excel_sheet, xml_data
 
     def get_property_advanced_override(self, property_id: int, version: int):

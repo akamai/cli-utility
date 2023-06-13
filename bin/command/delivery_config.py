@@ -363,13 +363,16 @@ def get_property_advanced_behavior(args):
     logger.warning('Searching for advanced behavior ...')
 
     for property_id in args.property_id:
-        excel_sheet, xml_data = papi.get_property_advanced_xml(
-            property_id, args.version, type='advancedBehavior', displayxml=args.hidexml)
+        excel_sheet, xml_data = papi.get_property_advanced_behavior_xml(property_id,
+                                                                        args.version,
+                                                                        displayxml=args.hidexml,
+                                                                        showlineno=args.lineno)
 
         if not xml_data:
             logger.warning(f'{excel_sheet:<50} not found')
         else:
-            logger.warning(excel_sheet)
+            logger.debug(excel_sheet)
+            print()
             property_dict[papi.property_name] = [xml_data]
             property_list.append(property_dict)
             sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=['advancedBehavior'])
@@ -393,8 +396,9 @@ def get_property_advanced_behavior(args):
                     console = Console()
                     console.print(table)
 
-    print()
-    files.write_xlsx('advancedBehavior.xlsx', sheet, show_index=True)
+    if sheet:
+        print()
+        files.write_xlsx('advancedBehavior.xlsx', sheet, show_index=True)
 
 
 def get_property_advanced_match(args):
@@ -409,8 +413,10 @@ def get_property_advanced_match(args):
     logger.warning('Searhing for advanced match ...')
 
     for property_id in args.property_id:
-        excel_sheet, xml_data = papi.get_property_advanced_xml(
-            property_id, args.version, type='advancedMatch', displayxml=args.hidexml)
+        excel_sheet, xml_data = papi.get_property_advanced_match_xml(property_id,
+                                                                     args.version,
+                                                                     displayxml=args.hidexml,
+                                                                     showlineno=args.lineno)
         if not xml_data:
             logger.warning(f'{excel_sheet:<50} not found')
         else:
@@ -428,8 +434,9 @@ def get_property_advanced_match(args):
                 console = Console()
                 console.print(table)
 
-    print()
-    files.write_xlsx('advancedMatch.xlsx', sheet, show_index=True)
+    if sheet:
+        print()
+        files.write_xlsx('advancedMatch.xlsx', sheet, show_index=True)
 
 
 def get_property_advanced_override(args):
@@ -450,7 +457,6 @@ def get_property_advanced_override(args):
         title = f'{papi.property_name}_v{args.version}'
         adv_override = papi.get_property_advanced_override(property_id, args.version)
         if adv_override:
-            logger.warning(title)
             property_dict[title] = [adv_override]
             property_list.append(property_dict)
             sheet_df = pd.DataFrame.from_dict({'advancedOverride': adv_override}, orient='index', columns=['adv_override'])
@@ -459,12 +465,13 @@ def get_property_advanced_override(args):
             sheet[property_id] = sheet_df
 
             if args.hidexml is True:
-                syntax = Syntax(adv_override, 'xml', theme='solarized-dark', line_numbers=True)
+                syntax = Syntax(adv_override, 'xml', theme='solarized-dark', line_numbers=args.lineno)
                 console.print(syntax)
         else:
             logger.warning(f'{title:<50} not found')
-    print()
+
     if sheet:
+        print()
         files.write_xlsx('advancedOverride.xlsx', sheet, show_index=True)
 
 
@@ -490,5 +497,4 @@ def load_config_from_xlsx(papi, filepath: str, sheet_name: str | None = None, fi
     df = df[columns].copy()
     logger.info(f'Original Data from Excel\n{df}')
     return df[columns]
-
 # END helper method
