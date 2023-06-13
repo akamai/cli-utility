@@ -4,6 +4,9 @@ import argparse
 import sys
 
 import rich_argparse as rap
+from utils import _logging as lg
+
+logger = lg.setup_logger()
 
 
 class OnelineArgumentFormatter(rap.ArgumentDefaultsRichHelpFormatter):
@@ -45,47 +48,6 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
     def _is_subcommand(self):
         # Check if the current command is a subcommand by examining the presence of subparsers
         return hasattr(self, '_subparsers') and self._subparsers is not None
-
-    @classmethod
-    def create_main_command(cls, subparsers, name, help,
-                            required_arguments=None,
-                            optional_arguments=None,
-                            subcommands=None,
-                            options=None):
-
-        action = subparsers.add_parser(name=name,
-                                       help=help,
-                                       add_help=True,
-                                       formatter_class=OnelineArgumentFormatter)
-        action.description = help  # Set the subcommand's help message as the description
-        action.usage = f'%(prog)s {name} [options]'  # Set a custom usage format
-
-        if subcommands:
-            subparsers = action.add_subparsers(title=name, metavar='', dest='subcommand')
-            for subcommand in subcommands:
-                subcommand_name = subcommand['name']
-                subcommand_help = subcommand['help']
-                subcommand_required = subcommand.get('required_arguments', None)
-                subcommand_optional = subcommand.get('optional_arguments', None)
-                cls.create_main_command(subparsers, subcommand_name, subcommand_help,
-                                        subcommand_required,
-                                        subcommand_optional,
-                                        subcommands=subcommand.get('subcommands', None))
-
-        cls.add_arguments(action, required_arguments, optional_arguments)
-
-        if options:
-            options_group = action.add_argument_group('Options')
-            for option in options:
-                option_name = option['name']
-                del option['name']
-                try:
-                    action_value = option['action']
-                    del option['action']
-                    options_group.add_argument(f'--{option_name}', action=action_value, **option)
-                except KeyError:
-                    options_group.add_argument(f'--{option_name}', metavar='', **option)
-        return action
 
     @classmethod
     def get_args(cls):
@@ -155,7 +117,8 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                 {'name': 'filter', 'help': 'lookup keyword'},
                                 {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'},
                                 {'name': 'behavior', 'help': 'behaviors you want to audit on the property', 'nargs': '+'},
-                                {'name': 'group-id', 'help': 'provide at least one group without prefix grp_ ', 'nargs': '+'},
+                                {'name': 'group-id', 'help': 'provide at least one groupId without prefix grp_ ', 'nargs': '+'},
+                                {'name': 'property-id', 'help': 'provide at least one propertyId without prefix prp_ ', 'nargs': '+'},
                                 {'name': 'column', 'help': 'show column in excel output file ie url propertyId groupId contractId productId ruleFormat', 'nargs': '+'},
                                 ],
             subcommands=dc_sc,
@@ -216,6 +179,57 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
         return parser.parse_args()
 
     @classmethod
+    def create_main_command(cls, subparsers, name, help,
+                            required_arguments=None,
+                            optional_arguments=None,
+                            subcommands=None,
+                            options=None):
+
+        action = subparsers.add_parser(name=name,
+                                       help=help,
+                                       add_help=True,
+                                       formatter_class=OnelineArgumentFormatter)
+        action.description = help  # Set the subcommand's help message as the description
+        action.usage = f'%(prog)s {name} [options]'  # Set a custom usage format
+
+        if subcommands:
+            subparsers = action.add_subparsers(title=name, metavar='', dest='subcommand')
+            for subcommand in subcommands:
+                subcommand_name = subcommand['name']
+                subcommand_help = subcommand['help']
+                subcommand_required = subcommand.get('required_arguments', None)
+                subcommand_optional = subcommand.get('optional_arguments', None)
+                cls.create_main_command(subparsers, subcommand_name, subcommand_help,
+                                        subcommand_required,
+                                        subcommand_optional,
+                                        subcommands=subcommand.get('subcommands', None))
+
+        cls.add_arguments(action, required_arguments, optional_arguments)
+
+        if options:
+            options_group = action.add_argument_group('Options')
+            for option in options:
+                option_name = option['name']
+                del option['name']
+                try:
+                    action_value = option['action']
+                    del option['action']
+                    options_group.add_argument(f'--{option_name}', action=action_value, **option)
+                except KeyError:
+                    options_group.add_argument(f'--{option_name}', metavar='', **option)
+        return action
+
+    @classmethod
+    def add_mutually_exclusive_group(cls, action, argument, conflicting_argument):
+
+        group = action.add_mutually_exclusive_group()
+        group.add_argument(argument['name'], help=argument['help'], nargs='+')
+
+        # Add the conflicting argument to the group as a mutually exclusive argument
+        conflicting_argument_help = [arg['help'] for arg in argument if arg['name'] == conflicting_argument]
+        group.add_argument(conflicting_argument, help=conflicting_argument_help, nargs='+')
+
+    @classmethod
     def add_arguments(cls, action, required_arguments=None, optional_arguments=None):
 
         if required_arguments:
@@ -233,14 +247,19 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
         if optional_arguments:
             optional = action.add_argument_group('Optional Arguments')
             for arg in optional_arguments:
-                name = arg['name']
-                del arg['name']
-                try:
-                    action_value = arg['action']
-                    del arg['action']
-                    optional.add_argument(f'--{name}', required=False, action=action_value, **arg)
-                except KeyError:
-                    optional.add_argument(f'--{name}', metavar='', required=False, **arg)
+                if arg['name'] == '--group-id':
+                    cls.add_mutually_exclusive_group(action, arg, '--property-id')
+                elif arg['name'] == '--property-id':
+                    cls.add_mutually_exclusive_group(action, arg, '--group-id')
+                else:
+                    name = arg['name']
+                    del arg['name']
+                    try:
+                        action_value = arg['action']
+                        del arg['action']
+                        optional.add_argument(f'--{name}', required=False, action=action_value, **arg)
+                    except KeyError:
+                        optional.add_argument(f'--{name}', metavar='', required=False, **arg)
 
             optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)
             optional.add_argument('-p', '--print-width', action='store_true', help=argparse.SUPPRESS)
