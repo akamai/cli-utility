@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import platform
@@ -43,108 +44,123 @@ def main(args):
     try:
         account = f"{account[0]['accountName']}".replace(' ', '_')
         logger.warning(f'Found account: {account}')
-        account = re.sub(r'[.,]|_{2}|Direct_Customer|Indirect_Customer|_(?=\.\w+)', '', account)  # shorten account name
+        account = re.sub(r'[.,]|_{2}|Direct_Customer|Indirect_Customer|_', '', account)  # shorten account name
         filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
     except:
         print_json(data=account)
         lg.countdown(540, msg='Oopsie! You just hit rate limit.')
         sys.exit(logger.error(account['detail']))
 
-    # build group structure as displayed on control.akamai.com
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-    allgroups_df, columns = papi.account_group_summary()
-
-    sheet = {}
-    allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)  # change groupId to str before load into excel
-
-    if args.group_id:
-        groups = args.group_id
-        group_df = allgroups_df[allgroups_df['groupId'].isin(groups)].copy()
-        group_df = group_df.reset_index(drop=True)
-
+    if args.property_id:
+        pass
     else:
-        group_df = allgroups_df[allgroups_df['propertyCount'] > 0].copy()
-        group_df = group_df.reset_index(drop=True)
-    print()
-    print(tabulate(group_df, headers=columns, showindex=True, tablefmt='github'))
+        # build group structure as displayed on control.akamai.com
+        papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+        allgroups_df, columns = papi.account_group_summary()
 
-    # warning for large account
-    if not args.group_id:
+        sheet = {}
+        allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)  # change groupId to str before load into excel
+
+        if args.group_id:
+            groups = args.group_id
+            group_df = allgroups_df[allgroups_df['groupId'].isin(groups)].copy()
+            group_df = group_df.reset_index(drop=True)
+
+        else:
+            group_df = allgroups_df[allgroups_df['propertyCount'] > 0].copy()
+            group_df = group_df.reset_index(drop=True)
         print()
-        logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
-        total = allgroups_df['propertyCount'].sum()
-        if total > 100:
+        print(tabulate(group_df, headers=columns, showindex=True, tablefmt='github'))
+
+        # warning for large account
+        if not args.group_id:
             print()
-            logger.critical(f'This account has {total} properties, please be patient')
-            logger.critical(' 200 properties take ~  7 minutes')
-            logger.critical(' 800 properties take ~ 30 minutes')
-            logger.critical('2200 properties take ~ 80 minutes')
-            logger.critical('please consider using --group-id to reduce total properties')
+            logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
+            total = allgroups_df['propertyCount'].sum()
+            if total > 100:
+                print()
+                logger.critical(f'This account has {total} properties, please be patient')
+                logger.critical(' 200 properties take ~  7 minutes')
+                logger.critical(' 800 properties take ~ 30 minutes')
+                logger.critical('2200 properties take ~ 80 minutes')
+                logger.critical('please consider using --group-id to reduce total properties')
 
-    # collect properties detail for all groups
-    if group_df.empty:
-        logger.info('no property to collect.')
-    else:
-        print()
-        total = group_df['propertyCount'].sum()
-        if total == 0:
+        # collect properties detail for all groups
+        if group_df.empty:
             logger.info('no property to collect.')
         else:
-            logger.warning('collecting properties ...')
-            account_properties = papi.property_summary(group_df)
-            if len(account_properties) > 0:
-                properties_df = pd.concat(account_properties, axis=0)
+            print()
+            total = group_df['propertyCount'].sum()
+            if total == 0:
+                logger.info('no property to collect.')
+            else:
+                logger.warning('collecting properties ...')
+                account_properties = papi.property_summary(group_df)
+                if len(account_properties) > 0:
+                    properties_df = pd.concat(account_properties, axis=0)
 
-                properties_df['ruletree'] = properties_df.parallel_apply(
-                    lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
-                                                           if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
+                    properties_df['ruletree'] = properties_df.parallel_apply(
+                        lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
+                                                            if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
 
-                columns = ['accountId', 'groupName', 'propertyName', 'propertyId',
-                           'latestVersion', 'stagingVersion', 'productionVersion',
-                           'productId', 'ruleFormat', 'hostname_count', 'hostname']
+                    if args.behavior:
+                        original_behaviors = [x.lower() for x in args.behavior]
+                        updated_behaviors = copy.deepcopy(original_behaviors)
 
-                if args.behavior:
-                    for behavior in args.behavior:
-                        properties_df[behavior] = properties_df.parallel_apply(
-                            lambda row: papi.behavior_count(row['propertyName'],
-                            row['ruletree']['rules'], behavior), axis=1)
+                        if 'cpcode' in original_behaviors:
+                            updated_behaviors.remove('cpcode')
 
-                del properties_df['propertyName']  # drop original column
-                properties_df = properties_df.rename(columns={'url': 'propertyName'})  # show column with hyperlink instead
-                properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
-                properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
+                        for behavior in updated_behaviors:
+                            properties_df[behavior] = properties_df.parallel_apply(
+                                lambda row: papi.behavior_count(row['propertyName'],
+                                row['ruletree']['rules'], behavior), axis=1)
 
-                if 'cpCode' in properties_df.columns.values:
-                    properties_df['cpCode_unique_value'] = properties_df.apply(
-                            lambda row: papi.behavior_value(row['propertyName'],
-                            row['ruletree']['rules'], target_behavior='cpCode'), axis=1)
-                properties_df['cpCode_unique_value'] = properties_df[['cpCode_unique_value']].parallel_apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
+                    del properties_df['propertyName']  # drop original column
+                    properties_df = properties_df.rename(columns={'url': 'propertyName'})  # show column with hyperlink instead
+                    properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
+                    properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
 
-                behavior_columns = sorted(args.behavior + ['cpCode_unique_value'])
-                columns.extend(behavior_columns)
+                    if 'cpcode' in original_behaviors:
+                        properties_df['cpcodes'] = properties_df.apply(
+                                lambda row: papi.cpcode_value(row['propertyName'],
+                                row['ruletree']['rules']) if row['productionVersion'] else 0, axis=1)
+                        properties_df['cpcode_unique_value'] = properties_df['cpcodes'].parallel_apply(lambda x: list(set(x)) if isinstance(x, list) else [])
+                        properties_df['cpcode_count'] = properties_df['cpcode_unique_value'].parallel_apply(lambda x: len(x))
+                        # display one value per line
+                        properties_df['cpcode_unique_value'] = properties_df[['cpcode_unique_value']].parallel_apply(
+                                lambda x: ',\n'.join(x.iloc[0]) if x[0] != '0' and isinstance(x.iloc[0], (list, tuple)) else '', axis=1)
 
-                properties_df['propertyId'] = properties_df['propertyId'].astype(str)
-                properties_df = properties_df[columns].copy()
-                properties_df = properties_df.reset_index(drop=True)
-                sheet['properties'] = properties_df
+                    # properties_df.loc[pd.notnull(properties_df['cpcode_unique_value']) & (properties_df['cpcode_unique_value'] == ''), 'cpcode'] = '0'
 
-    # add hyperlink to groupName column
-    group_df['groupURL'] = group_df.apply(lambda row: papi.group_url(row['groupId']), axis=1)
-    group_df['groupName_url'] = group_df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['groupName']), axis=1)
-    del group_df['groupURL']
-    del group_df['groupName']
-    group_df = group_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
-    summary_columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
-    sheet['filter'] = group_df[summary_columns]
+                    columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
+                               'latestVersion', 'stagingVersion', 'productionVersion',
+                               'productId', 'ruleFormat', 'hostname_count', 'hostname']
+                    behavior_columns = sorted(updated_behaviors + ['cpcode_unique_value', 'cpcode_count'])
+                    columns.extend(behavior_columns)
 
-    # add hyperlink to groupName column
-    allgroups_df['groupURL'] = allgroups_df.apply(lambda row: papi.group_url(row['groupId']), axis=1)
-    allgroups_df['groupName_url'] = allgroups_df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['groupName']), axis=1)
-    del allgroups_df['groupURL']
-    del allgroups_df['groupName']
-    allgroups_df = allgroups_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
-    summary_columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
-    sheet['summary'] = allgroups_df[summary_columns]
+                    properties_df['propertyId'] = properties_df['propertyId'].astype(str)
+                    properties_df = properties_df[columns].copy()
+                    properties_df = properties_df.reset_index(drop=True)
+                    sheet['properties'] = properties_df
+
+        # add hyperlink to groupName column
+        if not args.group_id:
+            group_df['groupURL'] = group_df.apply(lambda row: papi.group_url(row['groupId']), axis=1)
+            group_df['groupName_url'] = group_df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['groupName']), axis=1)
+            del group_df['groupURL']
+            del group_df['groupName']
+            group_df = group_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
+            summary_columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+            sheet['group_filtered'] = group_df[summary_columns]
+
+        # add hyperlink to groupName column
+        allgroups_df['groupURL'] = allgroups_df.apply(lambda row: papi.group_url(row['groupId']), axis=1)
+        allgroups_df['groupName_url'] = allgroups_df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['groupName']), axis=1)
+        del allgroups_df['groupURL']
+        del allgroups_df['groupName']
+        allgroups_df = allgroups_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
+        summary_columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+        sheet['account_summary'] = allgroups_df[summary_columns]
 
     files.write_xlsx(filepath, sheet, freeze_column=6)
 
@@ -359,7 +375,7 @@ def get_property_advanced_behavior(args):
             sheet_df.index.name = excel_sheet
             sheet_df = sheet_df.reset_index()
             sheet[property_id] = sheet_df
-            '''
+
             if not sheet_df.empty:
                 highlighted_tags = []
                 # add highlighted tags as a new column in the DataFrame
@@ -371,11 +387,11 @@ def get_property_advanced_behavior(args):
                 sheet[excel_sheet] = sheet_df
 
                 # print the table with syntax highlighting
-                # table = tabulate(sheet_df, headers='keys', tablefmt='simple')
-                # if args.noxml is True:
-                #    console = Console()
-                #    console.print(table)
-            '''
+                table = tabulate(sheet_df, headers='keys', tablefmt='simple')
+                if args.hidexml is True:
+                    console = Console()
+                    console.print(table)
+
     print()
     files.write_xlsx('advancedBehavior.xlsx', sheet, show_index=True)
 
@@ -404,6 +420,12 @@ def get_property_advanced_match(args):
             sheet_df.index.name = excel_sheet
             sheet_df = sheet_df.reset_index()
             sheet[property_id] = sheet_df
+
+            # print the table with syntax highlighting
+            table = tabulate(sheet_df, headers='keys', tablefmt='simple')
+            if args.hidexml is True:
+                console = Console()
+                console.print(table)
 
     print()
     files.write_xlsx('advancedMatch.xlsx', sheet, show_index=True)

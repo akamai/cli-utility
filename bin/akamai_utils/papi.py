@@ -555,7 +555,7 @@ class PapiWrapper(Papi):
 
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
-                if behavior['name'] == target_behavior:
+                if behavior['name'].lower() == target_behavior.lower():
                     parent_count += 1
             if 'children' in rules and isinstance(rules['children'], list):
                 for child_rule in rules['children']:
@@ -564,16 +564,28 @@ class PapiWrapper(Papi):
         return parent_count
 
     @staticmethod
-    def behavior_value(property_name: str, rules: dict, target_behavior: str):
+    def cpcode_value(property_name: str, rules: dict):
         values = []
 
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
-                if behavior['name'] == target_behavior:
-                    values.append(str(behavior['options']['value']['id']))
+                if behavior['name'] == 'cpCode':
+                    try:
+                        values.append(str(behavior['options']['value']['id']))
+                    except:
+                        values.append('0')
+                elif behavior['name'] == 'visitorPrioritization':
+                    try:
+                        values.append(str(behavior['options']['waitingRoomCpCode']['id']))
+                    except:
+                        values.append('0')
+                    try:
+                        values.append(str(behavior['options']['waitingRoomNetStorage']['cpCode']))
+                    except:
+                        values.append('0')
             if 'children' in rules and isinstance(rules['children'], list):
                 for child_rule in rules['children']:
-                    child_values = PapiWrapper.behavior_value(property_name, child_rule, target_behavior)
+                    child_values = PapiWrapper.cpcode_value(property_name, child_rule)
                     values.extend(child_values)
         return list(set(values))
 
