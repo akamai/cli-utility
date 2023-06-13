@@ -571,18 +571,18 @@ class PapiWrapper(Papi):
             for behavior in rules['behaviors']:
                 if behavior['name'] == 'cpCode':
                     try:
-                        values.append(str(behavior['options']['value']['id']))
+                        values.append(behavior['options']['value']['id'])
                     except:
-                        values.append('0')
+                        values.append(0)
                 elif behavior['name'] == 'visitorPrioritization':
                     try:
-                        values.append(str(behavior['options']['waitingRoomCpCode']['id']))
+                        values.append(behavior['options']['waitingRoomCpCode']['id'])
                     except:
-                        values.append('0')
+                        values.append(0)
                     try:
-                        values.append(str(behavior['options']['waitingRoomNetStorage']['cpCode']))
+                        values.append(behavior['options']['waitingRoomNetStorage']['cpCode'])
                     except:
-                        values.append('0')
+                        values.append(0)
             if 'children' in rules and isinstance(rules['children'], list):
                 for child_rule in rules['children']:
                     child_values = PapiWrapper.cpcode_value(property_name, child_rule)

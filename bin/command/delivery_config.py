@@ -125,10 +125,11 @@ def main(args):
                                 lambda row: papi.cpcode_value(row['propertyName'],
                                 row['ruletree']['rules']) if row['productionVersion'] else 0, axis=1)
                         properties_df['cpcode_unique_value'] = properties_df['cpcodes'].parallel_apply(lambda x: list(set(x)) if isinstance(x, list) else [])
+                        properties_df['cpcode_unique_value'] = properties_df['cpcode_unique_value'].parallel_apply(lambda x: sorted(x))
                         properties_df['cpcode_count'] = properties_df['cpcode_unique_value'].parallel_apply(lambda x: len(x))
                         # display one value per line
                         properties_df['cpcode_unique_value'] = properties_df[['cpcode_unique_value']].parallel_apply(
-                                lambda x: ',\n'.join(x.iloc[0]) if x[0] != '0' and isinstance(x.iloc[0], (list, tuple)) else '', axis=1)
+                            lambda x: ',\n'.join(map(str, x.iloc[0])) if isinstance(x.iloc[0], (list, tuple)) and x[0] != '0' else '', axis=1)
 
                     # properties_df.loc[pd.notnull(properties_df['cpcode_unique_value']) & (properties_df['cpcode_unique_value'] == ''), 'cpcode'] = '0'
 
