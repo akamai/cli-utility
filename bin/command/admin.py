@@ -63,12 +63,12 @@ def lookup_account(args):
         if len(data) > 0:
             results.extend(data)
             df = pd.DataFrame(data)
+            df = df.sort_values(by=['accountName', 'accountSwitchKey'], key=lambda col: col.str.lower())
             df.index = np.arange(1, len(df) + 1)
             flatten_df = df.reset_index()
             flatten_df = flatten_df.rename(columns={'index': index_header})
             flatten_df.loc[-1, :] = [None, '', '']
         else:
-
             flatten_df = pd.DataFrame(columns=[index_header, 'accountSwitchKey', 'accountName', 'url'])
             flatten_df.loc['1', :] = ['', None, 'not found', ' ']
 
