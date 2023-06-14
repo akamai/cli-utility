@@ -29,7 +29,11 @@ class IdentityAccessManagement(AkamaiSession):
         resp = self.session.get(url, headers=self.headers)
 
         if resp.status_code == 200:
-            return resp.json()
+            account = resp.json()
+            account = f"{account[0]['accountName']}".replace(' ', '_')
+            print()
+            logger.warning(f'Found account: {account}')
+            return account
         elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':
             sys.exit(logger.error('You do not have permission to lookup other accounts'))
         elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:

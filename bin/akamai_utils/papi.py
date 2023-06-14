@@ -440,9 +440,8 @@ class PapiWrapper(Papi):
 
     def property_summary(self, df: pd.DataFrame) -> list:
         account_properties = []
-        print()
         for index, row in df.iterrows():
-            logger.warning(f"{index:<5} {row['groupId']:<12} {row['groupName']:<50} {row['propertyCount']}")
+            logger.info(f"{index:<5} {row['groupId']:<12} {row['groupName']:<50} {row['propertyCount']}")
             properties = self.get_properties_detail_per_group(row['groupId'], row['contractId'])
             if not properties.empty:
                 properties['propertyId'] = properties['propertyId'].astype('Int64')
@@ -492,6 +491,7 @@ class PapiWrapper(Papi):
         if status == 200:
             return ruletree
         else:
+            logger.error(f'{property_id=} {version}')
             return 'XXX'
 
     def get_property_advanced_match_xml(self, property_id: int, version: int,
