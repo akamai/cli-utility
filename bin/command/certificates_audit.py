@@ -61,20 +61,21 @@ def audit(args):
         for contract_id in contracts:
             logger.warning(f'Collect certificate for {contract_id=}')
             enrollments, all_df, df = cps.list_enrollments(contract_id, enrollment_ids=csv_list)
-            if args.sni is True:
-                df = df.query('sni')
-                df = df.reset_index(drop=True)
-                logger.debug(f'\n{df}')
-            if args.authority:
-                df = df[df['ra'].isin(args.authority)].copy()
-                df = df.reset_index(drop=True)
-                logger.debug(f'\n{df}')
-            if args.slot:
-                int_slot = [int(x) for x in args.slot]
-                df = df[df['productionSlots'].isin(int_slot)].copy()
-                logger.debug(f'\n{df}')
+            if not df.empty:
+                if args.sni is True:
+                    df = df.query('sni')
+                    df = df.reset_index(drop=True)
+                    logger.debug(f'\n{df}')
+                if args.authority:
+                    df = df[df['ra'].isin(args.authority)].copy()
+                    df = df.reset_index(drop=True)
+                    logger.debug(f'\n{df}')
+                if args.slot:
+                    int_slot = [int(x) for x in args.slot]
+                    df = df[df['productionSlots'].isin(int_slot)].copy()
+                    logger.debug(f'\n{df}')
 
-            filter_df = df
+                filter_df = df
             list_enrollments = cps.collect_enrollments(contract_id, enrollments, csv_list)
             if list_enrollments:
                 enrollments.extend(list_enrollments)
