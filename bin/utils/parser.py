@@ -81,6 +81,20 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                 {'name': 'cpcodes', 'help': '1 or more reporting cpcodes ', 'nargs': '+'}
                             ])
 
+        actions['certificate'] = cls.create_main_command(
+                            subparsers, 'certificate',
+                            help='certificate report includes enrollmentId, slotId, SNI, hostname, commonName, cName, vendor, expirationDate',
+                            optional_arguments=[
+                                {'name': 'expire', 'help': 'only show expired certificate', 'action': 'store_true'},
+                                {'name': 'sni', 'help': 'only show SNI deployement type', 'action': 'store_true'},
+                                {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'},
+                                {'name': 'contract-id', 'help': 'provide at least one contractId without prefix crt_ ', 'nargs': '+'},
+                                {'name': 'enrollment-id', 'help': 'provide at least one enrollment id', 'nargs': '+'},
+                                {'name': 'slot', 'help': 'provide at least one slot id', 'nargs': '+'},
+                                {'name': 'authority', 'help': 'certificate authority',
+                                 'choices': ['lets-encrypt', 'symantec', 'third-party', 'geotrust'], 'nargs': '+'}
+                            ])
+
         config_help = 'many things you may need to (know about/check on/perform on) configs on the account'
         dc_sc = [{'name': 'metadata',
                   'help': 'view XML for all advanced metadata',

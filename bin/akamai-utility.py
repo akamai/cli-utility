@@ -3,6 +3,7 @@ from __future__ import annotations
 from time import perf_counter
 
 from command import admin
+from command import certificates_audit as ca
 from command import delivery_config as dc
 from command import diff
 from command import log
@@ -19,24 +20,6 @@ if __name__ == '__main__':
     args = Parser.get_args()
     start_time = perf_counter()
 
-    if args.command == 'search':
-        admin.lookup_account(args)
-
-    if args.command == 'log':
-        log.main(args.input, args.output, args.search)
-
-    if args.command == 'diff':
-        diff.main(args)
-
-    if args.command == 'ruleformat':
-        ruleformat.get_ruleformat_schema(args)
-
-    if args.command == 'report':
-        if args.url_offload is True:
-            report.url_offload(args)
-        else:
-            report.offload(args)
-
     if args.command == 'delivery-config':
         if args.subcommand == 'metadata':
             if args.advBehavior:
@@ -51,6 +34,27 @@ if __name__ == '__main__':
             dc.get_property_ruletree(args)
         else:
             dc.main(args)
+
+    if args.command == 'diff':
+        diff.main(args)
+
+    if args.command == 'certificate':
+        ca.audit(args)
+
+    if args.command == 'log':
+        log.main(args.input, args.output, args.search)
+
+    if args.command == 'report':
+        if args.url_offload is True:
+            report.url_offload(args)
+        else:
+            report.offload(args)
+
+    if args.command == 'ruleformat':
+        ruleformat.get_ruleformat_schema(args)
+
+    if args.command == 'search':
+        admin.lookup_account(args)
 
     end_time = lg.log_cli_timing(start_time)
     logger.info(end_time)
