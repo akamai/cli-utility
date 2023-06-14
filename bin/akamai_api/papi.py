@@ -58,7 +58,7 @@ class Papi(AkamaiSession):
 
     def get_contracts(self) -> list:
         response = self.session.get(f'{self.MODULE}/contracts', params=self.params, headers=self.headers)
-        logger.warning(f'Collecting contracts {urlparse(response.url).path:<30} {response.status_code}')
+        logger.debug(f'Collecting contracts {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
             return response.json()['contracts']['items']
         else:

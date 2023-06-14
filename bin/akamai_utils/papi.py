@@ -29,7 +29,7 @@ class PapiWrapper(Papi):
         df.reset_index(inplace=True, drop=True)
         sorted_contracts = sorted([contract['contractId'] for contract in contracts])
         logger.info(f'{sorted_contracts=}')
-        return contracts
+        return sorted_contracts
 
     def get_edgehostnames(self, contract_id: str, group_id: int):
         return super().get_edgehostnames(contract_id, group_id)
