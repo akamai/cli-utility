@@ -134,8 +134,9 @@ def main(args):
                                'latestVersion', 'stagingVersion', 'productionVersion',
                                'productId', 'ruleFormat', 'hostname_count', 'hostname']
                     if args.behavior:
-                        behavior_columns = sorted(updated_behaviors + ['cpcode_unique_value', 'cpcode_count'])
-                        columns.extend(behavior_columns)
+                        columns.extend(sorted(updated_behaviors))
+                        if 'cpcode' in original_behaviors:
+                            columns.extend(['cpcode_unique_value', 'cpcode_count'])
 
                     properties_df['propertyId'] = properties_df['propertyId'].astype(str)
                     properties_df = properties_df[columns].copy()
