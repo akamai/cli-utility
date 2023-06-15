@@ -8,17 +8,16 @@ import pandas as pd
 from akamai_api.cps import CpsWrapper
 from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import papi as p
+from pandarallel import pandarallel
 from tabulate import tabulate
 from utils import _logging as lg
 from utils import files
-
+from utils import google_dns as gg
 
 logger = lg.setup_logger()
 
 
 def audit(args):
-    pd.set_option('display.max_rows', 20)
-    pd.set_option('max_colwidth', 50)
 
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
@@ -42,53 +41,58 @@ def audit(args):
             sys.exit()
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-    enrollments = []
-    if args.contract_id:
-        logger.debug(f'{sorted(csv_list)=}') if csv_list else None
-        enrollments, all_df, df = cps.list_enrollments(contract_id=args.contract_id, enrollment_ids=csv_list)
-        if args.sni is True:
-            df = df[df['sni'] is True].copy()
-        if args.authority is True:
-            df = df[df['ra'] == args.authority].copy()
-        if args.slot is True:
-            df = df[df['slot'].isin(args.slot)].copy()
-
-        print(df)
-        list_enrollments = cps.collect_enrollments(args.contract_id, enrollments, csv_list)
-        enrollments.extend(list_enrollments)
-    else:
-        contracts = papi.get_contracts()
-        for contract_id in contracts:
-            logger.warning(f'Collect certificate for {contract_id=}')
-            enrollments, all_df, df = cps.list_enrollments(contract_id, enrollment_ids=csv_list)
-            if not df.empty:
-                if args.sni is True:
-                    df = df.query('sni')
-                    df = df.reset_index(drop=True)
-                    logger.debug(f'\n{df}')
-                if args.authority:
-                    df = df[df['ra'].isin(args.authority)].copy()
-                    df = df.reset_index(drop=True)
-                    logger.debug(f'\n{df}')
-                if args.slot:
-                    int_slot = [int(x) for x in args.slot]
-                    df = df[df['productionSlots'].isin(int_slot)].copy()
-                    logger.debug(f'\n{df}')
-
-                filter_df = df
-            list_enrollments = cps.collect_enrollments(contract_id, enrollments, csv_list)
-            if list_enrollments:
-                enrollments.extend(list_enrollments)
-
-    # final result
-    df = pd.DataFrame(enrollments)
-    df = df.sort_values(by=['expire_date', 'common_name', 'CNAME', 'enrollmentId', 'slot', 'hostname'])
-    df['slot'] = df['slot'].astype(str)
-    df = df.reset_index(drop=True)
-    logger.error(f'\n{df}')
+    contracts = args.contract_id if args.contract_id else papi.get_contracts()
     sheet = {}
-    sheet['certificate'] = df
-    files.write_xlsx(filepath, sheet)
 
-    if args.show:
-        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+    for contract_id in contracts:
+        logger.warning(f'Collect certificate for {contract_id=}')
+        _, df = cps.list_enrollments(contract_id, enrollment_ids=csv_list)
+
+        filtered = False
+        if not df.empty:
+            columns = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'hostname_count']
+            print(tabulate(df[columns], headers=columns))
+
+            if args.sni is True:
+                filtered = True
+                df = df.query('sni')
+                df = df.reset_index(drop=True)
+                logger.debug(f'\n{df}')
+            if args.authority:
+                filtered = True
+                df = df[df['ra'].isin(args.authority)].copy()
+                df = df.reset_index(drop=True)
+                logger.debug(f'\n{df}')
+            if args.slot:
+                filtered = True
+                int_slot = [int(x) for x in args.slot]
+                df = df[df['productionSlots'].isin(int_slot)].copy()
+                df = df.reset_index(drop=True)
+                logger.debug(f'\n{df}')
+
+        if not df.empty:
+            if filtered is True:
+                logger.warning('Filter based on selected criteria')
+                columns = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'hostname_count']
+                print(tabulate(df[columns], headers=columns))
+            hostname_df = df.explode('hostname')
+            del hostname_df['hostname_count']
+            hostname_df['Slot'] = hostname_df['Slot'].astype(str)
+            pandarallel.initialize(progress_bar=False)
+
+            logger.warning('Check CName for each host')
+            hostname_df['cname'] = hostname_df['hostname'].parallel_apply(lambda x: gg.dnslookup(x) if x is not None else '')
+            hostname_df['cname_to_akamai'] = hostname_df['cname'].apply(lambda x: 'True' if 'edgekey' in x or 'edgesuite' in x else '')
+
+            df['hostname_one_per_line'] = df['hostname'].parallel_apply(lambda x: '\n'.join(''.join(c) for c in x))
+            df['hostname_with_ending_comma'] = df['hostname'].parallel_apply(lambda x: ',\n'.join(''.join(c) for c in x))
+            del df['hostname']
+
+            df['expiration_date'] = df['id'].parallel_apply(lambda x: cps.certificate_expiration_date(x))
+            sheet[f'summary_{contract_id}'] = df
+            sheet[f'hostname_{contract_id}'] = hostname_df
+            files.write_xlsx(filepath, sheet)
+            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if args.show else None
+
+            # list_enrollments = cps.collect_enrollments(contract_id, ctr_enrollments, csv_list)
+            # enrollments.extend(list_enrollments) if len(list_enrollments) > 0 else None

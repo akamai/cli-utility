@@ -1,12 +1,14 @@
+# Techdocs reference
+# https://techdocs.akamai.com/cps/reference/api-summary
 from __future__ import annotations
 
 from urllib.parse import urlparse
 
 import pandas as pd
 from akamai_api.edge_auth import AkamaiSession
+from rich import print_json
 from utils import _logging as lg
 from utils import google_dns as gg
-
 
 logger = lg.setup_logger()
 
@@ -23,36 +25,39 @@ class CpsWrapper(AkamaiSession):
 
         params = self.params
         params['contractId'] = contract_id
-        response = self.session.get(f'{self.MODULE}/enrollments', params=params, headers=self.headers)
+        resp = self.session.get(f'{self.MODULE}/enrollments', params=params, headers=self.headers)
         enrollments = []
-        if response.status_code == 200:
-            logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(response.url).path:>20} {response.status_code}')
-            enrollments = response.json()['enrollments']
+        if resp.status_code == 200:
+            logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
+            enrollments = resp.json()['enrollments']
 
             df = pd.DataFrame(enrollments)
             pd.set_option('display.max_rows', 300)
             pd.set_option('max_colwidth', 50)
+            df['contractId'] = contract_id
             df['productionSlots'] = df['productionSlots'].apply(lambda x: x[0] if len(x) == 1 else 0)
             df['common_name'] = df['csr'].apply(lambda x: x['cn'])
-            df['hostname_count'] = df['csr'].apply(lambda x: len(x['sans']))
             df['sni'] = df['networkConfiguration'].apply(lambda x: x['sniOnly'])
+            df['hostname_count'] = df['csr'].apply(lambda x: len(x['sans']))
+            df['hostname'] = df['csr'].apply(lambda x: x['sans'])
 
             empty_df = df[df['hostname_count'] == 0].copy()
-            good_df = df[df['hostname_count'] > 0].copy()
+            empty_df = empty_df.sort_values(by='common_name')
+            empty_df = empty_df.reset_index(drop=True)
 
-            columns = ['id', 'productionSlots', 'ra', 'common_name', 'hostname_count', 'sni']
-            good_df = good_df.sort_values(by='common_name')
-            good_df = good_df.reset_index(drop=True)
-
-            df = df.sort_values(by=['common_name'])
+            df = df.sort_values(by=['hostname_count', 'common_name'])
             df = df.reset_index(drop=True)
-            logger.debug(f'\n{df[columns]}')
+            all_columns = ['contractId'] + df.columns.values.tolist()
+            columns = ['contractId', 'id', 'Slot', 'ra', 'common_name', 'sni', 'hostname_count', 'hostname']
+            df = df.rename(columns={'productionSlots': 'Slot'})
+            df['Slot'] = df['Slot'].astype(str)
+            print()
 
             logger.warning(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do have hostname assigned to')
-            return enrollments, df, good_df[columns]
+            return enrollments, df[columns]
         else:
-            logger.error(f'Enrollments for contract {contract_id:<15} {urlparse(response.url).path:>20} {response.status_code}')
-            return [], pd.DataFrame(), pd.DataFrame()
+            logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
+            return [], pd.DataFrame()
 
     def collect_enrollments(self, contract_id: str, enrollments: list, enrollment_ids: list | None = None) -> list:
         enrollment_filered = [cert for cert in enrollments if cert.get('id', {}) in enrollment_ids]
@@ -162,18 +167,43 @@ class CpsWrapper(AkamaiSession):
         return enrollment_subset
 
     def certificate_deployment(self, enrollment_id: int) -> str:
+        '''
+        Provide trustChain and expiration date
+        '''
         self.headers = {'Accept': 'application/vnd.akamai.cps.deployments.v7+json'}
         url = f'{self.MODULE}/enrollments/{enrollment_id}/deployments'
-        response = self.session.get(url, params=self.params, headers=self.headers)
-        expire_date = None
-        if response.status_code == 200:
-            try:
-                expire_date = response.json()['production']['primaryCertificate']['expiry']
-            except KeyError:
-                logger.error(f'{enrollment_id=}')
+        resp = self.session.get(url, params=self.params, headers=self.headers)
+        if resp.status_code == 200:
+            if 'expiry' in resp.json()['production']['primaryCertificate'].keys():
+                expire_date = resp.json()['production']['primaryCertificate']['expiry']
+            else:
+                expire_date = None
         else:
-            logger.error(f'Deployment for {enrollment_id} {urlparse(response.url).path:>20} {response.status_code}')
-        return expire_date, response.json()['production']['primaryCertificate']
+            logger.error(f'Deployment for {enrollment_id} {urlparse(resp.url).path:>20} {resp.status_code}')
+        # print_json(data=resp.json())
+        # logger.info(resp.url)
+        return expire_date, resp.json()['production']['primaryCertificate']
+
+    def certificate_expiration_date(self, enrollment_id: int) -> str:
+        '''
+        Provide trustChain and expiration date
+        '''
+        self.headers = {'Accept': 'application/vnd.akamai.cps.deployments.v7+json'}
+        url = f'{self.MODULE}/enrollments/{enrollment_id}/deployments'
+        resp = self.session.get(url, params=self.params, headers=self.headers)
+        if resp.status_code == 200:
+            try:
+                return resp.json()['production']['primaryCertificate']['expiry']
+            except:
+                logger.debug(f'{enrollment_id:<7} {resp.json()}')
+                return ''
+        else:
+            logger.error(f'Deployment for {enrollment_id} {urlparse(resp.url).path:>20} {resp.status_code}')
+            return ''
+
+    def get_enrollment(self, enrollment_id: int):
+        url = f'{self.MODULE}/enrollments/{enrollment_id}'
+        resp = self.session.get(url, params=self.params, headers=self.headers)
 
 
 if __name__ == '__main__':
