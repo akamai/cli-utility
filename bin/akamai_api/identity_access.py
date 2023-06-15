@@ -33,7 +33,7 @@ class IdentityAccessManagement(AkamaiSession):
             account = f"{account[0]['accountName']}".replace(' ', '_')
             print()
             logger.warning(f'Found account: {account}')
-            return account
+            return resp.json()
         elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':
             sys.exit(logger.error('You do not have permission to lookup other accounts'))
         elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
