@@ -40,7 +40,8 @@ def main(args):
 
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
-    account = iam.search_account_name(value=args.account_switch_key)
+    account = iam.search_account_name(value=args.account_switch_key)[0]['accountName']
+
     try:
         account = re.sub(r'[.,]|_{2}|Direct_Customer|Indirect_Customer|_', '', account)  # shorten account name
         filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
