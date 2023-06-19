@@ -32,6 +32,8 @@ if __name__ == '__main__':
             dc.activate_from_excel(args)
         elif args.subcommand == 'ruletree':
             dc.get_property_ruletree(args)
+        elif args.subcommand == 'hostname':
+            dc.hostnames(args)
         else:
             dc.main(args)
 

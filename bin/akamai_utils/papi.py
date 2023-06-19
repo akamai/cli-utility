@@ -291,6 +291,9 @@ class PapiWrapper(Papi):
         else:
             return df['cnameFrom'].unique().tolist()
 
+    def get_property_version_hostnames(self, property_id: int, version: int) -> dict:
+        return super().get_property_version_hostnames(property_id, version)
+
     def get_property_version_detail(self, property_id: int, version: int, dict_key: str):
         '''
         df['ruleFormat'] = df.parallel_apply(
@@ -373,14 +376,19 @@ class PapiWrapper(Papi):
     # WHOLE ACCOUNT
     def account_group_summary(self) -> tuple:
         _, all_groups = self.get_all_groups()
+
         df = self.create_groups_dataframe(all_groups)
+        logger.debug(df)
 
         df['name'] = df['L0'].str.lower()  # this column will be used for sorting later
         df['groupId'] = df['groupId'].astype(int)  # API has groupId has interger
-        df['parentGroupId'] = pd.to_numeric(df['parentGroupId'], errors='coerce').fillna(0)  # API has groupId has interger
-        df['parentGroupId'] = df['parentGroupId'].astype(int)
+        columns = ['name', 'groupId']
+        if 'parentGroupId' in df.columns.values.tolist():
+            df['parentGroupId'] = pd.to_numeric(df['parentGroupId'], errors='coerce').fillna(0)  # API has groupId has interger
+            df['parentGroupId'] = df['parentGroupId'].astype(int)
+            columns = ['name', 'parentGroupId', 'L1', 'groupId']
 
-        df = df.sort_values(by=['name', 'parentGroupId', 'L1', 'groupId'])
+        df = df.sort_values(by=columns)
         df = df.drop(['level'], axis=1)
         df = df.fillna('')
         df = df.reset_index(drop=True)
@@ -392,7 +400,11 @@ class PapiWrapper(Papi):
 
         columns = df.columns.tolist()
         levels = [col for col in columns if col.startswith('L')]  # get hierachy
-        columns = ['path'] + levels + ['account', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount', 'name']
+
+        if 'parentGroupId' in df.columns.values.tolist():
+            columns = ['path'] + levels + ['account', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount', 'name']
+        else:
+            columns = ['path'] + levels + ['account', 'groupName', 'groupId', 'contractId', 'propertyCount', 'name']
         stag_df = df[columns].copy()
 
         # Split rows some groups/folders have multiple contracts
@@ -407,7 +419,10 @@ class PapiWrapper(Papi):
 
         allgroups_df = allgroups_df.reset_index(drop=True)
 
-        columns = ['index_1', 'updated_path', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount'] + levels
+        if 'parentGroupId' in allgroups_df.columns.values.tolist():
+            columns = ['index_1', 'updated_path', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount'] + levels
+        else:
+            columns = ['index_1', 'updated_path', 'groupName', 'groupId', 'contractId', 'propertyCount'] + levels
 
         allgroups_df['updated_path'] = allgroups_df.apply(lambda row: self.update_path(allgroups_df, row, column_name='path'), axis=1)
         allgroups_df['index_1'] = allgroups_df.index
@@ -426,52 +441,63 @@ class PapiWrapper(Papi):
         allgroups_df = allgroups_df[columns].copy()
         allgroups_df['sheet'] = ''
         allgroups_df = files.update_sheet_column(allgroups_df)
-        columns = ['index_1', 'updated_path'] + ['groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount', 'sheet']
+
+        if 'parentGroupId' in allgroups_df.columns.values.tolist():
+            columns = ['index_1', 'updated_path'] + ['groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount', 'sheet']
+        else:
+            columns = ['index_1', 'updated_path'] + ['groupName', 'groupId', 'contractId', 'propertyCount', 'sheet']
 
         allgroups_df = allgroups_df[columns].copy()
         allgroups_df = allgroups_df.sort_values(by='index_1')
         allgroups_df = allgroups_df.reset_index(drop=True)
 
-        columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+        if 'parentGroupId' in allgroups_df.columns.values.tolist():
+            columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+            allgroups_df['parentGroupId'] = allgroups_df['parentGroupId'].astype(str)
+        else:
+            columns = ['group_structure', 'groupName', 'groupId', 'contractId', 'propertyCount']
         allgroups_df = allgroups_df.rename(columns={'updated_path': 'group_structure'})
-        allgroups_df['parentGroupId'] = allgroups_df['parentGroupId'].astype(str)
         allgroups_df = allgroups_df[columns].copy()
         return allgroups_df, columns
 
     def property_summary(self, df: pd.DataFrame) -> list:
         account_properties = []
         for index, row in df.iterrows():
-            logger.info(f"{index:<5} {row['groupId']:<12} {row['groupName']:<50} {row['propertyCount']}")
-            properties = self.get_properties_detail_per_group(row['groupId'], row['contractId'])
-            if not properties.empty:
-                properties['propertyId'] = properties['propertyId'].astype('Int64')
-                properties['groupName'] = row['groupName']  # add group name
+            msg = f"{index:<5} {row['groupId']:<12} {row['groupName']:<50}"
+            if row['propertyCount'] == 0:
+                logger.info(f'{msg} no property to collect')
+            else:
+                logger.info(f"{msg} {row['propertyCount']}")
+                properties = self.get_properties_detail_per_group(row['groupId'], row['contractId'])
+                if not properties.empty:
+                    properties['propertyId'] = properties['propertyId'].astype('Int64')
+                    properties['groupName'] = row['groupName']  # add group name
 
-                logger.debug(' Collecting hostname')
-                properties['hostname'] = properties[['propertyId']].parallel_apply(lambda x: self.get_property_hostnames(*x), axis=1)
-                properties['hostname_count'] = properties['hostname'].str.len()
-                # show one hostname per list and remove list syntax
-                properties['hostname'] = properties[['hostname']].parallel_apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
+                    logger.debug(' Collecting hostname')
+                    properties['hostname'] = properties[['propertyId']].parallel_apply(lambda x: self.get_property_hostnames(*x), axis=1)
+                    properties['hostname_count'] = properties['hostname'].str.len()
+                    # show one hostname per list and remove list syntax
+                    properties['hostname'] = properties[['hostname']].parallel_apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
 
-                logger.debug(' Collecting updatedDate')
-                properties['updatedDate'] = properties.apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
+                    logger.debug(' Collecting updatedDate')
+                    properties['updatedDate'] = properties.apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
 
-                logger.debug(' Collecting productId')
-                properties['productId'] = properties.parallel_apply(
-                    lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
-                                                                 if pd.notnull(row['productionVersion']) else row['latestVersion'],
-                                                                 'productId'), axis=1)
-                logger.debug(' Collecting ruleFormat')
-                properties['ruleFormat'] = properties.parallel_apply(
-                    lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
-                                                                 if pd.notnull(row['productionVersion']) else row['latestVersion'],
-                                                                 'ruleFormat'), axis=1)
+                    logger.debug(' Collecting productId')
+                    properties['productId'] = properties.parallel_apply(
+                        lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
+                                                                    if pd.notnull(row['productionVersion']) else row['latestVersion'],
+                                                                    'productId'), axis=1)
+                    logger.debug(' Collecting ruleFormat')
+                    properties['ruleFormat'] = properties.parallel_apply(
+                        lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
+                                                                    if pd.notnull(row['productionVersion']) else row['latestVersion'],
+                                                                    'ruleFormat'), axis=1)
 
-                logger.debug(' Collecting property url')
-                properties['propertyURL'] = properties.apply(lambda row: self.property_url(row['assetId'], row['groupId']), axis=1)
-                properties['url'] = properties.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
+                    logger.debug(' Collecting property url')
+                    properties['propertyURL'] = properties.apply(lambda row: self.property_url(row['assetId'], row['groupId']), axis=1)
+                    properties['url'] = properties.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
 
-                account_properties.append(properties)
+                    account_properties.append(properties)
         return account_properties
 
     # RULETREE

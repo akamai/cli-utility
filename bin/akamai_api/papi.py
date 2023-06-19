@@ -275,6 +275,18 @@ class Papi(AkamaiSession):
         else:
             return response.json()
 
+    def get_property_version_hostnames(self, property_id: int, version: int) -> list:
+        url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/hostnames?includeCertStatus=true')
+        resp = self.session.get(url, headers=self.headers)
+        logger.debug(resp.url)
+        logger.debug(f'Collecting hostname for a property {urlparse(resp.url).path:<30} {resp.status_code} {resp.url}')
+        if resp.status_code == 200:
+            self.property_name = resp.json()['propertyName']
+            print_json(data=resp.json())
+            return resp.json()['hostnames']['items']
+        else:
+            return resp.json()
+
     def property_version(self, items: dict) -> tuple:
         prd_version = 0
         stg_version = 0

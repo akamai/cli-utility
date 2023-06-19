@@ -40,10 +40,13 @@ def main(args):
 
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
-    account = iam.search_account_name(value=args.account_switch_key)[0]['accountName']
+    account = iam.search_account_name(value=args.account_switch_key)
 
+    if len(account) > 1:
+        account = account[1]
     try:
-        account = re.sub(r'[.,]|_{2}|Direct_Customer|Indirect_Customer|_', '', account)  # shorten account name
+        temp_account = account[0]['accountName'].replace(' ', '_')
+        account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', temp_account)
         filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
     except:
         print_json(data=account)
@@ -76,8 +79,8 @@ def main(args):
             logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
             total = allgroups_df['propertyCount'].sum()
             if total > 100:
+                logger.warning(f'This account has {total:,} properties, please be patient')
                 print()
-                logger.critical(f'This account has {total} properties, please be patient')
                 logger.critical(' 200 properties take ~  7 minutes')
                 logger.critical(' 800 properties take ~ 30 minutes')
                 logger.critical('2200 properties take ~ 80 minutes')
@@ -125,6 +128,7 @@ def main(args):
                                 lambda x: ',\n'.join(map(str, x.iloc[0])) if isinstance(x.iloc[0], (list, tuple)) and x[0] != '0' else '', axis=1)
 
                     del properties_df['propertyName']  # drop original column
+
                     properties_df = properties_df.rename(columns={'url': 'propertyName'})  # show column with hyperlink instead
                     properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
                     properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
@@ -149,6 +153,9 @@ def main(args):
             sheet['group_filtered'] = add_group_url(group_df, papi)
         sheet['account_summary'] = add_group_url(allgroups_df, papi)
 
+    logger.debug(properties_df.columns.values.tolist()) if not properties_df.empty else None
+
+    # logger.info(properties_df)
     files.write_xlsx(filepath, sheet, freeze_column=6)
 
     if args.show:
@@ -338,6 +345,56 @@ def get_property_ruletree(args):
                     subprocess.call(['open', '-a', 'TextEdit', Path(TREE_FILE).absolute()])
 
 
+def hostnames(args):
+    '''
+    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config hostname --property-id 219351 --version 27 --show
+    '''
+    # display full account name
+    iam = IdentityAccessManagement(args.account_switch_key)
+    account = iam.search_account_name(value=args.account_switch_key)
+    logger.info(f'{account}')
+    if len(account) > 1:
+        account = account[1]
+    try:
+        temp_account = account[0]['accountName'].replace(' ', '_')
+        account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', temp_account)
+        filepath = f'output/{account}_hostname_certs.xlsx' if args.output is None else f'output/{args.output}'
+    except:
+        print_json(data=account)
+
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+
+    sheet = {}
+    for property_id in args.property_id:
+        hostname = papi.get_property_version_hostnames(property_id, args.version)
+        df = pd.json_normalize(hostname)
+        logger.info(df.columns.values.tolist())
+
+        columns = ['Property_Hostname', 'Edge_Hostname', 'certProvisioningType', 'production', 'staging']
+        df = df.rename(columns={'cnameFrom': 'Property_Hostname',
+                                'cnameTo': 'Edge_Hostname',
+                                'certStatus.production': 'production',
+                                'certStatus.staging': 'staging'})
+
+        '''
+        df['production'] = df['production'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
+        df['staging'] = df['staging'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
+        df = df.sort_values(by=['production', 'Property_Hostname'])
+        df = df.reset_index(drop=True)
+        '''
+
+        sheet[f'{papi.property_name}_v{args.version}'] = df
+        # logger.info(df[columns])
+
+    files.write_xlsx(filepath, sheet)
+
+    if args.show:
+        if platform.system() != 'Darwin':
+            logger.info('--show argument is supported only on Mac OS')
+        else:
+            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+
+
 def get_property_advanced_behavior(args):
     '''
     python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property-id 743088 672055 --version 10 --advBehavior
@@ -491,6 +548,9 @@ def add_group_url(df: pd.DataFrame, papi) -> pd.DataFrame:
     del df['groupURL']
     del df['groupName']
     df = df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
-    summary_columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+    if 'parentGroupId' in df.columns.values.tolist():
+        summary_columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+    else:
+        summary_columns = ['group_structure', 'groupName', 'groupId', 'contractId', 'propertyCount']
     return df[summary_columns]
 # END helper method
