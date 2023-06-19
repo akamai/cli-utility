@@ -51,9 +51,7 @@ class CpsWrapper(AkamaiSession):
             columns = ['contractId', 'id', 'Slot', 'ra', 'common_name', 'sni', 'hostname_count', 'hostname']
             df = df.rename(columns={'productionSlots': 'Slot'})
             df['Slot'] = df['Slot'].astype(str)
-            print()
-
-            logger.warning(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do have hostname assigned to')
+            logger.critical(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do have hostname assigned to')
             return enrollments, df[columns]
         else:
             logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
