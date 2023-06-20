@@ -27,7 +27,9 @@ class CpsWrapper(AkamaiSession):
         params['contractId'] = contract_id
         resp = self.session.get(f'{self.MODULE}/enrollments', params=params, headers=self.headers)
         enrollments = []
+        empty_df = pd.DataFrame()
         if resp.status_code == 200:
+
             logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
             enrollments = resp.json()['enrollments']
 
@@ -35,24 +37,36 @@ class CpsWrapper(AkamaiSession):
             pd.set_option('display.max_rows', 300)
             pd.set_option('max_colwidth', 50)
             df['contractId'] = contract_id
-            df['productionSlots'] = df['productionSlots'].apply(lambda x: x[0] if len(x) == 1 else 0)
-            df['common_name'] = df['csr'].apply(lambda x: x['cn'])
-            df['sni'] = df['networkConfiguration'].apply(lambda x: x['sniOnly'])
-            df['hostname_count'] = df['csr'].apply(lambda x: len(x['sans']))
-            df['hostname'] = df['csr'].apply(lambda x: x['sans'])
+            cols = df.columns.values.tolist()
+            if 'productionSlots' in cols:
+                df['productionSlots'] = df['productionSlots'].apply(lambda x: x[0] if len(x) == 1 else 0)
 
-            empty_df = df[df['hostname_count'] == 0].copy()
-            empty_df = empty_df.sort_values(by='common_name')
-            empty_df = empty_df.reset_index(drop=True)
+            if 'csr' in cols:
+                df['common_name'] = df['csr'].apply(lambda x: x['cn'])
+                df['hostname_count'] = df['csr'].apply(lambda x: len(x['sans']))
+                df['hostname'] = df['csr'].apply(lambda x: x['sans'])
 
-            df = df.sort_values(by=['hostname_count', 'common_name'])
-            df = df.reset_index(drop=True)
-            all_columns = ['contractId'] + df.columns.values.tolist()
-            columns = ['contractId', 'id', 'Slot', 'ra', 'common_name', 'sni', 'hostname_count', 'hostname']
-            df = df.rename(columns={'productionSlots': 'Slot'})
-            df['Slot'] = df['Slot'].astype(str)
-            logger.critical(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do have hostname assigned to')
-            return enrollments, df[columns]
+                empty_df = df[df['hostname_count'] == 0].copy()
+                empty_df = empty_df.sort_values(by='common_name')
+                empty_df = empty_df.reset_index(drop=True)
+
+                df = df.sort_values(by=['hostname_count', 'common_name'])
+                df = df.reset_index(drop=True)
+                all_columns = ['contractId'] + df.columns.values.tolist()
+
+            if 'networkConfiguration' in cols:
+                df['sni'] = df['networkConfiguration'].apply(lambda x: x['sniOnly'])
+
+            if 'productionSlots' in cols:
+                df = df.rename(columns={'productionSlots': 'Slot'})
+                df['Slot'] = df['Slot'].astype(str)
+
+            if not empty_df.empty:
+                logger.critical(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do have hostname assigned to')
+                columns = ['contractId', 'id', 'Slot', 'ra', 'common_name', 'sni', 'hostname_count', 'hostname']
+                return enrollments, df[columns]
+            else:
+                return [], pd.DataFrame()
         else:
             logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
             return [], pd.DataFrame()

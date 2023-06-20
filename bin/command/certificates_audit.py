@@ -116,20 +116,24 @@ def audit(args):
             # sheet[f'summary_{contract_id}'] = df
             # sheet[f'hostname_{contract_id}'] = hostname_df
 
-    sheet['summary'] = pd.concat(contract_data)
-    sheet['hostname'] = pd.concat(contract_host)
+    if len(contract_data) > 0:
+        sheet['summary'] = pd.concat(contract_data)
 
-    x = pd.concat(contract_host).query('valid_ip')
-    y = x.cname.drop_duplicates()
+    if len(contract_host) > 0:
+        sheet['hostname'] = pd.concat(contract_host)
 
-    ip_df = y.to_frame()
-    ip_df = ip_df.sort_values(by='cname')
-    ip_df = ip_df.reset_index(drop=True)
-    ip_df['ASN_Description'] = ip_df['cname'].parallel_apply(lambda x: asn(x))
-    sheet['ip'] = ip_df
+        x = pd.concat(contract_host).query('valid_ip')
+        y = x.cname.drop_duplicates()
 
-    files.write_xlsx(filepath, sheet)
-    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if args.show else None
+        ip_df = y.to_frame()
+        ip_df = ip_df.sort_values(by='cname')
+        ip_df = ip_df.reset_index(drop=True)
+        ip_df['ASN_Description'] = ip_df['cname'].parallel_apply(lambda x: asn(x))
+        sheet['ip'] = ip_df
+
+    if sheet:
+        files.write_xlsx(filepath, sheet)
+        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if args.show else None
 
 
 def is_valid_ip(ip: str):
