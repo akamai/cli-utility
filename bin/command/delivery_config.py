@@ -369,7 +369,14 @@ def hostnames(args):
             df = df.sort_values(by=['production', 'Property_Hostname'])
             df = df.reset_index(drop=True)
 
-        sheet[f'{papi.property_name}_v{args.version}'] = df
+        if len(f'{papi.property_name}_v{args.version}') >= 31:
+            sheet[f'{property_id}_v{args.version}'] = df
+        else:
+            sheet[f'{papi.property_name}_v{args.version}'] = df
+
+        filepath = f'{papi.property_name}_v{args.version}.xlsx'
+        filepath = f'output/{filepath}' if args.output is None else f'output/{args.output}'
+
         # logger.info(df[columns])
 
     files.write_xlsx(filepath, sheet)
