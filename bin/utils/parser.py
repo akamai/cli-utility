@@ -86,6 +86,7 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             help='certificate report includes enrollmentId, slotId, SNI, hostname, commonName, cName, vendor, expirationDate',
                             optional_arguments=[
                                 {'name': 'expire', 'help': 'only show expired certificate', 'action': 'store_true'},
+                                {'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
                                 {'name': 'sni', 'help': 'only show SNI deployement type', 'action': 'store_true'},
                                 {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'},
                                 {'name': 'contract-id', 'help': 'provide at least one contractId without prefix crt_ ', 'nargs': '+'},

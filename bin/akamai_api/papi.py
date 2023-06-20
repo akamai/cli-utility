@@ -282,7 +282,7 @@ class Papi(AkamaiSession):
         logger.debug(f'Collecting hostname for a property {urlparse(resp.url).path:<30} {resp.status_code} {resp.url}')
         if resp.status_code == 200:
             self.property_name = resp.json()['propertyName']
-            print_json(data=resp.json())
+            # print_json(data=resp.json())
             return resp.json()['hostnames']['items']
         else:
             return resp.json()

@@ -6,8 +6,8 @@ import re
 import sys
 
 from akamai_api.edge_auth import AkamaiSession
+from rich import print_json
 from utils import _logging as lg
-
 
 logger = lg.setup_logger()
 
@@ -28,7 +28,7 @@ class IdentityAccessManagement(AkamaiSession):
         # this endpoint doesn't use account switch key
         url = f'{self.MODULE}/api-clients/self/account-switch-keys{qry}'
         resp = self.session.get(url, headers=self.headers)
-
+        account_name = []
         if resp.status_code == 200:
             if len(resp.json()) == 0:
                 account = value.split(':')[0]
@@ -36,14 +36,10 @@ class IdentityAccessManagement(AkamaiSession):
                 account_name = []
                 for account in accounts:
                     temp_account = re.sub(r'\s', '_', account['accountName'])
-                    logger.warning(f"Found account: {account['accountName']}")
-                    account_name.append(temp_account)
-                return account_name
+                account_name.append(temp_account)
             else:
-                account = f"{resp.json()[0]['accountName']}".replace(' ', '_')
-                print()
-                logger.warning(f'Found account: {account}')
-                return resp.json()
+                for account in resp.json():
+                    account_name.append(account['accountName'])
         elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':
             sys.exit(logger.error('You do not have permission to lookup other accounts'))
         elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
@@ -51,6 +47,11 @@ class IdentityAccessManagement(AkamaiSession):
             sys.exit(logger.error(resp.json()['detail']))
         else:
             sys.exit(logger.error(resp.json()['detail']))
+
+        if len(account_name) > 1:
+            print_json(data=resp.json())
+            sys.exit(logger.error('please use the right account switch key'))
+        return account_name
 
     def search_account_name_without_colon(self, value: str | None = None) -> str:
         qry = f'?search={value.upper()}' if value else None
@@ -60,8 +61,6 @@ class IdentityAccessManagement(AkamaiSession):
         resp = self.session.get(url, headers=self.headers)
 
         if resp.status_code == 200:
-            account = resp.json()
-            account = f"{account[0]['accountName']}".replace(' ', '_')
             return resp.json()
         elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':
             sys.exit(logger.error('You do not have permission to lookup other accounts'))
@@ -69,5 +68,4 @@ class IdentityAccessManagement(AkamaiSession):
             lg.countdown(540, msg='Oopsie! You just hit rate limit.')
             sys.exit(logger.error(resp.json()['detail']))
         else:
-
             sys.exit(logger.error(resp.json()['detail']))

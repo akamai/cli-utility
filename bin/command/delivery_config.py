@@ -40,18 +40,11 @@ def main(args):
 
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
-    account = iam.search_account_name(value=args.account_switch_key)
-
-    if len(account) > 1:
-        account = account[1]
-    try:
-        temp_account = account[0]['accountName'].replace(' ', '_')
-        account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', temp_account)
-        filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
-    except:
-        print_json(data=account)
-        lg.countdown(540, msg='Oopsie! You just hit rate limit.')
-        sys.exit(logger.error(account['detail']))
+    account = iam.search_account_name(value=args.account_switch_key)[0]
+    account = account.replace(' ', '_')
+    logger.warning(f'Found account {account}')
+    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
+    filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
 
     if args.property_id:
         pass
@@ -70,13 +63,16 @@ def main(args):
         else:
             group_df = allgroups_df[allgroups_df['propertyCount'] > 0].copy()
             group_df = group_df.reset_index(drop=True)
-        print()
-        print(tabulate(group_df, headers=columns, showindex=True, tablefmt='github'))
+
+        if not group_df.empty:
+            print()
+            print(tabulate(group_df, headers=columns, showindex=True, tablefmt='github'))
 
         # warning for large account
         if not args.group_id:
             print()
-            logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
+            if group_df.shape[0] > 0:
+                logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
             total = allgroups_df['propertyCount'].sum()
             if total > 100:
                 logger.warning(f'This account has {total:,} properties, please be patient')
@@ -87,6 +83,7 @@ def main(args):
                 logger.critical('please consider using --group-id to reduce total properties')
 
         # collect properties detail for all groups
+        properties_df = pd.DataFrame()
         if group_df.empty:
             logger.info('no property to collect.')
         else:
@@ -151,18 +148,13 @@ def main(args):
         # add hyperlink to groupName column
         if args.group_id is not None:
             sheet['group_filtered'] = add_group_url(group_df, papi)
-        sheet['account_summary'] = add_group_url(allgroups_df, papi)
+        if not allgroups_df.empty:
+            sheet['account_summary'] = add_group_url(allgroups_df, papi)
 
     logger.debug(properties_df.columns.values.tolist()) if not properties_df.empty else None
 
-    # logger.info(properties_df)
-    files.write_xlsx(filepath, sheet, freeze_column=6)
-
-    if args.show:
-        if platform.system() != 'Darwin':
-            logger.info('--show argument is supported only on Mac OS')
-        else:
-            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+    files.write_xlsx(filepath, sheet, freeze_column=6) if not properties_df.empty else None
+    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() != 'Darwin' and args.show is True and not properties_df.empty else None
 
 
 def activate_from_excel(args):
@@ -351,16 +343,11 @@ def hostnames(args):
     '''
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
-    account = iam.search_account_name(value=args.account_switch_key)
-    logger.info(f'{account}')
-    if len(account) > 1:
-        account = account[1]
-    try:
-        temp_account = account[0]['accountName'].replace(' ', '_')
-        account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', temp_account)
-        filepath = f'output/{account}_hostname_certs.xlsx' if args.output is None else f'output/{args.output}'
-    except:
-        print_json(data=account)
+    account = iam.search_account_name(value=args.account_switch_key)[0]
+    account = account.replace(' ', '_')
+    logger.warning(f'Found account {account}')
+    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
+    filepath = f'output/{account}_hostname_certificate.xlsx' if args.output is None else f'output/{args.output}'
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
 
@@ -368,7 +355,7 @@ def hostnames(args):
     for property_id in args.property_id:
         hostname = papi.get_property_version_hostnames(property_id, args.version)
         df = pd.json_normalize(hostname)
-        logger.info(df.columns.values.tolist())
+        logger.debug(df.columns.values.tolist())
 
         columns = ['Property_Hostname', 'Edge_Hostname', 'certProvisioningType', 'production', 'staging']
         df = df.rename(columns={'cnameFrom': 'Property_Hostname',
@@ -376,23 +363,17 @@ def hostnames(args):
                                 'certStatus.production': 'production',
                                 'certStatus.staging': 'staging'})
 
-        '''
-        df['production'] = df['production'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
-        df['staging'] = df['staging'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
-        df = df.sort_values(by=['production', 'Property_Hostname'])
-        df = df.reset_index(drop=True)
-        '''
+        if 'production' in df.columns.values.tolist():
+            df['production'] = df['production'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
+            df['staging'] = df['staging'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
+            df = df.sort_values(by=['production', 'Property_Hostname'])
+            df = df.reset_index(drop=True)
 
         sheet[f'{papi.property_name}_v{args.version}'] = df
         # logger.info(df[columns])
 
     files.write_xlsx(filepath, sheet)
-
-    if args.show:
-        if platform.system() != 'Darwin':
-            logger.info('--show argument is supported only on Mac OS')
-        else:
-            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() != 'Darwin' and args.show else None
 
 
 def get_property_advanced_behavior(args):

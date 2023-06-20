@@ -24,18 +24,11 @@ def audit(args):
 
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
-    account = iam.search_account_name(value=args.account_switch_key)
-
-    # handle edge case ie F-AC-4884613
-    if len(account) > 1:
-        account = args.account_switch_key
-
-    try:
-        temp_account = account[0]['accountName'].replace(' ', '_')
-        account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', temp_account)
-        filepath = f'output/{account}_certificate.xlsx'
-    except:
-        sys.exit(logger.error(account['detail']))
+    account = iam.search_account_name(value=args.account_switch_key)[0]
+    account = account.replace(' ', '_')
+    logger.warning(f'Found account {account}')
+    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
+    filepath = f'output/{account}_certificate.xlsx' if args.output is None else f'output/{args.output}'
 
     cps = CpsWrapper(account_switch_key=args.account_switch_key)
     csv_list = []
