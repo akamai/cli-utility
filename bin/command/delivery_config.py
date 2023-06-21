@@ -7,6 +7,7 @@ import platform
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from subprocess import Popen
 from subprocess import STDOUT
@@ -380,7 +381,30 @@ def hostnames(args):
         # logger.info(df[columns])
 
     files.write_xlsx(filepath, sheet)
-    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() != 'Darwin' and args.show else None
+    if platform.system() != 'Darwin' and args.show:
+        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+    else:
+        logger.info('--show argument is supported only on Mac OS')
+
+
+def get_property_all_behaviors(args):
+    '''
+    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config behavior --property XXXXX --remove-tags uuid variables templateUuid templateLink xml
+    '''
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    status, resp = papi.search_property_by_name(args.property)
+    if status == 200:
+        if args.version is None:
+            stg, prd = papi.property_version(resp)
+            version = prd
+    tree_status, json_response = papi.property_ruletree(papi.property_id, version, args.remove_tags)
+    if tree_status == 200:
+        # print_json(data=json_response)
+        behaviors = papi.get_property_behavior(json_response['rules'])
+        unique_behaviors = sorted(list(set(behaviors)))
+        logger.debug(unique_behaviors)
+        behaviors_cli = '[' + ' '.join(unique_behaviors) + ']'
+        logger.info(behaviors_cli)
 
 
 def get_property_advanced_behavior(args):

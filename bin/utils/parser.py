@@ -122,6 +122,11 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                          {'name': 'property-id', 'help': 'provide at least one property without prefix prp_', 'nargs': '+'},
                                          {'name': 'version', 'help': 'version'},
                                          {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'}]},
+                 {'name': 'behavior',
+                  'help': 'list all behaviors on the property',
+                  'required_arguments': [{'name': 'property', 'help': 'property name'}],
+                  'optional_arguments': [{'name': 'version', 'help': 'version'},
+                                         {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}]},
                  {'name': 'ruletree',
                   'help': 'view ruletree structure format',
                   'required_arguments': [{'name': 'property-id', 'help': 'provide at least one property without prefix prp_', 'nargs': '+'}],
@@ -181,6 +186,18 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                                 {'name': 'accountkey', 'help': argparse.SUPPRESS}])
 
         diff_help = 'show compare report between two configurations. By default, configuration is compared using JSON.\nIf you want to compare metadata, add --xml'
+        diff_sc = [{'name': 'behavior',
+                  'help': 'compare behavior between two delivery configurations',
+                  'required_arguments': [{'name': 'property', 'help': 'propertyname', 'nargs': '+'}],
+                  'optional_arguments': [{'name': 'behavior', 'help': 'behavior', 'nargs': '+'},
+                                         {'name': 'left', 'help': 'version for the 1st property'},
+                                         {'name': 'right', 'help': 'version for the 2nd property'},
+                                         {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'},
+                                         {'name': 'network', 'help': 'staging or production',
+                                          'choices': ['staging', 'production']},
+                                        {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}]
+                  }]
+
         actions['diff'] = cls.create_main_command(
                             subparsers,
                             'diff',
@@ -196,7 +213,9 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                                 {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'},
                                                 {'name': 'acc-cookies', 'help': '3 cookies value from control.akamai.com'},
                                                 {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}
-                                                ])
+                                                ],
+                            subcommands=diff_sc,
+                            options=None)
 
         return parser.parse_args()
 

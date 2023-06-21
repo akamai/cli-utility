@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 import os
+import platform
 import subprocess
 import sys
 import webbrowser
@@ -10,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 from akamai_api.appsec import Appsec
 from akamai_api.papi import Papi
+from akamai_utils import papi as p
 from rich import print_json
 from tabulate import tabulate
 from utils import _logging as lg
@@ -72,7 +75,7 @@ def compare_versions(v1: str, v2: str, outputfile: str, args):
     return location
 
 
-def main(args):
+def config(args):
 
     config1, config2, left, right, cookies = args.config1, args.config2, args.left, args.right, args.acc_cookies
     logger.debug(f'{config1=} {config2=} {cookies=}')
@@ -249,3 +252,99 @@ def main(args):
                 webbrowser.open(f'file://{os.path.abspath(xml_wafAfter_index_html)}')
             else:
                 logger.info(f'{title}{os.path.abspath(xml_wafAfter_index_html)}')
+
+
+def config_behaviors(args):
+    '''
+    python bin/akamai-utility.py -a 1-1S6D diff behavior --property api.nike.com_pm ecn-api.nike.com_pm --left 1372 --right 1143 \
+        --remove-tags advanced uuid variables templateUuid templateLink xml \
+        --behavior llHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost
+    '''
+    properties, left, right = args.property, args.left, args.right
+    papi = Papi(account_switch_key=args.account_switch_key, section=args.section)
+    prop = {}
+    all_properties = []
+    for i, property in enumerate(properties):
+        status, resp = papi.search_property_by_name(property)
+        if status != 200:
+            logger.info(f'{status} {resp}')
+        else:
+            if not (left and right):
+                stg, prd = papi.property_version(resp)
+                logger.warning(f'{property:<50} {papi.property_id}')
+                property_name = f'{property}_{prd}'
+                all_properties.append(property_name)
+                status, json = papi.property_ruletree(papi.property_id, prd, args.remove_tags)
+            else:
+                if left and i == 0:
+                    property_name = f'{property}_v{left}'
+                    logger.warning(f'{property:<50} {papi.property_id}')
+                    all_properties.append(property_name)
+                    status, json = papi.property_ruletree(papi.property_id, left, args.remove_tags)
+                if right and i == 1:
+                    property_name = f'{property}_v{right}'
+                    logger.warning(f'{property:<50} {papi.property_id}')
+                    all_properties.append(property_name)
+                    status, json = papi.property_ruletree(papi.property_id, right, args.remove_tags)
+
+            if status == 200:
+                prop[property_name] = json['rules']
+
+    papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    behaviors = {}
+    print()
+    summary = []
+    for behavior in args.behavior:
+        behavior_dict = {}
+        for property_name, rule in prop.items():
+            prop_behavior = {}
+            # need current_path and paths, otherwise getting duplicates
+            prop_behavior = papi_rules.get_property_path_n_rule(rule, behavior, current_path='', paths=[])
+            logger.debug(f'{property_name:<50} {behavior:<50} {len(prop_behavior):<50}')
+            summary.append((property_name, behavior, len(prop_behavior)))
+            # print_json(data=prop_behavior)
+            behavior_dict[property_name] = copy.deepcopy(prop_behavior)
+        behaviors[behavior] = behavior_dict
+
+    sheet = {}
+    temp_df = pd.DataFrame(summary, columns=['property', 'behavior', 'count'])
+    summary_df = temp_df.pivot(index='behavior', columns='property', values='count')
+    columns = summary_df.columns.values.tolist()
+
+    summary_df['note_1'] = summary_df[columns[1]].apply(lambda x: f'not in {columns[1]}' if x == 0 else '')
+    summary_df = summary_df.sort_values(by=['note_1', 'behavior'], ascending=[False, True])
+    sheet['summary'] = summary_df
+    logger.debug(f'\n{summary_df}')
+    print(tabulate(summary_df, headers='keys', tablefmt='simple'))
+
+    print()
+    for behavior, prop_data in behaviors.items():
+        logger.debug(f'{behavior} {len(prop_data)} {type(prop_data)}')
+        df = pd.DataFrame(prop_data.items(), columns=['property', 'behavior'])
+        df = df.explode('behavior').reset_index(drop=True)
+        df['path'] = df['behavior'].apply(lambda x: list(x.keys())[0] if isinstance(x, dict) else None)
+        df['rules'] = df['behavior'].apply(lambda x: list(x.values())[0] if isinstance(x, dict) else '')
+        df['rules'] = df['rules'].apply(str)
+        df = df.fillna('')
+        df = df.sort_values(by=['rules', 'property'])
+        columns = ['property', 'path', 'rules']
+        df = df[columns]
+        logger.debug(f'\n{df}')
+        sheet[behavior] = df
+
+        logger.debug(behavior)
+        stat = df.groupby(['rules'], as_index=False)['property'].count()
+        logger.debug(f'\n{stat}')
+        stat['even_number'] = stat['property'].apply(lambda x: x % 2 == 0)
+
+        if len(behavior) > 26:
+            behavior = behavior[1:20]
+        sheet[f'{behavior}_stat'] = stat
+
+    filepath = f'output/{all_properties[0]}.xlsx'
+    files.write_xlsx(filepath, sheet, show_index=True, adjust_column_with=False, freeze_column=3)
+
+    if args.no_show is False and platform.system() == 'Darwin':
+        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+    else:
+        logger.info('--show argument is supported only on Mac OS')

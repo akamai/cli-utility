@@ -520,6 +520,17 @@ class PapiWrapper(Papi):
             logger.error(f'{property_id=} {version}')
             return 'XXX'
 
+    def get_property_behavior(self, data: dict) -> list:
+        behavior_names = []
+        if 'behaviors' in data:
+            for behavior in data['behaviors']:
+                if 'name' in behavior:
+                    behavior_names.append(behavior['name'])
+        if 'children' in data:
+            for child in data['children']:
+                behavior_names.extend(self.get_property_behavior(child))
+        return behavior_names
+
     def get_property_advanced_match_xml(self, property_id: int, version: int,
                                     displayxml: bool | None = True,
                                     showlineno: bool | None = False) -> dict:
@@ -587,6 +598,19 @@ class PapiWrapper(Papi):
             return advancedOverride
         except:
             return ''
+
+    def get_property_path_n_rule(self, json_data, value, current_path='', paths=[]):
+        if isinstance(json_data, dict):
+            if 'name' in json_data and json_data['name'] == value:
+                rulekey = f'{current_path} {json_data["name"]}'
+                paths.append({rulekey: dict(json_data)})  # Create a new dictionary instance
+            for k, v in json_data.items():
+                if k in ['children', 'behaviors']:
+                    self.get_property_path_n_rule(v, value, f'{current_path} {json_data["name"]} {k:<10}', paths)
+        elif isinstance(json_data, list):
+            for i, item in enumerate(json_data):
+                self.get_property_path_n_rule(item, value, f'{current_path}[{i+1}] > ', paths)
+        return paths
 
     def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
         status, response = super().get_ruleformat_schema(product_id, format_version)
@@ -687,6 +711,19 @@ class PapiWrapper(Papi):
             return df.status.values[0]
         else:
             return ' '
+
+
+class Node:
+    def __init__(self, name, value, parent=None):
+        self.name = name
+        self.value = value
+        self.parent = parent
+
+    def get_path(self):
+        if self.parent is None:
+            return self.name
+        else:
+            return f'{self.parent.get_path()} > {self.name}'
 
 
 if __name__ == '__main__':

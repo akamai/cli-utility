@@ -34,11 +34,16 @@ if __name__ == '__main__':
             dc.get_property_ruletree(args)
         elif args.subcommand == 'hostname':
             dc.hostnames(args)
+        elif args.subcommand == 'behavior':
+            dc.get_property_all_behaviors(args)
         else:
             dc.main(args)
 
     if args.command == 'diff':
-        diff.main(args)
+        if args.subcommand == 'behavior':
+            diff.config_behaviors(args)
+        else:
+            diff.config(args)
 
     if args.command == 'certificate':
         ca.audit(args)
