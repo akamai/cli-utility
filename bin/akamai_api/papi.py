@@ -146,6 +146,9 @@ class Papi(AkamaiSession):
                 self.group_id = int(property_items[0]['groupId'])
                 self.property_id = int(property_items[0]['propertyId'])
                 return 200, property_items
+        elif 'WAF deny rule IPBLOCK-BURST' in response.json()['detail']:
+            lg.countdown(540, msg='Oopsie! You just hit rate limit.')
+            sys.exit(logger.error(response.json()['detail']))
         else:
             return response.status_code, response.json()
 

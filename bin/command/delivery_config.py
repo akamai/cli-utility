@@ -394,9 +394,11 @@ def get_property_all_behaviors(args):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     status, resp = papi.search_property_by_name(args.property)
     if status == 200:
-        if args.version is None:
+        version = int(args.version) if args.version else None
+        if version is None:
             stg, prd = papi.property_version(resp)
             version = prd
+
     tree_status, json_response = papi.property_ruletree(papi.property_id, version, args.remove_tags)
     if tree_status == 200:
         # print_json(data=json_response)
