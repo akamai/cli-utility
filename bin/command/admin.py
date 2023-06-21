@@ -59,7 +59,7 @@ def lookup_account(args):
         index_header = f'{value.upper()}{PRESERVE_WHITESPACE}'
         logger.debug(f'{len(value)} {length} {index_header}]')
 
-        data = iam.search_account_name(value)
+        data = iam.search_accounts(value)
         if len(data) > 0:
             results.extend(data)
             df = pd.DataFrame(data)

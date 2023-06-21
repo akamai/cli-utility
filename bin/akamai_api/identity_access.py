@@ -22,6 +22,34 @@ class IdentityAccessManagement(AkamaiSession):
         self.account_switch_key = account_switch_key
         self.property_id = None
 
+    def search_accounts(self, value: str | None = None) -> str:
+        qry = f'?search={value.upper()}' if value else None
+
+        # this endpoint doesn't use account switch key
+        url = f'{self.MODULE}/api-clients/self/account-switch-keys{qry}'
+        resp = self.session.get(url, headers=self.headers)
+        account_name = []
+        if resp.status_code == 200:
+            if len(resp.json()) == 0:
+                logger.warning(f'{value} not found, remove : from search')
+                account = value.split(':')[0]
+                accounts = self.search_account_name_without_colon(account)
+                return accounts
+            else:
+                return resp.json()
+        elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':
+            sys.exit(logger.error('You do not have permission to lookup other accounts'))
+        elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
+            lg.countdown(540, msg='Oopsie! You just hit rate limit.')
+            sys.exit(logger.error(resp.json()['detail']))
+        else:
+            sys.exit(logger.error(resp.json()['detail']))
+
+        if len(account_name) > 1:
+            print_json(data=resp.json())
+            sys.exit(logger.error('please use the right account switch key'))
+        return account_name
+
     def search_account_name(self, value: str | None = None) -> str:
         qry = f'?search={value.upper()}' if value else None
 
