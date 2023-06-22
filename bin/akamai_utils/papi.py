@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -570,6 +571,7 @@ class PapiWrapper(Papi):
         ruletree_json = self.get_property_ruletree(property_id, version)
         title = f'{self.property_name}_v{version}'
         logger.debug(f'{self.property_name} {property_id=}')
+        Path('output/ruletree').mkdir(parents=True, exist_ok=True)
         files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree_json)
 
         with open(f'output/ruletree/{title}_ruletree.json') as f:

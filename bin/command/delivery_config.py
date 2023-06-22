@@ -56,7 +56,7 @@ def main(args):
             status, resp = papi.search_property_by_name(property)
             # print_json(data=resp)
             if status != 200:
-                logger.info(f'{property} not found')
+                logger.info(f'property {property:<50} not found')
                 break
             else:
                 logger.critical(f'{papi.group_id} {papi.contract_id} {papi.property_id}')
@@ -400,7 +400,7 @@ def hostnames(args):
     '''
 
     if args.version and len(args.property) > 1:
-        sys.exit(logger.error('If --version is specificed, we can lookup one property'))
+        sys.exit(logger.error('If --version is specified, we can lookup one property'))
 
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
@@ -418,7 +418,7 @@ def hostnames(args):
         logger.warning(f'Lookup property {property}')
         status, resp = papi.search_property_by_name(property)
         if status != 200:
-            logger.info(f'{property} not found')
+            logger.info(f'property {property:<50} not found')
             break
         else:
             stg, prd = papi.property_version(resp)
@@ -483,22 +483,38 @@ def get_property_all_behaviors(args):
 
 def get_property_advanced_behavior(args):
     '''
-    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property-id 743088 672055 --version 10 --advBehavior
+    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property xxx yyy --advBehavior
     '''
+
+    if args.version and len(args.property) > 1:
+        sys.exit(logger.error('If --version is specified, we can lookup one property'))
+
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     property_dict = {}
     property_list = []
     sheet = {}
-    logger.warning('Searching for advanced behavior ...')
 
-    for property_id in args.property_id:
-        excel_sheet, xml_data = papi.get_property_advanced_behavior_xml(property_id,
-                                                                        args.version,
+    logger.warning('Searching for advanced behavior ...')
+    for property in args.property:
+        logger.warning(f'Lookup property {property}')
+        status, resp = papi.search_property_by_name(property)
+        if status != 200:
+            logger.info(f'property {property:<50} not found')
+            break
+        else:
+            stg, prd = papi.property_version(resp)
+            version = prd
+            if args.version:
+                version = args.version
+                logger.critical(f'lookup requested v{version}')
+
+        excel_sheet, xml_data = papi.get_property_advanced_behavior_xml(papi.property_id,
+                                                                        version,
                                                                         displayxml=args.hidexml,
                                                                         showlineno=args.lineno)
 
         if not xml_data:
-            logger.warning(f'{excel_sheet:<50} not found')
+            logger.critical(f'{excel_sheet:<50} no advanced behavior')
         else:
             logger.debug(excel_sheet)
             print()
@@ -507,7 +523,6 @@ def get_property_advanced_behavior(args):
             sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=['advancedBehavior'])
             sheet_df.index.name = excel_sheet
             sheet_df = sheet_df.reset_index()
-            sheet[property_id] = sheet_df
 
             if not sheet_df.empty:
                 highlighted_tags = []
@@ -517,61 +532,101 @@ def get_property_advanced_behavior(args):
                     highlighted_tags.append(str(syntax.highlight(code=xml_string)))
 
                 sheet_df['advancedBehavior'] = highlighted_tags
+
+                if len(excel_sheet) > 26:
+                    excel_sheet = f'{papi.property_id}_v{version}'
+
                 sheet[excel_sheet] = sheet_df
 
+                # print the table with syntax highlighting
+                '''
+                table = tabulate(sheet_df, headers='keys', tablefmt='simple')
+                if args.hidexml is True:
+                    console = Console()
+                    console.print(table)
+                '''
+
+    if sheet:
+        print()
+        filepath = 'advancedBehavior.xlsx'
+        files.write_xlsx(filepath, sheet, show_index=True)
+        if args.no_show is False and platform.system() == 'Darwin':
+            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+        else:
+            logger.info('--show argument is supported only on Mac OS')
+
+
+def get_property_advanced_match(args):
+    '''
+    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property xxx yyy --advMatch
+    '''
+    if args.version and len(args.property) > 1:
+        sys.exit(logger.error('If --version is specified, we can lookup one property'))
+
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    property_dict = {}
+    property_list = []
+    sheet = {}
+    print()
+
+    logger.warning('Searhing for advanced match ...')
+    for property in args.property:
+        logger.warning(f'Lookup property {property}')
+        status, resp = papi.search_property_by_name(property)
+        if status != 200:
+            logger.info(f'property {property:<50} not found')
+            break
+        else:
+            stg, prd = papi.property_version(resp)
+            version = prd
+            if args.version:
+                version = args.version
+                logger.critical(f'lookup requested v{version}')
+
+        excel_sheet, xml_data = papi.get_property_advanced_match_xml(papi.property_id,
+                                                                     version,
+                                                                     displayxml=args.hidexml,
+                                                                     showlineno=args.lineno)
+        if not xml_data:
+            logger.critical(f'{excel_sheet:<50} no advanced match')
+        else:
+            property_dict[papi.property_name] = [xml_data]
+            property_list.append(property_dict)
+            sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=['advancedMatch'])
+            sheet_df.index.name = excel_sheet
+            sheet_df = sheet_df.reset_index()
+
+            if sheet_df.empty:
+                logger.warning(f'no advancedMatch found for property {property}_v{version}')
+            else:
                 # print the table with syntax highlighting
                 table = tabulate(sheet_df, headers='keys', tablefmt='simple')
                 if args.hidexml is True:
                     console = Console()
                     console.print(table)
 
+                if len(excel_sheet) > 26:
+                    excel_sheet = f'{papi.property_id}_v{version}'
+
+                sheet[excel_sheet] = sheet_df
+
     if sheet:
         print()
-        files.write_xlsx('advancedBehavior.xlsx', sheet, show_index=True)
-
-
-def get_property_advanced_match(args):
-    '''
-    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property-id 743088 672055 --version 10 --advMatch
-    '''
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-    property_dict = {}
-    property_list = []
-    sheet = {}
-    print()
-    logger.warning('Searhing for advanced match ...')
-
-    for property_id in args.property_id:
-        excel_sheet, xml_data = papi.get_property_advanced_match_xml(property_id,
-                                                                     args.version,
-                                                                     displayxml=args.hidexml,
-                                                                     showlineno=args.lineno)
-        if not xml_data:
-            logger.warning(f'{excel_sheet:<50} not found')
+        filepath = 'advancedMatch.xlsx'
+        files.write_xlsx(filepath, sheet, show_index=True)
+        if args.no_show is False and platform.system() == 'Darwin':
+            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
         else:
-            logger.warning(excel_sheet)
-            property_dict[papi.property_name] = [xml_data]
-            property_list.append(property_dict)
-            sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=['advancedMatch'])
-            sheet_df.index.name = excel_sheet
-            sheet_df = sheet_df.reset_index()
-            sheet[property_id] = sheet_df
-
-            # print the table with syntax highlighting
-            table = tabulate(sheet_df, headers='keys', tablefmt='simple')
-            if args.hidexml is True:
-                console = Console()
-                console.print(table)
-
-    if sheet:
-        print()
-        files.write_xlsx('advancedMatch.xlsx', sheet, show_index=True)
+            logger.info('--show argument is supported only on Mac OS')
 
 
 def get_property_advanced_override(args):
     '''
-    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property-id 743088 672055 --version 10 --advOverride
+    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property xxx yyy --advOverride
     '''
+    if args.version and len(args.property) > 1:
+        sys.exit(logger.error('If --version is specified, we can lookup one property'))
+
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     console = Console()
     property_dict = {}
@@ -579,29 +634,50 @@ def get_property_advanced_override(args):
     sheet = {}
     print()
     logger.warning('Searching for advanced override ...')
+    for property in args.property:
+        logger.warning(f'Lookup property {property}')
+        status, resp = papi.search_property_by_name(property)
+        if status != 200:
+            logger.info(f'property {property:<50} not found')
+            break
+        else:
+            stg, prd = papi.property_version(resp)
+            version = prd
+            if args.version:
+                version = args.version
+                logger.critical(f'lookup requested v{version}')
 
-    for property_id in args.property_id:
-        _ = papi.get_property_ruletree(property_id, args.version)
+        _ = papi.get_property_ruletree(papi.property_id, version)
 
-        title = f'{papi.property_name}_v{args.version}'
-        adv_override = papi.get_property_advanced_override(property_id, args.version)
+        title = f'{property}_v{version}'
+        adv_override = papi.get_property_advanced_override(papi.property_id, version)
         if adv_override:
             property_dict[title] = [adv_override]
             property_list.append(property_dict)
             sheet_df = pd.DataFrame.from_dict({'advancedOverride': adv_override}, orient='index', columns=['adv_override'])
             sheet_df.index.name = title
             sheet_df = sheet_df.reset_index()
-            sheet[property_id] = sheet_df
+
+            sheet_name = f'{property}_v{version}'
+            if len(sheet_name) > 26:
+                sheet_name = f'{papi.property_id}_v{version}'
+
+            sheet[sheet_name] = sheet_df
 
             if args.hidexml is True:
                 syntax = Syntax(adv_override, 'xml', theme='solarized-dark', line_numbers=args.lineno)
                 console.print(syntax)
         else:
-            logger.warning(f'{title:<50} not found')
+            logger.critical(f'{title:<50} no advanced override')
 
     if sheet:
         print()
-        files.write_xlsx('advancedOverride.xlsx', sheet, show_index=True)
+        filepath = 'advancedOverride.xlsx'
+        files.write_xlsx(filepath, sheet, show_index=True)
+        if args.no_show is False and platform.system() == 'Darwin':
+            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+        else:
+            logger.info('--show argument is supported only on Mac OS')
 
 
 # BEGIN helper method
