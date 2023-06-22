@@ -63,7 +63,7 @@ def write_xlsx(filepath: str, dict_value: dict,
                freeze_column: int | None = 2,
                show_url: bool | None = True,
                show_index: bool | None = False,
-               adjust_column_with: bool | None = True) -> None:
+               adjust_column_width: bool | None = True) -> None:
     with pd.ExcelWriter(path=filepath, engine='xlsxwriter',
                         engine_kwargs={'options': {'strings_to_urls': show_url}}) as writer:
         writer.book.use_zip64()  # to allow excel to store files larger than 4GB
@@ -75,7 +75,7 @@ def write_xlsx(filepath: str, dict_value: dict,
                     df.to_excel(writer, sheet_name=sheetname,
                                 freeze_panes=(freeze_row, freeze_column),
                                 index=show_index)
-                    if adjust_column_with is True:
+                    if adjust_column_width is True:
                         auto_adjust_xlsx_column_width(df, writer, sheet_name=sheetname, margin=0,
                                                     index=show_index)
                     workbook = writer.book
@@ -124,7 +124,7 @@ def write_xlsx(filepath: str, dict_value: dict,
                             df.to_excel(writer, sheet_name=f'{sheetname}_{sheet_no}',
                                         freeze_panes=(freeze_row, freeze_column),
                                         index=show_index)
-                            if adjust_column_with is True:
+                            if adjust_column_width is True:
                                 auto_adjust_xlsx_column_width(df, writer, sheet_name=f'{sheetname}_{sheet_no}',
                                                         index=show_index)
 

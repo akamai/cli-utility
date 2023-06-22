@@ -258,7 +258,7 @@ def config_behaviors(args):
     '''
     python bin/akamai-utility.py -a 1-1S6D diff behavior --property api.nike.com_pm ecn-api.nike.com_pm --left 1372 --right 1143 \
         --remove-tags advanced uuid variables templateUuid templateLink xml \
-        --behavior llHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost
+        --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost
     '''
     properties, left, right = args.property, args.left, args.right
     papi = Papi(account_switch_key=args.account_switch_key, section=args.section)
@@ -342,7 +342,7 @@ def config_behaviors(args):
         sheet[f'{behavior}_stat'] = stat
 
     filepath = f'output/{all_properties[0]}.xlsx'
-    files.write_xlsx(filepath, sheet, show_index=True, adjust_column_with=False, freeze_column=3)
+    files.write_xlsx(filepath, sheet, show_index=True, adjust_column_width=False, freeze_column=3)
 
     if args.no_show is False and platform.system() == 'Darwin':
         subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
