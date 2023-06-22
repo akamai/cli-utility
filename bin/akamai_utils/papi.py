@@ -273,6 +273,9 @@ class PapiWrapper(Papi):
         return pd.concat(df_list), property_count
 
     # PROPERTIES
+    def get_property_version_latest(self, property_id: int) -> dict:
+        return super().get_property_version_latest(property_id)
+
     def property_url(self, asset_id: int, group_id: int):
         return f'https://control.akamai.com/apps/property-manager/#/property/{asset_id}?gid={group_id}'
 

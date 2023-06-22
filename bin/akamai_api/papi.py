@@ -135,12 +135,14 @@ class Papi(AkamaiSession):
             logger.debug(f'\nFound property {property_name}')
             try:
                 property_items = response.json()['versions']['items']
+                # print_json(data=property_items)
             except:
                 logger.info(print_json(response.json()))
 
             if len(property_items) == 0:
                 sys.exit(logger.error(f'{property_name} not found'))
             else:
+                self.account_id = property_items[0]['accountId']
                 self.contract_id = property_items[0]['contractId']
                 self.asset_id = property_items[0]['assetId']
                 self.group_id = int(property_items[0]['groupId'])
@@ -177,6 +179,15 @@ class Papi(AkamaiSession):
         logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
         if response.status_code == 200:
             return response.json()['properties']['items']
+        else:
+            return response.json()
+
+    def get_property_version_latest(self, property_id: int) -> dict:
+        url = self.form_url(f'{self.MODULE}/properties/{property_id}')
+        response = self.session.get(url, headers=self.headers)
+        logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
+        if response.status_code == 200:
+            return response.json()['properties']['items'][0]
         else:
             return response.json()
 
@@ -313,7 +324,6 @@ class Papi(AkamaiSession):
             if prd_version == 0:
                 prd_version = max(dd['propertyVersion'])
 
-        print()
         logger.info(f'Found staging v{stg_version}, production v{prd_version}')
         return stg_version, prd_version
 
@@ -340,7 +350,8 @@ class Papi(AkamaiSession):
                   'validateMode': 'full',
                  }
         resp = self.session.get(url, headers=self.headers, params=params)
-        logger.debug(f'{resp.url}')
+        logger.debug(f'{resp.status_code} {resp.url} {params} {self.headers}')
+
         # tags we are not interested to compare
         self.property_name = resp.json()['propertyName']
         ignore_keys = ['etag', 'errors', 'warnings', 'ruleFormat', 'comments',

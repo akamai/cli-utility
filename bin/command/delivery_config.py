@@ -38,7 +38,8 @@ def main(args):
     2173 properties 90 minutes
      800 properties 30 minutes
     '''
-
+    if args.group_id and args.property:
+        sys.exit(logger.error('Please use either --group-id or --property, not both'))
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
     account = iam.search_account_name(value=args.account_switch_key)[0]
@@ -46,15 +47,70 @@ def main(args):
     logger.warning(f'Found account {account}')
     account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
     filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    sheet = {}
+    if args.property:
+        all_properties = []
+        for property in args.property:
+            logger.warning(f'Lookup property {property}')
+            status, resp = papi.search_property_by_name(property)
+            # print_json(data=resp)
+            if status != 200:
+                logger.info(f'{property} not found')
+                break
+            else:
+                logger.critical(f'{papi.group_id} {papi.contract_id} {papi.property_id}')
+                stg, prd = papi.property_version(resp)
+                all_properties.append((papi.account_id, papi.contract_id, papi.group_id, property, papi.property_id, stg, prd))
 
-    if args.property_id:
-        pass
+        properties_df = pd.DataFrame(all_properties, columns=['accountId', 'contractId', 'groupId', 'propertyName', 'propertyId', 'stagingVersion', 'productionVersion'])
+        properties_df['groupName'] = properties_df['groupId'].apply(lambda x: papi.get_group_name(x))
+        properties_df['latestVersion'] = properties_df['propertyId'].apply(lambda x: papi.get_property_version_latest(x)['latestVersion'])
+        properties_df['assetId'] = properties_df['propertyId'].apply(lambda x: papi.get_property_version_latest(x)['assetId'])
+
+        logger.debug(' Collecting hostname')
+        properties_df['hostname'] = properties_df[['propertyId']].apply(lambda x: papi.get_property_hostnames(*x), axis=1)
+        properties_df['hostname_count'] = properties_df['hostname'].str.len()
+        # show one hostname per list and remove list syntax
+        properties_df['hostname'] = properties_df[['hostname']].apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
+
+        logger.debug(' Collecting updatedDate')
+        properties_df['updatedDate'] = properties_df.apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
+
+        logger.debug(' Collecting productId')
+        properties_df['productId'] = properties_df.apply(lambda row: papi.get_property_version_detail(
+            row['propertyId'], int(row['productionVersion']) if pd.notnull(row['productionVersion']) else row['latestVersion'], 'productId'), axis=1)
+
+        logger.debug(' Collecting ruleFormat')
+        properties_df['ruleFormat'] = properties_df.apply(lambda row: papi.get_property_version_detail(
+            row['propertyId'], int(row['productionVersion']) if pd.notnull(row['productionVersion']) else row['latestVersion'], 'ruleFormat'), axis=1)
+
+        logger.debug(' Collecting property url')
+        properties_df['propertyURL'] = properties_df.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
+        properties_df['url'] = properties_df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
+
+        del properties_df['propertyName']  # drop original column
+        properties_df = properties_df.rename(columns={'url': 'propertyName'})  # show column with hyperlink instead
+        properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
+        properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
+
+        # properties.loc[pd.notnull(properties['cpcode_unique_value']) & (properties['cpcode_unique_value'] == ''), 'cpcode'] = '0'
+
+        columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
+                    'latestVersion', 'stagingVersion', 'productionVersion',
+                    'productId', 'ruleFormat', 'hostname_count', 'hostname']
+        properties_df['propertyId'] = properties_df['propertyId'].astype(str)
+        properties_df = properties_df[columns].copy()
+        properties_df = properties_df.reset_index(drop=True)
+        sheet['properties'] = properties_df
+
+        properties_df['ruletree'] = properties_df.apply(
+                        lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
+                                                            if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
+        logger.info(f'\n{properties_df}')
     else:
         # build group structure as displayed on control.akamai.com
-        papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
         allgroups_df, columns = papi.account_group_summary()
-
-        sheet = {}
         allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)  # change groupId to str before load into excel
 
         if args.group_id:
@@ -155,7 +211,7 @@ def main(args):
     logger.debug(properties_df.columns.values.tolist()) if not properties_df.empty else None
 
     files.write_xlsx(filepath, sheet, freeze_column=6) if not properties_df.empty else None
-    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() != 'Darwin' and args.show is True and not properties_df.empty else None
+    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not properties_df.empty else None
 
 
 def activate_from_excel(args):
@@ -340,8 +396,12 @@ def get_property_ruletree(args):
 
 def hostnames(args):
     '''
-    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config hostname --property-id 219351 --version 27 --show
+    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config hostname --property --version 27 --show
     '''
+
+    if args.version and len(args.property) > 1:
+        sys.exit(logger.error('If --version is specificed, we can lookup one property'))
+
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
     account = iam.search_account_name(value=args.account_switch_key)[0]
@@ -353,38 +413,44 @@ def hostnames(args):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
 
     sheet = {}
-    for property_id in args.property_id:
-        hostname = papi.get_property_version_hostnames(property_id, args.version)
-        df = pd.json_normalize(hostname)
-        logger.debug(df.columns.values.tolist())
-
-        columns = ['Property_Hostname', 'Edge_Hostname', 'certProvisioningType', 'production', 'staging']
-        df = df.rename(columns={'cnameFrom': 'Property_Hostname',
-                                'cnameTo': 'Edge_Hostname',
-                                'certStatus.production': 'production',
-                                'certStatus.staging': 'staging'})
-
-        if 'production' in df.columns.values.tolist():
-            df['production'] = df['production'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
-            df['staging'] = df['staging'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
-            df = df.sort_values(by=['production', 'Property_Hostname'])
-            df = df.reset_index(drop=True)
-
-        if len(f'{papi.property_name}_v{args.version}') >= 31:
-            sheet[f'{property_id}_v{args.version}'] = df
+    print()
+    for property in args.property:
+        logger.warning(f'Lookup property {property}')
+        status, resp = papi.search_property_by_name(property)
+        if status != 200:
+            logger.info(f'{property} not found')
+            break
         else:
-            sheet[f'{papi.property_name}_v{args.version}'] = df
+            stg, prd = papi.property_version(resp)
+            version = prd
 
-        filepath = f'{papi.property_name}_v{args.version}.xlsx'
-        filepath = f'output/{filepath}' if args.output is None else f'output/{args.output}'
+            hostname = papi.get_property_version_hostnames(papi.property_id, version)
+            df = pd.json_normalize(hostname)
+            logger.debug(df.columns.values.tolist())
 
-        # logger.info(df[columns])
+            columns = ['Property_Hostname', 'Edge_Hostname', 'certProvisioningType', 'production', 'staging']
+            df = df.rename(columns={'cnameFrom': 'Property_Hostname',
+                                    'cnameTo': 'Edge_Hostname',
+                                    'certStatus.production': 'production',
+                                    'certStatus.staging': 'staging'})
 
-    files.write_xlsx(filepath, sheet)
-    if platform.system() != 'Darwin' and args.show:
+            if 'production' in df.columns.values.tolist():
+                df['production'] = df['production'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
+                df['staging'] = df['staging'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
+                df = df.sort_values(by=['production', 'Property_Hostname'])
+                df = df.reset_index(drop=True)
+
+            sheetname = f'{property}_v{version}'
+            if len(sheetname) >= 31:
+                sheet[f'{papi.property_id}_v{version}'] = df
+            else:
+                sheet[sheetname] = df
+
+    files.write_xlsx(filepath, sheet, freeze_column=3, adjust_column_width=True)
+    if platform.system() == 'Darwin' and args.no_show is False:
         subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
     else:
-        logger.info('--show argument is supported only on Mac OS')
+        logger.info('--no-show argument is supported only on Mac OS')
 
 
 def get_property_all_behaviors(args):
@@ -406,7 +472,13 @@ def get_property_all_behaviors(args):
         unique_behaviors = sorted(list(set(behaviors)))
         logger.debug(unique_behaviors)
         behaviors_cli = '[' + ' '.join(unique_behaviors) + ']'
-        logger.info(behaviors_cli)
+
+        if len(unique_behaviors) > 0:
+            logger.info('Behaviors founded')
+            logger.warning(behaviors_cli)
+            print()
+            logger.critical('You can use the list to compare behavior between 2 delivery configs')
+            logger.info('>> akamai util diff behavior --property A B --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost')
 
 
 def get_property_advanced_behavior(args):
