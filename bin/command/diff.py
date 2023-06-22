@@ -75,7 +75,7 @@ def compare_versions(v1: str, v2: str, outputfile: str, args):
     return location
 
 
-def config(args):
+def compare_config(args):
 
     config1, config2, left, right, cookies = args.config1, args.config2, args.left, args.right, args.acc_cookies
     logger.debug(f'{config1=} {config2=} {cookies=}')
@@ -254,7 +254,7 @@ def config(args):
                 logger.info(f'{title}{os.path.abspath(xml_wafAfter_index_html)}')
 
 
-def config_behaviors(args):
+def compare_delivery_behaviors(args):
     '''
     python bin/akamai-utility.py -a 1-1S6D diff behavior --property api.nike.com_pm ecn-api.nike.com_pm --left 1372 --right 1143 \
         --remove-tags advanced uuid variables templateUuid templateLink xml \
@@ -312,37 +312,56 @@ def config_behaviors(args):
     columns = summary_df.columns.values.tolist()
 
     summary_df['note_1'] = summary_df[columns[1]].apply(lambda x: f'not in {columns[1]}' if x == 0 else '')
-    summary_df = summary_df.sort_values(by=['note_1', 'behavior'], ascending=[False, True])
+    summary_df['note_2'] = summary_df.apply(lambda row: 'diff count' if row[columns[0]] != row[columns[1]] else '', axis=1)
+    summary_df = summary_df.sort_values(by=['note_1', 'note_2', 'behavior'], ascending=[False, False, True])
+
+    nunique = summary_df.nunique()
+    cols_to_drop = nunique[nunique == 1].index
+    logger.warning(cols_to_drop)
+    logger.info(summary_df.dtypes)
+    summary_df = summary_df.drop(cols_to_drop, axis=1)
+
     sheet['summary'] = summary_df
     logger.debug(f'\n{summary_df}')
     print(tabulate(summary_df, headers='keys', tablefmt='simple'))
 
     print()
+    all_behavior_result = []
+    all_stat_result = []
     for behavior, prop_data in behaviors.items():
         logger.debug(f'{behavior} {len(prop_data)} {type(prop_data)}')
         df = pd.DataFrame(prop_data.items(), columns=['property', 'behavior'])
         df = df.explode('behavior').reset_index(drop=True)
         df['path'] = df['behavior'].apply(lambda x: list(x.keys())[0] if isinstance(x, dict) else None)
         df['rules'] = df['behavior'].apply(lambda x: list(x.values())[0] if isinstance(x, dict) else '')
+        df['behavior_name'] = behavior
         df['rules'] = df['rules'].apply(str)
         df = df.fillna('')
-        df = df.sort_values(by=['rules', 'property'])
-        columns = ['property', 'path', 'rules']
+        df = df.sort_values(by=['behavior_name', 'rules', 'property'])
+        columns = ['behavior_name', 'property', 'path', 'rules']
         df = df[columns]
         logger.debug(f'\n{df}')
-        sheet[behavior] = df
+        # sheet[behavior] = df
+        all_behavior_result.append(df)
 
         logger.debug(behavior)
-        stat = df.groupby(['rules'], as_index=False)['property'].count()
+        stat = df.groupby(['behavior_name', 'rules'], as_index=False)['property'].count()
         logger.debug(f'\n{stat}')
         stat['even_number'] = stat['property'].apply(lambda x: x % 2 == 0)
 
         if len(behavior) > 26:
             behavior = behavior[1:20]
-        sheet[f'{behavior}_stat'] = stat
+        # sheet[f'{behavior}_stat'] = stat
+        all_stat_result.append(stat)
 
-    filepath = f'output/{all_properties[0]}.xlsx'
-    files.write_xlsx(filepath, sheet, show_index=True, adjust_column_width=False, freeze_column=3)
+    all_behavior_df = pd.concat(all_behavior_result)
+    all_behavior_df = all_behavior_df.sort_values(by=['behavior_name', 'rules', 'property'])
+    all_behavior_df = all_behavior_df.reset_index(drop=True)
+    sheet['behaviors'] = all_behavior_df
+    sheet['compare'] = pd.concat(all_stat_result)
+    filename = all_properties[0]
+    filepath = f'output/{filename}.xlsx'
+    files.write_xlsx(filepath, sheet, show_index=True, adjust_column_width=True, freeze_column=3)
 
     if args.no_show is False and platform.system() == 'Darwin':
         subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])

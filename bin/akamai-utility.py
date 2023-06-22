@@ -41,9 +41,9 @@ if __name__ == '__main__':
 
     if args.command == 'diff':
         if args.subcommand == 'behavior':
-            diff.config_behaviors(args)
+            diff.compare_delivery_behaviors(args)
         else:
-            diff.config(args)
+            diff.compare_config(args)
 
     if args.command == 'certificate':
         ca.audit(args)
