@@ -607,8 +607,8 @@ class PapiWrapper(Papi):
     def get_property_path_n_rule(self, json_data, value, current_path='', paths=[]):
         if isinstance(json_data, dict):
             if 'name' in json_data and json_data['name'] == value:
-                rulekey = f'{current_path} {json_data["name"]}'
-                paths.append({rulekey: dict(json_data)})  # Create a new dictionary instance
+                rule_name = f'{current_path}'.lstrip().rstrip('> ')
+                paths.append({rule_name: dict(json_data)})  # Create a new dictionary instance
             for k, v in json_data.items():
                 if k in ['children', 'behaviors']:
                     self.get_property_path_n_rule(v, value, f'{current_path} {json_data["name"]} {k:<10}', paths)
