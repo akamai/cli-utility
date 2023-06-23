@@ -190,12 +190,11 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                   'help': 'compare behavior between two delivery configurations',
                   'required_arguments': [{'name': 'property', 'help': 'propertyname', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'behavior', 'help': 'behavior', 'nargs': '+'},
+                                         {'name': 'criteria', 'help': 'criteria', 'nargs': '+'},
                                          {'name': 'left', 'help': 'version for the 1st property'},
                                          {'name': 'right', 'help': 'version for the 2nd property'},
                                          {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'},
-                                         {'name': 'network', 'help': 'staging or production',
-                                          'choices': ['staging', 'production']},
-                                        {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}]
+                                         {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}]
                   }]
 
         actions['diff'] = cls.create_main_command(

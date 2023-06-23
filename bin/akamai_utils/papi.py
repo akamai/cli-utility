@@ -624,7 +624,6 @@ class PapiWrapper(Papi):
                 path = f'{path} {json["name"]}'
                 path = path.lstrip().rstrip('> ')
                 logger.debug(path)
-                logger.debug(json['criteria'])
                 navigation.append({path: json['criteria']})
             for k, v in json.items():
                 if k in ['children', 'behaviors']:
@@ -634,6 +633,25 @@ class PapiWrapper(Papi):
                 index = i + 1
                 self.get_property_path_n_criteria(item, f'{path}[{index:>3}] > ', navigation)
         return navigation
+
+    def collect_property_criteria(self, property_name: str, json: dict, path: str, navigation=[]) -> pd.DataFrame:
+        criteria = self.get_property_path_n_criteria(json, path, navigation)
+        flat = pd.json_normalize(criteria)
+
+        dx = pd.DataFrame()
+        dx = pd.DataFrame(flat)
+        dx = dx.melt(var_name='path', value_name='json')
+        dx = dx.dropna(subset=['json'])
+        dx['property'] = property_name
+
+        df_exploded = pd.DataFrame()
+        df_exploded = dx.explode('json').reset_index(drop=True)
+        df_exploded['index'] = df_exploded.groupby(['property', 'path']).cumcount() + 1
+        df_exploded['criteria'] = df_exploded.apply(lambda row: f"{row['json']['name']}", axis=1)
+        df_exploded['json'] = df_exploded.apply(lambda row: f"{row['json']['options']}", axis=1)
+        df_exploded['path'] = df_exploded.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
+        columns = ['property', 'path', 'criteria', 'json']
+        return df_exploded[columns]
 
     def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
         status, response = super().get_ruleformat_schema(product_id, format_version)
