@@ -490,8 +490,7 @@ def get_property_advanced_behavior(args):
         sys.exit(logger.error('If --version is specified, we can lookup one property'))
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-    property_dict = {}
-    property_list = []
+    papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
     sheet = {}
 
     logger.warning('Searching for advanced behavior ...')
@@ -507,44 +506,29 @@ def get_property_advanced_behavior(args):
             if args.version:
                 version = args.version
                 logger.critical(f'lookup requested v{version}')
+            property_name = f'{property}_v{version}'
+            if len(property_name) > 26:
+                property_name = f'{papi.property_id}_v{version}'
+        status, json = papi.property_ruletree(papi.property_id, version)
+        prop_behavior = papi_rules.get_property_path_n_behavior(json['rules'], 'advanced', path='', navigation=[])
 
-        excel_sheet, xml_data = papi.get_property_advanced_behavior_xml(papi.property_id,
-                                                                        version,
-                                                                        displayxml=args.hidexml,
-                                                                        showlineno=args.lineno)
+        dx = pd.DataFrame(prop_behavior)
+        dx = dx.melt(var_name='path', value_name='json')
+        dx = dx.dropna(subset=['json'])
+        dx['property'] = property_name
+        dx['type'] = 'advanced behavior'
+        dx['description'] = dx.apply(lambda row: f"{row['json']['options']['description']}", axis=1)
+        dx['xml'] = dx.apply(lambda row: f"{row['json']['options']['xml']}", axis=1)
+        dx = dx.reset_index(drop=True)
+        columns = ['property', 'type', 'path', 'description', 'xml']
+        sheet[property_name] = dx[columns]
 
-        if not xml_data:
-            logger.critical(f'{excel_sheet:<50} no advanced behavior')
-        else:
-            logger.debug(excel_sheet)
-            print()
-            property_dict[papi.property_name] = [xml_data]
-            property_list.append(property_dict)
-            sheet_df = pd.DataFrame.from_dict(xml_data, orient='index', columns=['advancedBehavior'])
-            sheet_df.index.name = excel_sheet
-            sheet_df = sheet_df.reset_index()
-
-            if not sheet_df.empty:
-                highlighted_tags = []
-                # add highlighted tags as a new column in the DataFrame
-                for xml_string in sheet_df['advancedBehavior']:
-                    syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=True)
-                    highlighted_tags.append(str(syntax.highlight(code=xml_string)))
-
-                sheet_df['advancedBehavior'] = highlighted_tags
-
-                if len(excel_sheet) > 26:
-                    excel_sheet = f'{papi.property_id}_v{version}'
-
-                sheet[excel_sheet] = sheet_df
-
-                # print the table with syntax highlighting
-                '''
-                table = tabulate(sheet_df, headers='keys', tablefmt='simple')
-                if args.hidexml is True:
-                    console = Console()
-                    console.print(table)
-                '''
+        if args.hidexml is True:
+            for path, xml_string in dx[['path', 'xml']].values:
+                logger.warning(path)
+                syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=args.lineno)
+                console = Console()
+                console.print(syntax)
 
     if sheet:
         print()
