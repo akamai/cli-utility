@@ -604,19 +604,45 @@ class PapiWrapper(Papi):
         except:
             return ''
 
-    def get_property_path_n_behavior(self, json, lookup_behavior: str, path='', navigation=[]):
+    def get_property_path_n_behavior(self, json, path='', navigation=[]):
         if isinstance(json, dict):
-            if 'name' in json and json['name'] == lookup_behavior:
+            if 'behaviors' in json and len(json['behaviors']) > 0:
+                path = f'{path} {json["name"]}'
+                path = path.replace('default default', 'default')
                 rule_name = f'{path}'.lstrip().rstrip('> ')
-                navigation.append({rule_name: dict(json)})  # Create a new dictionary instance
+                navigation.append({rule_name: json['behaviors']})
             for k, v in json.items():
                 if k in ['children', 'behaviors']:
-                    self.get_property_path_n_behavior(v, lookup_behavior, f'{path} {json["name"]} {k:<10}', navigation)
+                    self.get_property_path_n_behavior(v, f'{path} {json["name"]} {k:<10}', navigation)
         elif isinstance(json, list):
             for i, item in enumerate(json):
                 index = i + 1
-                self.get_property_path_n_behavior(item, lookup_behavior, f'{path}[{index:>3}] > ', navigation)
+                self.get_property_path_n_behavior(item, f'{path}[{index:>3}] > ', navigation)
         return navigation
+
+    def collect_property_behavior(self, property_name: str, json: dict, path: str, navigation=[]) -> pd.DataFrame:
+        behavior = self.get_property_path_n_behavior(json, path, navigation)
+
+        flat = pd.json_normalize(behavior)
+        dx = pd.DataFrame()
+        dx = pd.DataFrame(flat)
+        dx = dx.melt(var_name='path', value_name='json')
+        dx = dx.dropna(subset=['json'])
+        dx['property'] = property_name
+
+        behavior = pd.DataFrame()
+        behavior = dx.explode('json').reset_index(drop=True)
+        behavior['type'] = 'behavior'
+        behavior['index'] = behavior.groupby(['property', 'path']).cumcount() + 1
+        behavior['path'] = behavior.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
+        behavior['behavior'] = behavior.apply(lambda row: f"{row['json']['name']}", axis=1)
+        behavior['json'] = behavior.apply(lambda row: f"{row['json']['options']}"
+                                                if row['behavior'] != 'advanced'
+                                                else f"{row['json']['options']['xml']}", axis=1)
+        behavior = behavior.rename(columns={'behavior': 'name'})
+
+        columns = ['property', 'path', 'type', 'name', 'json']
+        return behavior[columns]
 
     def get_property_path_n_criteria(self, json, path='', navigation=[]):
         if isinstance(json, dict):
@@ -644,14 +670,15 @@ class PapiWrapper(Papi):
         dx = dx.dropna(subset=['json'])
         dx['property'] = property_name
 
-        df_exploded = pd.DataFrame()
-        df_exploded = dx.explode('json').reset_index(drop=True)
-        df_exploded['index'] = df_exploded.groupby(['property', 'path']).cumcount() + 1
-        df_exploded['criteria'] = df_exploded.apply(lambda row: f"{row['json']['name']}", axis=1)
-        df_exploded['json'] = df_exploded.apply(lambda row: f"{row['json']['options']}", axis=1)
-        df_exploded['path'] = df_exploded.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
-        columns = ['property', 'path', 'criteria', 'json']
-        return df_exploded[columns]
+        criteria = pd.DataFrame()
+        criteria = dx.explode('json').reset_index(drop=True)
+        criteria['type'] = 'criteria'
+        criteria['index'] = criteria.groupby(['property', 'path']).cumcount() + 1
+        criteria['name'] = criteria.apply(lambda row: f"{row['json']['name']}", axis=1)
+        criteria['json'] = criteria.apply(lambda row: f"{row['json']['options']}", axis=1)
+        criteria['path'] = criteria.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
+        columns = ['property', 'path', 'type', 'name', 'json']
+        return criteria[columns]
 
     def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
         status, response = super().get_ruleformat_schema(product_id, format_version)
