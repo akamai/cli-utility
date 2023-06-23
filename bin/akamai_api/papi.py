@@ -129,16 +129,14 @@ class Papi(AkamaiSession):
     def search_property_by_name(self, property_name: str) -> tuple:
         url = self.form_url(f'{self.MODULE}/search/find-by-value')
         payload = {'propertyName': property_name}
-        response = self.session.post(url, json=payload, headers=self.headers)
-
-        if response.status_code == 200:
-            logger.debug(f'\nFound property {property_name}')
+        resp = self.session.post(url, json=payload, headers=self.headers)
+        if resp.status_code == 200:
             try:
-                property_items = response.json()['versions']['items']
+                property_items = resp.json()['versions']['items']
                 # print_json(data=property_items)
             except:
-                logger.info(print_json(response.json()))
-
+                logger.info(print_json(resp.json()))
+            logger.debug(f'{property_name} {resp.status_code} {resp.url} {property_items}')
             if len(property_items) == 0:
                 sys.exit(logger.error(f'{property_name} not found'))
             else:
@@ -148,11 +146,11 @@ class Papi(AkamaiSession):
                 self.group_id = int(property_items[0]['groupId'])
                 self.property_id = int(property_items[0]['propertyId'])
                 return 200, property_items
-        elif 'WAF deny rule IPBLOCK-BURST' in response.json()['detail']:
+        elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
             lg.countdown(540, msg='Oopsie! You just hit rate limit.')
-            sys.exit(logger.error(response.json()['detail']))
+            sys.exit(logger.error(resp.json()['detail']))
         else:
-            return response.status_code, response.json()
+            return resp.status_code, resp.json()
 
     def search_property_by_hostname(self, hostname: str) -> tuple:
         url = self.form_url(f'{self.MODULE}/search/find-by-value')
