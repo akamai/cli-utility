@@ -604,36 +604,36 @@ class PapiWrapper(Papi):
         except:
             return ''
 
-    def get_property_path_n_rule(self, json_data, value, current_path='', paths=[]):
-        if isinstance(json_data, dict):
-            if 'name' in json_data and json_data['name'] == value:
-                rule_name = f'{current_path}'.lstrip().rstrip('> ')
-                paths.append({rule_name: dict(json_data)})  # Create a new dictionary instance
-            for k, v in json_data.items():
+    def get_property_path_n_behavior(self, json, lookup_behavior: str, path='', navigation=[]):
+        if isinstance(json, dict):
+            if 'name' in json and json['name'] == lookup_behavior:
+                rule_name = f'{path}'.lstrip().rstrip('> ')
+                navigation.append({rule_name: dict(json)})  # Create a new dictionary instance
+            for k, v in json.items():
                 if k in ['children', 'behaviors']:
-                    self.get_property_path_n_rule(v, value, f'{current_path} {json_data["name"]} {k:<10}', paths)
-        elif isinstance(json_data, list):
-            for i, item in enumerate(json_data):
+                    self.get_property_path_n_behavior(v, lookup_behavior, f'{path} {json["name"]} {k:<10}', navigation)
+        elif isinstance(json, list):
+            for i, item in enumerate(json):
                 index = i + 1
-                self.get_property_path_n_rule(item, value, f'{current_path}[{index:>3}] > ', paths)
-        return paths
+                self.get_property_path_n_behavior(item, lookup_behavior, f'{path}[{index:>3}] > ', navigation)
+        return navigation
 
-    def get_property_path_n_criteria(self, json_data, current_path='', paths=[]):
-        if isinstance(json_data, dict):
-            if 'criteria' in json_data and len(json_data['criteria']) > 0:
-                path = f'{current_path} {json_data["name"]}'
+    def get_property_path_n_criteria(self, json, path='', navigation=[]):
+        if isinstance(json, dict):
+            if 'criteria' in json and len(json['criteria']) > 0:
+                path = f'{path} {json["name"]}'
                 path = path.lstrip().rstrip('> ')
                 logger.debug(path)
-                logger.debug(json_data['criteria'])
-                paths.append({path: json_data['criteria']})
-            for k, v in json_data.items():
+                logger.debug(json['criteria'])
+                navigation.append({path: json['criteria']})
+            for k, v in json.items():
                 if k in ['children', 'behaviors']:
-                    self.get_property_path_n_criteria(v, f'{current_path} {json_data["name"]} {k:10}', paths)
-        elif isinstance(json_data, list):
-            for i, item in enumerate(json_data):
+                    self.get_property_path_n_criteria(v, f'{path} {json["name"]} {k:10}', navigation)
+        elif isinstance(json, list):
+            for i, item in enumerate(json):
                 index = i + 1
-                self.get_property_path_n_criteria(item, f'{current_path}[{index:>3}] > ', paths)
-        return paths
+                self.get_property_path_n_criteria(item, f'{path}[{index:>3}] > ', navigation)
+        return navigation
 
     def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
         status, response = super().get_ruleformat_schema(product_id, format_version)

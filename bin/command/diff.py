@@ -279,7 +279,7 @@ def compare_delivery_behaviors(args):
                 all_properties.append(property_name)
                 status, json = papi.property_ruletree(papi.property_id, prd, args.remove_tags)
                 dx = pd.DataFrame()
-                x = papi_rules.get_property_path_n_criteria(json['rules'], current_path='', paths=[])
+                x = papi_rules.get_property_path_n_criteria(json['rules'], path='', navigation=[])
 
                 flat = pd.json_normalize(x)
                 dx = pd.DataFrame(flat)
@@ -305,7 +305,7 @@ def compare_delivery_behaviors(args):
                     status, json = papi.property_ruletree(papi.property_id, left, args.remove_tags)
 
                     dx = pd.DataFrame()
-                    x = papi_rules.get_property_path_n_criteria(json['rules'], current_path='', paths=[])
+                    x = papi_rules.get_property_path_n_criteria(json['rules'], path='', navigation=[])
 
                     flat = pd.json_normalize(x)
                     dx = pd.DataFrame(flat)
@@ -330,7 +330,7 @@ def compare_delivery_behaviors(args):
                     status, json = papi.property_ruletree(papi.property_id, right, args.remove_tags)
 
                     dx = pd.DataFrame()
-                    x = papi_rules.get_property_path_n_criteria(json['rules'], current_path='', paths=[])
+                    x = papi_rules.get_property_path_n_criteria(json['rules'], path='', navigation=[])
 
                     flat = pd.json_normalize(x)
                     dx = pd.DataFrame(flat)
@@ -359,7 +359,7 @@ def compare_delivery_behaviors(args):
         for property_name, rule in prop.items():
             prop_behavior = {}
             # need current_path and paths, otherwise getting duplicates
-            prop_behavior = papi_rules.get_property_path_n_rule(rule, behavior, current_path='', paths=[])
+            prop_behavior = papi_rules.get_property_path_n_behavior(rule, behavior, path='', navigation=[])
             logger.debug(f'{property_name:<50} {behavior:<50} {len(prop_behavior):<50}')
             summary.append((property_name, behavior, len(prop_behavior)))
             # print_json(data=prop_behavior)
