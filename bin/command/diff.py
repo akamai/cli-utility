@@ -262,8 +262,11 @@ def compare_delivery_behaviors(args):
     '''
     properties, left, right = args.property, args.left, args.right
     papi = Papi(account_switch_key=args.account_switch_key, section=args.section)
+    papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
     prop = {}
+    sheet = {}
     all_properties = []
+    all_criteria = []
     for i, property in enumerate(properties):
         status, resp = papi.search_property_by_name(property)
         if status != 200:
@@ -272,25 +275,82 @@ def compare_delivery_behaviors(args):
             if not (left and right):
                 stg, prd = papi.property_version(resp)
                 logger.warning(f'{property:<50} {papi.property_id}')
-                property_name = f'{property}_{prd}'
+                property_name = f'{property}_v{prd}'
                 all_properties.append(property_name)
                 status, json = papi.property_ruletree(papi.property_id, prd, args.remove_tags)
+                dx = pd.DataFrame()
+                x = papi_rules.get_property_path_n_criteria(json['rules'], current_path='', paths=[])
+
+                flat = pd.json_normalize(x)
+                dx = pd.DataFrame(flat)
+                dx = dx.melt(var_name='path', value_name='json')
+                dx = dx.dropna(subset=['json'])
+                dx['property'] = property_name
+
+                # Explode 'criteria' column and reset index
+                df_exploded = dx.explode('json').reset_index(drop=True)
+                df_exploded['index'] = df_exploded.groupby(['property', 'path']).cumcount() + 1
+                df_exploded['criteria'] = df_exploded.apply(lambda row: f"{row['json']['name']}", axis=1)
+                df_exploded['path'] = df_exploded.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
+                dx = df_exploded
+                # dx['propertyId'] = str(papi.property_id)
+                # dx['propertyVersion'] = prd
+                all_criteria.append(dx)
+
             else:
                 if left and i == 0:
                     property_name = f'{property}_v{left}'
                     logger.warning(f'{property:<50} {papi.property_id}')
                     all_properties.append(property_name)
                     status, json = papi.property_ruletree(papi.property_id, left, args.remove_tags)
+
+                    dx = pd.DataFrame()
+                    x = papi_rules.get_property_path_n_criteria(json['rules'], current_path='', paths=[])
+
+                    flat = pd.json_normalize(x)
+                    dx = pd.DataFrame(flat)
+                    dx = dx.melt(var_name='path', value_name='json')
+                    dx = dx.dropna(subset=['json'])
+                    dx['property'] = property_name
+
+                    # Explode 'criteria' column and reset index
+                    df_exploded = dx.explode('json').reset_index(drop=True)
+                    df_exploded['index'] = df_exploded.groupby(['property', 'path']).cumcount() + 1
+                    df_exploded['criteria'] = df_exploded.apply(lambda row: f"{row['json']['name']}", axis=1)
+                    df_exploded['path'] = df_exploded.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
+                    dx = df_exploded
+                    # dx['propertyId'] = str(papi.property_id)
+                    # dx['propertyVersion'] = prd
+                    all_criteria.append(dx)
+
                 if right and i == 1:
                     property_name = f'{property}_v{right}'
                     logger.warning(f'{property:<50} {papi.property_id}')
                     all_properties.append(property_name)
                     status, json = papi.property_ruletree(papi.property_id, right, args.remove_tags)
 
+                    dx = pd.DataFrame()
+                    x = papi_rules.get_property_path_n_criteria(json['rules'], current_path='', paths=[])
+
+                    flat = pd.json_normalize(x)
+                    dx = pd.DataFrame(flat)
+                    dx = dx.melt(var_name='path', value_name='json')
+                    dx = dx.dropna(subset=['json'])
+                    dx['property'] = property_name
+
+                    # Explode 'criteria' column and reset index
+                    df_exploded = dx.explode('json').reset_index(drop=True)
+                    df_exploded['index'] = df_exploded.groupby(['property', 'path']).cumcount() + 1
+                    df_exploded['criteria'] = df_exploded.apply(lambda row: f"{row['json']['name']}", axis=1)
+                    df_exploded['path'] = df_exploded.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
+                    dx = df_exploded
+                    # dx['propertyId'] = str(papi.property_id)
+                    # dx['propertyVersion'] = prd
+                    all_criteria.append(dx)
+
             if status == 200:
                 prop[property_name] = json['rules']
 
-    papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
     behaviors = {}
     print()
     summary = []
@@ -306,24 +366,28 @@ def compare_delivery_behaviors(args):
             behavior_dict[property_name] = copy.deepcopy(prop_behavior)
         behaviors[behavior] = behavior_dict
 
-    sheet = {}
     temp_df = pd.DataFrame(summary, columns=['property', 'behavior', 'count'])
     summary_df = temp_df.pivot(index='behavior', columns='property', values='count')
-    columns = summary_df.columns.values.tolist()
 
-    summary_df['note_1'] = summary_df[columns[1]].apply(lambda x: f'not in {columns[1]}' if x == 0 else '')
-    summary_df['note_2'] = summary_df.apply(lambda row: 'diff count' if row[columns[0]] != row[columns[1]] else '', axis=1)
+    summary_df['note_1'] = summary_df[all_properties[1]].apply(lambda x: f'not in {all_properties[1]}' if x == 0 else '')
+    summary_df['note_2'] = summary_df.apply(lambda row: 'diff count' if row[all_properties[0]] != row[all_properties[1]] else '', axis=1)
     summary_df = summary_df.sort_values(by=['note_1', 'note_2', 'behavior'], ascending=[False, False, True])
 
+    '''
     nunique = summary_df.nunique()
     cols_to_drop = nunique[nunique == 1].index
-    logger.warning(cols_to_drop)
-    logger.info(summary_df.dtypes)
+    logger.debug(cols_to_drop)
+    logger.debug(summary_df.dtypes)
     summary_df = summary_df.drop(cols_to_drop, axis=1)
+    '''
+    columns = [all_properties[0], all_properties[1], 'note_1', 'note_2']
+    sheet['behavior_summary'] = summary_df[columns]
+    columns = ['property', 'path', 'criteria', 'json']
+    dc = pd.concat(all_criteria)
+    sheet['criteria'] = dc[columns]
 
-    sheet['summary'] = summary_df
     logger.debug(f'\n{summary_df}')
-    print(tabulate(summary_df, headers='keys', tablefmt='simple'))
+    table = tabulate(summary_df, headers='keys', tablefmt='simple')
 
     print()
     all_behavior_result = []
@@ -333,19 +397,19 @@ def compare_delivery_behaviors(args):
         df = pd.DataFrame(prop_data.items(), columns=['property', 'behavior'])
         df = df.explode('behavior').reset_index(drop=True)
         df['path'] = df['behavior'].apply(lambda x: list(x.keys())[0] if isinstance(x, dict) else None)
-        df['rules'] = df['behavior'].apply(lambda x: list(x.values())[0] if isinstance(x, dict) else '')
+        df['json'] = df['behavior'].apply(lambda x: list(x.values())[0] if isinstance(x, dict) else '')
         df['behavior_name'] = behavior
-        df['rules'] = df['rules'].apply(str)
+        df['json'] = df['json'].apply(str)
         df = df.fillna('')
-        df = df.sort_values(by=['behavior_name', 'rules', 'property'])
-        columns = ['behavior_name', 'property', 'path', 'rules']
+
+        columns = ['property', 'path', 'behavior_name', 'json']
         df = df[columns]
         logger.debug(f'\n{df}')
         # sheet[behavior] = df
         all_behavior_result.append(df)
 
         logger.debug(behavior)
-        stat = df.groupby(['behavior_name', 'rules'], as_index=False)['property'].count()
+        stat = df.groupby(['behavior_name', 'json'], as_index=False)['property'].count()
         logger.debug(f'\n{stat}')
         stat['even_number'] = stat['property'].apply(lambda x: x % 2 == 0)
 
@@ -353,15 +417,14 @@ def compare_delivery_behaviors(args):
             behavior = behavior[1:20]
         # sheet[f'{behavior}_stat'] = stat
         all_stat_result.append(stat)
-
     all_behavior_df = pd.concat(all_behavior_result)
-    all_behavior_df = all_behavior_df.sort_values(by=['behavior_name', 'rules', 'property'])
+    all_behavior_df = all_behavior_df.sort_values(by=['property', 'path'])
     all_behavior_df = all_behavior_df.reset_index(drop=True)
     sheet['behaviors'] = all_behavior_df
     sheet['compare'] = pd.concat(all_stat_result)
     filename = all_properties[0]
     filepath = f'output/{filename}.xlsx'
-    files.write_xlsx(filepath, sheet, show_index=True, adjust_column_width=True, freeze_column=3)
+    files.write_xlsx(filepath, sheet, show_index=True, adjust_column_width=True, freeze_column=4)
 
     if args.no_show is False and platform.system() == 'Darwin':
         subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])

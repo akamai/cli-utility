@@ -614,7 +614,25 @@ class PapiWrapper(Papi):
                     self.get_property_path_n_rule(v, value, f'{current_path} {json_data["name"]} {k:<10}', paths)
         elif isinstance(json_data, list):
             for i, item in enumerate(json_data):
-                self.get_property_path_n_rule(item, value, f'{current_path}[{i+1}] > ', paths)
+                index = i + 1
+                self.get_property_path_n_rule(item, value, f'{current_path}[{index:>3}] > ', paths)
+        return paths
+
+    def get_property_path_n_criteria(self, json_data, current_path='', paths=[]):
+        if isinstance(json_data, dict):
+            if 'criteria' in json_data and len(json_data['criteria']) > 0:
+                path = f'{current_path} {json_data["name"]}'
+                path = path.lstrip().rstrip('> ')
+                logger.debug(path)
+                logger.debug(json_data['criteria'])
+                paths.append({path: json_data['criteria']})
+            for k, v in json_data.items():
+                if k in ['children', 'behaviors']:
+                    self.get_property_path_n_criteria(v, f'{current_path} {json_data["name"]} {k:10}', paths)
+        elif isinstance(json_data, list):
+            for i, item in enumerate(json_data):
+                index = i + 1
+                self.get_property_path_n_criteria(item, f'{current_path}[{index:>3}] > ', paths)
         return paths
 
     def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
