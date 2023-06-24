@@ -22,12 +22,10 @@ if __name__ == '__main__':
 
     if args.command == 'delivery-config':
         if args.subcommand == 'metadata':
-            if args.advBehavior:
-                dc.get_property_advanced_behavior(args)
-            if args.advMatch:
-                dc.get_property_advanced_match(args)
             if args.advOverride:
                 dc.get_property_advanced_override(args)
+            else:
+                dc.get_property_advanced_behavior(args)
         elif args.subcommand == 'activate':
             dc.activate_from_excel(args)
         elif args.subcommand == 'ruletree':
