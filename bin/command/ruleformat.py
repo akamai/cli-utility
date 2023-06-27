@@ -193,11 +193,13 @@ def get_ruleformat_schema(args):
                                     if 'id' in key.lower():
                                         options_data[key] = 'sampleId'
                                     else:
-                                        options_data[key] = '__sampletext__'
+                                        options_data[key] = '__sampletext__'  # Sample string
                                 elif value.get('type') == 'number':
                                     options_data[key] = 12345  # Sample number value
                                 elif value.get('type') == 'array':
-                                    options_data[key] = ['sample1', 'sample2']
+                                    options_data[key] = ['sample1', 'sample2']  # Sample array
+                                elif value.get('$ref') != ' ':
+                                    options_data[key] = '__ref__'  # Sample reference
                             behavior_sample = {}
                             behavior_sample['name'] = behavior
                             behavior_sample['options'] = options_data
