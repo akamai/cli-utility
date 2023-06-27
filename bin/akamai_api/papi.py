@@ -428,6 +428,25 @@ class Papi(AkamaiSession):
         else:
             return resp.status_code, resp.json()
 
+    # CUSTOM BEHAVIOR
+    def list_custom_behaviors(self):
+        url = self.form_url(f'{self.MODULE}/custom-behaviors')
+        resp = self.session.get(url, headers=self.headers)
+        logger.debug(resp.status_code)
+        if resp.status_code == 200:
+            return resp.status_code, resp.json()['customBehaviors']['items']
+        else:
+            return resp.status_code, resp.json()
+
+    def get_custom_behaviors(self, id: str):
+        url = self.form_url(f'{self.MODULE}/custom-behaviors/{id}')
+        resp = self.session.get(url, headers=self.headers)
+        # print_json(data=resp.json())
+        if resp.status_code == 200:
+            return resp.status_code, resp.json()['customBehaviors']['items'][0]['xml']
+        else:
+            return resp.status_code, resp.json()
+
 
 if __name__ == '__main__':
     pass

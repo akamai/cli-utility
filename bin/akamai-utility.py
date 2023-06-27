@@ -9,6 +9,7 @@ from command import diff
 from command import log
 from command import report
 from command import ruleformat
+from command import security as sec
 from utils import _logging as lg
 from utils.parser import AkamaiParser as Parser
 
@@ -21,7 +22,9 @@ if __name__ == '__main__':
     start_time = perf_counter()
 
     if args.command == 'delivery-config':
-        if args.subcommand == 'metadata':
+        if args.subcommand == 'custom-behavior':
+            dc.get_custom_behavior(args)
+        elif args.subcommand == 'metadata':
             if args.advOverride:
                 dc.get_property_advanced_override(args)
             else:

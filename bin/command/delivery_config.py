@@ -621,6 +621,46 @@ def get_property_advanced_override(args):
             logger.info('--show argument is supported only on Mac OS')
 
 
+def get_custom_behavior(args):
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    status, response = papi.list_custom_behaviors()
+    if status == 200:
+        df = pd.DataFrame(response)
+        columns = df.columns.values.tolist()
+        for x in ['xml', 'updatedDate', 'sharingLevel', 'description', 'status', 'updatedByUser', 'approvedByUser']:
+            columns.remove(x)
+
+        if args.id:
+            df = df[df['behaviorId'].isin(args.id)].copy()
+
+        if args.namecontains:
+            df = df[df['name'].str.contains(args.namecontains)].copy()
+
+        print()
+        if df.empty:
+            logger.warning('No custom behavior found based on your search')
+        else:
+            df = df.sort_values(by='name')
+            df = df.reset_index(drop=True)
+
+        if args.hidexml is True:
+            for behaviorId, name, xml_string in df[['behaviorId', 'name', 'xml']].values:
+                print()
+                logger.warning(f'{behaviorId:<15} "{name}"')
+                syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=args.lineno)
+                console = Console()
+                console.print(syntax)
+
+                if args.lineno is False:
+                    print()
+                    logger.warning('add --lineno to display line number')
+        else:
+            if not df.empty:
+                print(tabulate(df[columns], headers=columns, tablefmt='simple'))
+                print()
+                logger.warning('remove --hidexml to show XML')
+
+
 # BEGIN helper method
 def load_config_from_xlsx(papi, filepath: str, sheet_name: str | None = None, filter: str | None = None):
     '''

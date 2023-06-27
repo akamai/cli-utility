@@ -636,12 +636,11 @@ class PapiWrapper(Papi):
         behavior['index'] = behavior.groupby(['property', 'path']).cumcount() + 1
         behavior['path'] = behavior.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
         behavior['behavior'] = behavior.apply(lambda row: f"{row['json']['name']}", axis=1)
-        behavior['json'] = behavior.apply(lambda row: f"{row['json']['options']}"
-                                                if row['behavior'] != 'advanced'
-                                                else f"{row['json']['options']['xml']}", axis=1)
+        behavior['custom_behaviorId'] = behavior.apply(lambda row: self.extract_custom_behavior_id(row), axis=1)
+        behavior['json_or_xml'] = behavior.apply(lambda row: self.extract_behavior_json(row), axis=1)
         behavior = behavior.rename(columns={'behavior': 'name'})
 
-        columns = ['property', 'path', 'type', 'name', 'json']
+        columns = ['property', 'path', 'type', 'name', 'json_or_xml', 'custom_behaviorId']
         return behavior[columns]
 
     def get_property_path_n_criteria(self, json, path='', navigation=[]):
@@ -675,9 +674,9 @@ class PapiWrapper(Papi):
         criteria['type'] = 'criteria'
         criteria['index'] = criteria.groupby(['property', 'path']).cumcount() + 1
         criteria['name'] = criteria.apply(lambda row: f"{row['json']['name']}", axis=1)
-        criteria['json'] = criteria.apply(lambda row: f"{row['json']['options']}", axis=1)
+        criteria['json_or_xml'] = criteria.apply(lambda row: self.extract_criteria_json(row), axis=1)
         criteria['path'] = criteria.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
-        columns = ['property', 'path', 'type', 'name', 'json']
+        columns = ['property', 'path', 'type', 'name', 'json_or_xml']
         return criteria[columns]
 
     def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
@@ -779,6 +778,36 @@ class PapiWrapper(Papi):
             return df.status.values[0]
         else:
             return ' '
+
+    # CUSTOM BEHAVIOR
+    def list_custom_behaviors(self):
+        return super().list_custom_behaviors()
+
+    def get_custom_behaviors(self, id: str):
+        return super().get_custom_behaviors(id)
+
+    # HELPER
+    def extract_criteria_json(self, row) -> str:
+        if row['name'] == 'matchAdvanced':
+            openXml = row['json']['options']['openXml']
+            closeXml = row['json']['options']['closeXml']
+            return f'{openXml}{closeXml}'
+        else:
+            return row['json']['options']
+
+    def extract_behavior_json(self, row) -> str:
+        if row['behavior'] == 'customBehavior':
+            return self.get_custom_behaviors(row['custom_behaviorId'])[1]
+        if row['behavior'] == 'advanced':
+            return row['json']['options']['xml']
+        else:
+            return row['json']['options']
+
+    def extract_custom_behavior_id(self, row) -> str:
+        if row['behavior'] == 'customBehavior':
+            return row['json']['options']['behaviorId']
+        else:
+            return ''
 
 
 class Node:

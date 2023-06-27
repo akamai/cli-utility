@@ -97,7 +97,13 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             ])
 
         config_help = 'many things you may need to (know about/check on/perform on) configs on the account'
-        dc_sc = [{'name': 'metadata',
+        dc_sc = [{'name': 'custom-behavior',
+                  'help': 'show information about custome behavior',
+                  'optional_arguments': [{'name': 'id', 'help': 'behaviorId', 'nargs': '+'},
+                                         {'name': 'namecontains', 'help': 'behavior name contains keyword search'},
+                                         {'name': 'hidexml', 'help': 'use this argument to hide XML result from the terminal', 'action': 'store_false'},
+                                         {'name': 'lineno', 'help': 'show line number', 'action': 'store_true'}]},
+                 {'name': 'metadata',
                   'help': 'view XML for all advanced metadata',
                   'required_arguments': [{'name': 'property', 'help': 'property name', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'version', 'help': 'property version'},
@@ -184,6 +190,13 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             help='administrative lookup',
                             optional_arguments=[{'name': 'account', 'help': 'keyword search at least 3 characters', 'nargs': '+'},
                                                 {'name': 'accountkey', 'help': argparse.SUPPRESS}])
+
+        actions['security'] = cls.create_main_command(
+                            subparsers,
+                            'security',
+                            help='security objects',
+                            optional_arguments=[{'name': 'name', 'help': 'name'},
+                                                {'name': 'version', 'help': 'version'}])
 
         diff_help = 'show compare report between two configurations. By default, configuration is compared using JSON.\nIf you want to compare metadata, add --xml'
         diff_sc = [{'name': 'behavior',
