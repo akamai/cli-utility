@@ -310,7 +310,10 @@ def compare_delivery_behaviors(args):
     df = df.sort_values(by=['property', 'path'])
     df = df.reset_index(drop=True)
 
-    df['character_count'] = df['json'].str.len()
+    if df['custom_behaviorId'].notnull().any():
+        del df['custom_behaviorId']
+
+    df['character_count'] = df['json_or_xml'].str.len()
     if df.query('character_count > 32767').empty:
         del df['character_count']
     else:
