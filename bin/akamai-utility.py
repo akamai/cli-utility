@@ -6,6 +6,7 @@ from command import admin
 from command import certificates_audit as ca
 from command import delivery_config as dc
 from command import diff
+from command import gtm_audit as gtm
 from command import log
 from command import report
 from command import ruleformat
@@ -48,6 +49,9 @@ if __name__ == '__main__':
 
     if args.command == 'certificate':
         ca.audit(args)
+
+    if args.command == 'gtm':
+        gtm.audit(args)
 
     if args.command == 'log':
         log.main(args.input, args.output, args.search)

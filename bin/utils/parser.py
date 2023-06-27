@@ -81,6 +81,13 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                 {'name': 'cpcodes', 'help': '1 or more reporting cpcodes ', 'nargs': '+'}
                             ])
 
+        actions['gtm'] = cls.create_main_command(
+                            subparsers, 'gtm',
+                            help='list GTM report',
+                            optional_arguments=[
+                                {'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
+                                {'name': 'no-show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'}])
+
         actions['certificate'] = cls.create_main_command(
                             subparsers, 'certificate',
                             help='certificate report includes enrollmentId, slotId, SNI, hostname, commonName, cName, vendor, expirationDate',
