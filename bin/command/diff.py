@@ -309,20 +309,31 @@ def compare_delivery_behaviors(args):
     df = pd.concat([db, dc])
     df = df.sort_values(by=['property', 'path'])
     df = df.reset_index(drop=True)
-    sheet['flat_json'] = df
 
-    # Pivot the DataFrame
-    '''
-    pivot_df = df.groupby(['type', 'name', 'json', 'path', 'property']).size().unstack(fill_value=0)
-    pivot_df = pivot_df.reset_index().rename_axis(None, axis=1)
-    sheet['summary'] = pivot_df
-    '''
-
-    filename = all_properties[0]  # by default use the first property
-    filepath = f'output/{filename}_compare.xlsx'
-    files.write_xlsx(filepath, sheet, show_index=True, adjust_column_width=True, freeze_column=4)
-
-    if args.no_show is False and platform.system() == 'Darwin':
-        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+    df['character_count'] = df['json'].str.len()
+    if df.query('character_count > 32767').empty:
+        del df['character_count']
     else:
-        logger.info('--show argument is supported only on Mac OS')
+        print()
+        logger.warning('Result contains character over the limit of 32,767 per cell')
+
+    print()
+    if df.empty:
+        logger.info('no result found')
+    else:
+        sheet['flat_json'] = df
+        # Pivot the DataFrame
+        '''
+        pivot_df = df.groupby(['type', 'name', 'json', 'path', 'property']).size().unstack(fill_value=0)
+        pivot_df = pivot_df.reset_index().rename_axis(None, axis=1)
+        sheet['summary'] = pivot_df
+        '''
+
+        filename = all_properties[0]  # by default use the first property
+        filepath = f'output/{filename}_compare.xlsx'
+        files.write_xlsx(filepath, sheet, show_index=False, adjust_column_width=True, freeze_column=4)
+
+        if args.no_show is False and platform.system() == 'Darwin':
+            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+        else:
+            logger.info('--show argument is supported only on Mac OS')
