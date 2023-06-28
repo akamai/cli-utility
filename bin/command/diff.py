@@ -291,8 +291,8 @@ def compare_delivery_behaviors(args):
     all_behaviors = []
     all_criteria = []
     for property_name, rule in prop.items():
-        all_behaviors.append(papi_rules.collect_property_behavior(property_name, rule, path='', navigation=[]))
-        all_criteria.append(papi_rules.collect_property_criteria(property_name, rule, path='', navigation=[]))
+        all_behaviors.append(papi_rules.collect_property_behavior(property_name, rule))
+        all_criteria.append(papi_rules.collect_property_criteria(property_name, rule))
 
     db = pd.concat(all_behaviors)
     if args.behavior:
@@ -307,7 +307,7 @@ def compare_delivery_behaviors(args):
     # sheet['criteria'] = dc
 
     df = pd.concat([db, dc])
-    df = df.sort_values(by=['property', 'path'])
+    df = df.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
     df = df.reset_index(drop=True)
 
     if df['custom_behaviorId'].notnull().any():

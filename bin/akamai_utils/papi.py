@@ -604,24 +604,33 @@ class PapiWrapper(Papi):
         except:
             return ''
 
-    def get_property_path_n_behavior(self, json, path='', navigation=[]):
-        if isinstance(json, dict):
-            if 'behaviors' in json and len(json['behaviors']) > 0:
-                path = f'{path} {json["name"]}'
-                path = path.replace('default default', 'default')
-                rule_name = f'{path}'.lstrip().rstrip('> ')
-                navigation.append({rule_name: json['behaviors']})
-            for k, v in json.items():
-                if k in ['children', 'behaviors']:
-                    self.get_property_path_n_behavior(v, f'{path} {json["name"]} {k:<10}', navigation)
-        elif isinstance(json, list):
-            for i, item in enumerate(json):
-                index = i + 1
-                self.get_property_path_n_behavior(item, f'{path}[{index:>3}] > ', navigation)
+    def get_property_path_n_behavior(self, json: dict):
+        navigation = []
+        visited_paths = set()
+
+        def traverse_json(json, path=''):
+            if isinstance(json, dict):
+                if 'behaviors' in json and len(json['behaviors']) > 0:
+                    current_path = f'{path} {json["name"]}'.strip()
+                    current_path = current_path.replace('default default', 'default')
+                    if current_path not in visited_paths:
+                        visited_paths.add(current_path)
+                        navigation.append({current_path: json['behaviors']})
+
+                for k, v in json.items():
+                    if k in ['children', 'behaviors']:
+                        traverse_json(v, f'{path} {json["name"]} {k}')
+
+            elif isinstance(json, list):
+                for i, item in enumerate(json):
+                    index = i + 1
+                    traverse_json(item, f'{path} [{index:>3}] > ')
+
+        traverse_json(json)
         return navigation
 
-    def collect_property_behavior(self, property_name: str, json: dict, path: str, navigation=[]) -> pd.DataFrame:
-        behavior = self.get_property_path_n_behavior(json, path, navigation)
+    def collect_property_behavior(self, property_name: str, json: dict) -> pd.DataFrame:
+        behavior = self.get_property_path_n_behavior(json)
 
         flat = pd.json_normalize(behavior)
         dx = pd.DataFrame()
@@ -643,24 +652,32 @@ class PapiWrapper(Papi):
         columns = ['property', 'path', 'type', 'name', 'json_or_xml', 'custom_behaviorId']
         return behavior[columns]
 
-    def get_property_path_n_criteria(self, json, path='', navigation=[]):
-        if isinstance(json, dict):
-            if 'criteria' in json and len(json['criteria']) > 0:
-                path = f'{path} {json["name"]}'
-                path = path.lstrip().rstrip('> ')
-                logger.debug(path)
-                navigation.append({path: json['criteria']})
-            for k, v in json.items():
-                if k in ['children', 'behaviors']:
-                    self.get_property_path_n_criteria(v, f'{path} {json["name"]} {k:10}', navigation)
-        elif isinstance(json, list):
-            for i, item in enumerate(json):
-                index = i + 1
-                self.get_property_path_n_criteria(item, f'{path}[{index:>3}] > ', navigation)
+    def get_property_path_n_criteria(self, json: dict):
+        navigation = []
+        visited_paths = set()
+
+        def traverse_json(json, path=''):
+            if isinstance(json, dict):
+                if 'criteria' in json and len(json['criteria']) > 0:
+                    current_path = f'{path} {json["name"]}'.strip()
+                    if current_path not in visited_paths:
+                        visited_paths.add(current_path)
+                        navigation.append({current_path: json['criteria']})
+
+                for k, v in json.items():
+                    if k in ['children', 'behaviors']:
+                        traverse_json(v, f'{path} {json["name"]} {k}')
+
+            elif isinstance(json, list):
+                for i, item in enumerate(json):
+                    index = i + 1
+                    traverse_json(item, f'{path} [{index:>3}] > ')
+
+        traverse_json(json)
         return navigation
 
-    def collect_property_criteria(self, property_name: str, json: dict, path: str, navigation=[]) -> pd.DataFrame:
-        criteria = self.get_property_path_n_criteria(json, path, navigation)
+    def collect_property_criteria(self, property_name: str, json: dict) -> pd.DataFrame:
+        criteria = self.get_property_path_n_criteria(json)
         flat = pd.json_normalize(criteria)
 
         dx = pd.DataFrame()

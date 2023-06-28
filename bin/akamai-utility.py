@@ -10,9 +10,9 @@ from command import gtm_audit as gtm
 from command import log
 from command import report
 from command import ruleformat
-from command import security as sec
 from utils import _logging as lg
 from utils.parser import AkamaiParser as Parser
+# from command import security as sec
 
 
 logger = lg.setup_logger()
