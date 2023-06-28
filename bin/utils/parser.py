@@ -150,16 +150,11 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
 
         actions['delivery-config'] = cls.create_main_command(
             subparsers, 'delivery-config', help=f'{config_help}',
-            optional_arguments=[  # {'name': 'directory', 'help': 'directory where all CSVs are located'},
-                                {'name': 'input', 'help': 'input excel file'},
-                                {'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
-                                # {'name': 'sheet', 'help': 'sheet name of the excel'},
-                                # {'name': 'filter', 'help': 'lookup keyword'},
+            optional_arguments=[{'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
                                 {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'},
                                 {'name': 'behavior', 'help': 'behaviors you want to audit on the property', 'nargs': '+'},
                                 {'name': 'group-id', 'help': 'provide at least one groupId without prefix grp_ ', 'nargs': '+'},
                                 {'name': 'property', 'help': 'provide at least one propertyId without prefix prp_ ', 'nargs': '+'},
-                                # {'name': 'column', 'help': 'show column in excel output file ie url propertyId groupId contractId productId ruleFormat', 'nargs': '+'},
                                 ],
             subcommands=dc_sc,
             options=None)

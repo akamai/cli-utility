@@ -303,7 +303,6 @@ class Papi(AkamaiSession):
         prd_version = 0
         stg_version = 0
         for item in items:
-
             if item['stagingStatus'] == 'ACTIVE':
                 stg_version = item['propertyVersion']
             if item['productionStatus'] == 'ACTIVE':
@@ -321,8 +320,7 @@ class Papi(AkamaiSession):
                 stg_version = max(dd['propertyVersion'])
             if prd_version == 0:
                 prd_version = max(dd['propertyVersion'])
-
-        logger.info(f'Found staging v{stg_version}, production v{prd_version}')
+        logger.info(f'Found staging v{stg_version:<4} production v{prd_version:<4} {items[0]["propertyName"]}')
         return stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):

@@ -52,14 +52,13 @@ def main(args):
     if args.property:
         all_properties = []
         for property in args.property:
-            logger.warning(f'Lookup property {property}')
             status, resp = papi.search_property_by_name(property)
             # print_json(data=resp)
             if status != 200:
                 logger.info(f'property {property:<50} not found')
                 break
             else:
-                logger.critical(f'{papi.group_id} {papi.contract_id} {papi.property_id}')
+                logger.debug(f'{papi.group_id} {papi.contract_id} {papi.property_id}')
                 stg, prd = papi.property_version(resp)
                 all_properties.append((papi.account_id, papi.contract_id, papi.group_id, property, papi.property_id, stg, prd))
 
@@ -97,17 +96,19 @@ def main(args):
         # properties.loc[pd.notnull(properties['cpcode_unique_value']) & (properties['cpcode_unique_value'] == ''), 'cpcode'] = '0'
 
         columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
-                    'latestVersion', 'stagingVersion', 'productionVersion',
+                    'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
                     'productId', 'ruleFormat', 'hostname_count', 'hostname']
         properties_df['propertyId'] = properties_df['propertyId'].astype(str)
         properties_df = properties_df[columns].copy()
         properties_df = properties_df.reset_index(drop=True)
         sheet['properties'] = properties_df
 
+        '''
         properties_df['ruletree'] = properties_df.apply(
                         lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
                                                             if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
-        logger.info(f'\n{properties_df}')
+        logger.debug(f'\n{properties_df[columns]}')
+        '''
     else:
         # build group structure as displayed on control.akamai.com
         allgroups_df, columns = papi.account_group_summary()
@@ -190,7 +191,7 @@ def main(args):
                     # properties_df.loc[pd.notnull(properties_df['cpcode_unique_value']) & (properties_df['cpcode_unique_value'] == ''), 'cpcode'] = '0'
 
                     columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
-                               'latestVersion', 'stagingVersion', 'productionVersion',
+                               'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
                                'productId', 'ruleFormat', 'hostname_count', 'hostname']
                     if args.behavior:
                         columns.extend(sorted(updated_behaviors))
@@ -411,11 +412,10 @@ def hostnames(args):
     filepath = f'output/{account}_hostname_certificate.xlsx' if args.output is None else f'output/{args.output}'
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-
+    all_properties = []
     sheet = {}
     print()
-    for property in args.property:
-        logger.warning(f'Lookup property {property}')
+    for property in sorted(args.property):
         status, resp = papi.search_property_by_name(property)
         if status != 200:
             logger.info(f'property {property:<50} not found')
@@ -428,25 +428,37 @@ def hostnames(args):
             df = pd.json_normalize(hostname)
             logger.debug(df.columns.values.tolist())
 
-            columns = ['Property_Hostname', 'Edge_Hostname', 'certProvisioningType', 'production', 'staging']
+            columns = ['propertyName', 'Property_Hostname', 'Edge_Hostname', 'certProvisioningType', 'production', 'staging']
             df = df.rename(columns={'cnameFrom': 'Property_Hostname',
                                     'cnameTo': 'Edge_Hostname',
                                     'certStatus.production': 'production',
                                     'certStatus.staging': 'staging'})
+            df['propertyName'] = f'{property}_v{version}'
 
             if 'production' in df.columns.values.tolist():
                 df['production'] = df['production'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
                 df['staging'] = df['staging'].apply(lambda x: x[0].get('status') if isinstance(x, list) else x)
-                df = df.sort_values(by=['production', 'Property_Hostname'])
+                df = df.sort_values(by=['propertyName', 'production', 'Property_Hostname'])
                 df = df.reset_index(drop=True)
+                df = df[columns]
 
-            sheetname = f'{property}_v{version}'
-            if len(sheetname) >= 31:
-                sheet[f'{papi.property_id}_v{version}'] = df
-            else:
-                sheet[sheetname] = df
+            columns = df.columns.values.tolist()
+            columns.remove('propertyName')
+            final_columns = ['propertyName'] + columns
+            all_properties.append(df[final_columns])
 
-    files.write_xlsx(filepath, sheet, freeze_column=3, adjust_column_width=True)
+    all_properties_df = pd.concat(all_properties)
+    sheet['all_properties'] = all_properties_df
+
+    '''
+    sheetname = f'{property}_v{version}'
+    if len(sheetname) >= 31:
+        sheet[f'{papi.property_id}_v{version}'] = df
+    else:
+        sheet[sheetname] = df
+    '''
+
+    files.write_xlsx(filepath, sheet, freeze_column=4, adjust_column_width=True)
     if platform.system() == 'Darwin' and args.no_show is False:
         subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
     else:
@@ -495,7 +507,6 @@ def get_property_advanced_behavior(args):
 
     for property in args.property:
         print()
-        logger.warning(f'Lookup property {property}')
         status, resp = papi.search_property_by_name(property)
         if status != 200:
             logger.info(f'property {property:<50} not found')
@@ -576,7 +587,6 @@ def get_property_advanced_override(args):
     print()
     logger.warning('Searching for advanced override ...')
     for property in args.property:
-        logger.warning(f'Lookup property {property}')
         status, resp = papi.search_property_by_name(property)
         if status != 200:
             logger.info(f'property {property:<50} not found')
