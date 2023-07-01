@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -10,6 +11,12 @@ from utils._logging import setup_logger
 
 
 logger = setup_logger()
+
+
+def get_line_count(filename):
+    with gzip.open(filename, 'rt') as file:
+        count = sum(1 for _ in file)
+    return count
 
 
 def write_json(filepath: str, json_object: dict) -> None:
@@ -53,7 +60,7 @@ def make_xlsx_hyperlink_to_another_sheet(filepath: str, url: str, cell: str) -> 
 
 def make_xlsx_hyperlink_to_external_link(url: str, alias: str) -> str:
     if alias:
-        return f'=HYPERLINK("{url}", "{alias}")'
+        return f'=HYPERLINK("{url}{alias}", "{alias}")'
     else:
         return f'{url}'
 
@@ -103,27 +110,30 @@ def write_xlsx(filepath: str, dict_value: dict,
                 else:
                     total, last_sheet = divmod(len(df.index), MAX_XLXS_ROW)
                     logger.info(f'{total=} {last_sheet=} dataset={len(df.index)}')
-                    last_sheet = 2
-                    if last_sheet <= MAX_SHEETS:
-                        for sheet in (n + 1 for n in range(total)):
+                    if last_sheet <= MAX_XLXS_ROW:
+                        for sheet in (n + 1 for n in range(total+1)):
+                            logger.info(f'Sheet{sheet}')
+
                             sheet_no = sheet
                             if sheet == 1:
                                 first_row = 0
+                                logger.info(f'{sheetname}_{sheet_no}')
+                                last_row = (sheet * MAX_XLXS_ROW) + 1
                             else:
-                                first_row = ((sheet - 1) * MAX_XLXS_ROW) + 1
-                            last_row = (sheet * MAX_XLXS_ROW) + 1
-                            # print(f'Sheet{sheet}: from {first_row} to {last_row}')
-                            df.iloc[first_row:last_row].to_excel(writer, sheet_name=f'{sheet_no}')
-                            if sheet == total and last_sheet > 0:
-                                first_row = last_row
-                                last_row = (total * MAX_XLXS_ROW) + last_sheet
-                                # print(f'Sheet{total+1}: from {first_row} to {last_row}')
+                                first_row = last_row + 1
+                                last_row = len(df.index)
+
+                            if sheet == total+1 and last_sheet > 0:
+                                logger.warning(f'{total=} {sheet_no=} {sheet=}')
                                 sheet_no = total + 1
-                                df.iloc[first_row:last_row].to_excel(writer, sheet_name=f'{sheet_no}')
-                                # df.columns = df.columns.str.upper()
+                            logger.warning(f'Sheet{sheet}: from {first_row} to {last_row}')
+                            df.iloc[first_row:last_row].to_excel(writer, sheet_name=f'{sheetname}_{sheet_no}')
+
+                            '''
                             df.to_excel(writer, sheet_name=f'{sheetname}_{sheet_no}',
                                         freeze_panes=(freeze_row, freeze_column),
                                         index=show_index)
+                            '''
                             if adjust_column_width is True:
                                 auto_adjust_xlsx_column_width(df, writer, sheet_name=f'{sheetname}_{sheet_no}',
                                                         index=show_index)

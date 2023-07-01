@@ -184,7 +184,9 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             help='review ghost logs, excel friendly',
                             required_arguments=[{'name': 'input', 'help': 'location of file ending with gz extension'}],
                             optional_arguments=[{'name': 'output', 'help': 'location of excel file'},
-                                                {'name': 'search', 'help': 'search text', 'nargs': '+'}])
+                                                {'name': 'only', 'help': 'R or F', 'choices': ['R', 'F'], 'default': 'R'},
+                                                {'name': 'column', 'help': 'filter column'},
+                                                {'name': 'value-contains', 'help': 'search text', 'nargs': '+'}])
 
         actions['search'] = cls.create_main_command(
                             subparsers,
@@ -197,8 +199,9 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             subparsers,
                             'security',
                             help='security objects',
-                            optional_arguments=[{'name': 'name', 'help': 'name'},
-                                                {'name': 'version', 'help': 'version'}])
+                            optional_arguments=[{'name': 'config', 'help': 'security config id'},
+                                                {'name': 'version', 'help': 'version'},
+                                                {'name': 'output', 'help': 'output'}])
 
         diff_help = 'show compare report between two configurations. By default, configuration is compared using JSON.\nIf you want to compare metadata, add --xml'
         diff_sc = [{'name': 'behavior',

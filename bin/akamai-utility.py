@@ -10,6 +10,7 @@ from command import gtm_audit as gtm
 from command import log
 from command import report
 from command import ruleformat
+from command import security as sec
 from utils import _logging as lg
 from utils.parser import AkamaiParser as Parser
 # from command import security as sec
@@ -54,7 +55,7 @@ if __name__ == '__main__':
         gtm.audit(args)
 
     if args.command == 'log':
-        log.main(args.input, args.output, args.search)
+        log.main(args)
 
     if args.command == 'report':
         if args.url_offload is True:
@@ -67,6 +68,9 @@ if __name__ == '__main__':
 
     if args.command == 'search':
         admin.lookup_account(args)
+
+    if args.command == 'security':
+        sec.list_configs(args)
 
     end_time = lg.log_cli_timing(start_time)
     logger.info(end_time)
