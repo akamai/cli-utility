@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import sys
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 from urllib.parse import urlparse
 
 from akamai_api.edge_auth import AkamaiSession
 from boltons.iterutils import remap
+from lxml import etree
 from requests.structures import CaseInsensitiveDict
 from rich import print_json
 from utils import _logging as lg
@@ -226,7 +228,8 @@ class Papi(AkamaiSession):
                                             property_name: str,
                                             asset_id: int,
                                             group_id: int,
-                                            version: int) -> str:
+                                            version: int,
+                                            ignore_tags: list | None = None) -> str:
 
         url = 'https://control.akamai.com/pm-backend-blue/service/v1/properties/version/metadata'
         if self.account_switch_key:
@@ -247,6 +250,8 @@ class Papi(AkamaiSession):
             filepath = f'output/diff/xml/{property_name}_v{version}.xml'
             with open(filepath, 'wb') as file:
                 file.write(response.content)
+            files.remove_tags_from_xml_file(filepath, ignore_tags)
+
         elif response.status_code in [400, 401]:
             msg = response.json()['title']
         elif response.status_code == 403:

@@ -6,12 +6,13 @@ import platform
 import subprocess
 import sys
 import webbrowser
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-from akamai_api.appsec import Appsec
 from akamai_api.papi import Papi
+from akamai_utils import appsec as a
 from akamai_utils import papi as p
 from rich import print_json
 from tabulate import tabulate
@@ -81,7 +82,7 @@ def compare_config(args):
     logger.debug(f'{config1=} {config2=} {cookies=}')
 
     papi = Papi(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies)
-    appsec = Appsec(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies)
+    appsec = a.AppsecWrapper(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies)
 
     if args.xml is True:
         Path('output/diff/xml').mkdir(parents=True, exist_ok=True)
@@ -224,9 +225,8 @@ def compare_config(args):
         logger.warning('Comparing XML Metadata')
         if args.security is False:
             logger.debug(f'{papi.property_id} {papi.asset_id} {papi.group_id}')
-            v1_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, left)
-            v2_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, right)
-
+            v1_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, left, args.remove_tags)
+            v2_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, right, args.remove_tags)
             xml_index_html = compare_versions(v1_xml, v2_xml, 'index_delivery', args)
             if not args.no_show:
                 webbrowser.open(f'file://{os.path.abspath(xml_index_html)}')

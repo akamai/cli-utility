@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
-from xml.etree import ElementTree as ET
 
 import pandas as pd
+from lxml import etree
 from UliPlot.XLSX import auto_adjust_xlsx_column_width
 from utils._logging import setup_logger
-
 
 logger = setup_logger()
 
@@ -26,9 +27,51 @@ def write_json(filepath: str, json_object: dict) -> None:
     logger.debug(f'JSON file is saved locally at {str(filepath)}')
 
 
-def write_xml(filepath: str, xml_data: str) -> None:
-    with open(filepath, 'wb') as f:
-        f.write(ET.tostring(xml_data))
+def remove_comment_notes(root):
+    ns = {'comment': 'uri:akamai.com/metadata/comment/5.0'}
+    for element in root.iterfind('.//comment:note', namespaces=ns):
+        parent = element.getparent()
+        parent.remove(element)
+    return root
+
+
+def remove_xml_tags(element, ignore_tags):
+    for child in list(element):
+        if child.tag in ignore_tags:
+            element.remove(child)
+        else:
+            remove_xml_tags(child, ignore_tags)
+    return element
+
+
+def remove_tags_from_xml_file(filepath, ignore_tags):
+    # Register namespaces before parsing the XML
+    namespaces = {
+        'comment': 'uri:akamai.com/metadata/comment/5.0',
+        'akamai': 'uri:akamai.com/metadata/akamai/5.0',
+        'network': 'uri:akamai.com/metadata/network/5.0',
+        'auth': 'uri:akamai.com/metadata/auth/5.0',
+        'edgeservices': 'uri:akamai.com/metadata/edgeservices/5.0',
+        'config': 'uri:akamai.com/metadata/config/5.0',
+        'assign': 'uri:akamai.com/metadata/assign/5.0',
+        'forward': 'uri:akamai.com/metadata/forward/5.0',
+        'match': 'uri:akamai.com/metadata/match/5.0',
+        'reporting': 'uri:akamai.com/metadata/reporting/5.0',
+        'cache': 'uri:akamai.com/metadata/cache/5.0',
+        'security': 'uri:akamai.com/metadata/security/5.0'
+    }
+
+    for prefix, uri in namespaces.items():
+        etree.register_namespace(prefix, uri)
+
+    tree = etree.parse(filepath)
+    root = tree.getroot()
+    root = remove_comment_notes(root)
+    if ignore_tags:
+        root = remove_xml_tags(root, ignore_tags)
+
+    filepath = filepath.rstrip('.xml')
+    tree.write(f'{filepath}_removeTag.xml', encoding='utf-8', xml_declaration=True)
 
 
 def format_xlsx_header(df, writer, workbook, sheetname, show_index: bool | None = False) -> None:
