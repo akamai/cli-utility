@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 
 from akamai_api.edge_auth import AkamaiSession
 from boltons.iterutils import remap
-from lxml import etree
 from requests.structures import CaseInsensitiveDict
 from rich import print_json
 from utils import _logging as lg
