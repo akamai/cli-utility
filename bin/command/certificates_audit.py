@@ -74,10 +74,8 @@ def audit(args):
                 logger.debug(f'\n{df}')
             if args.slot:
                 filtered = True
-                int_slot = [int(x) for x in args.slot]
-                df = df[df['productionSlots'].isin(int_slot)].copy()
+                df = df[df['Slot'].isin(args.slot)].copy()
                 df = df.reset_index(drop=True)
-                logger.debug(f'\n{df}')
 
         if not df.empty:
             if filtered is True:
@@ -123,13 +121,14 @@ def audit(args):
         sheet['hostname'] = pd.concat(contract_host)
 
         x = pd.concat(contract_host).query('valid_ip')
-        y = x.cname.drop_duplicates()
-
-        ip_df = y.to_frame()
-        ip_df = ip_df.sort_values(by='cname')
-        ip_df = ip_df.reset_index(drop=True)
-        ip_df['ASN_Description'] = ip_df['cname'].parallel_apply(lambda x: asn(x))
-        sheet['ip'] = ip_df
+        if not x.empty:
+            y = x.cname.drop_duplicates()
+            ip_df = y.to_frame()
+            ip_df = ip_df.sort_values(by='cname')
+            ip_df = ip_df.reset_index(drop=True)
+            logger.info(f'\n{ip_df}')
+            ip_df['ASN_Description'] = ip_df['cname'].parallel_apply(lambda x: asn(x))
+            sheet['ip'] = ip_df
 
     if sheet:
         files.write_xlsx(filepath, sheet)
