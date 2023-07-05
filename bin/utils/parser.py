@@ -199,9 +199,9 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             subparsers,
                             'security',
                             help='security objects',
-                            optional_arguments=[{'name': 'config', 'help': 'security config id'},
-                                                {'name': 'version', 'help': 'version'},
-                                                {'name': 'output', 'help': 'output'}])
+                            required_arguments=[{'name': 'config', 'help': 'security config name'}],
+                            optional_arguments=[{'name': 'version', 'help': 'security config version'},
+                                                {'name': 'output', 'help': 'override excel output file (.xlsx)'}])
 
         diff_help = 'show compare report between two configurations. By default, configuration is compared using JSON.\nIf you want to compare metadata, add --xml'
         diff_sc = [{'name': 'behavior',

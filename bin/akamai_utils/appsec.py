@@ -272,7 +272,7 @@ class BotManagerWrapper(BotManager):
 
         df = pd.json_normalize(data)
         original_keys = df.columns.tolist()
-        logger.info(original_keys)
+        logger.debug(original_keys)
         original_keys.remove('conditionalActions')
 
         df['conditionalActions_count'] = df['conditionalActions'].apply(lambda x: len(x) if isinstance(x, list) else 0)
@@ -300,7 +300,7 @@ class BotManagerWrapper(BotManager):
 
         all_keys = dataframe.extract_keys(exploded_df['conditionalActionRules'].dropna().sum())
         columns_to_explode = list(all_keys)
-        logger.info(columns_to_explode)
+        logger.debug(columns_to_explode)
         for key in all_keys:
             exploded_df[key] = exploded_df['conditionalActionRules'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
@@ -309,7 +309,7 @@ class BotManagerWrapper(BotManager):
 
         all_keys = dataframe.extract_keys(new_df['conditions'].dropna().sum())
         columns_to_explode = list(all_keys)
-        logger.info(columns_to_explode)
+        logger.debug(columns_to_explode)
         for key in all_keys:
             new_df[key] = new_df['conditions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
