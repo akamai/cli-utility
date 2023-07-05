@@ -20,6 +20,7 @@ def list_configs(args):
     iam = IdentityAccessManagement(args.account_switch_key)
     account = iam.search_account_name(value=args.account_switch_key)[0]
     account = account.replace(' ', '_')
+    print()
     logger.warning(f'Found account {account}')
     account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
     filepath = f'output/{account}_waf.xlsx' if args.output is None else f'output/{args.output}'
@@ -31,13 +32,18 @@ def list_configs(args):
     _, resp = appsec.list_waf_configs()
     df = pd.DataFrame(resp)
     columns = ['name', 'id']
+
     df = df[df['name'] == args.config]
     if df.empty:
         _, resp = appsec.list_waf_configs()
         df = pd.DataFrame(resp)
         columns = ['id', 'name']
         print(tabulate(df[columns], headers=columns, tablefmt='github', numalign='center'))
-        sys.exit(logger.error(f"'{args.config}' not found"))
+
+        if args.config is None:
+            sys.exit(logger.error('Please enter at least one --config'))
+        else:
+            sys.exit(logger.error(f"'{args.config}' not found"))
     else:
         config_id = df['id'].values[0]
         status, policy = appsec.get_config_detail(config_id)
