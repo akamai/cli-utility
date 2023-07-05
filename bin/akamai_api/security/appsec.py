@@ -99,6 +99,27 @@ class Appsec(AkamaiSession):
             # print_json(data=self.cookies)
             sys.exit()
 
+    def get_network_list(self, config_id: int, version: int):
+        url = self.form_url(f'{self.MODULE}/configs/{config_id}/versions/{version}/bypass-network-lists')
+
+        response = self.session.get(url, headers=self.headers)
+        return response.status_code, response.json()
+
+    def list_custom_rules(self, config_id: int):
+        url = self.form_url(f'{self.MODULE}/configs/{config_id}/custom-rules')
+        response = self.session.get(url, headers=self.headers)
+        return response.status_code, response.json()['customRules']
+
+    def get_policy(self, config_id: int, version: int):
+        url = self.form_url(f'{self.MODULE}/configs/{config_id}/versions/{version}/security-policies')
+        response = self.session.get(url, headers=self.headers)
+        return response.status_code, response.json()['policies']
+
+    def bypass_network_list(self, config_id: int, version: int, policy_id):
+        url = self.form_url(f'{self.MODULE}/configs/{config_id}/versions/{version}/security-policies/{policy_id}/ip-geo-firewall')
+        response = self.session.get(url, headers=self.headers)
+        return response.status_code, response.json()
+
 
 if __name__ == '__main__':
     pass
