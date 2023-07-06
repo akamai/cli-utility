@@ -61,7 +61,7 @@ class NetworkListWrapper(NetworkList):
                     return sorted(result['list'])
                 except:
                     logger.error(f'{ids} has no IPs')
-                    return 0
+                    return ['None']
         elif isinstance(ids, list):
             all_ips = []
             for id in ids:
@@ -71,6 +71,7 @@ class NetworkListWrapper(NetworkList):
                         all_ips.extend(result['list'])
                     except:
                         logger.error(f'{id} has no IPs')
+                        return ['None']
             return sorted(all_ips)
 
 
@@ -147,13 +148,15 @@ class BotManagerWrapper(BotManager):
             try:
                 columns = data[0].keys()
             except:
-                logger.critical(f'{feature} no data')
-                sys.exit(logger.error(data[0].keys()))
+                logger.critical(f'{feature:<30} no data')
+                return pd.DataFrame()
 
             logger.debug(f'{feature:<30} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
-            del df['description']
-            del df['notes']
+            if 'description' in df.columns:
+                del df['description']
+            if 'notes' in df.columns:
+                del df['notes']
             df['conditions_count'] = df['conditions'].apply(lambda x: len(x) if isinstance(x, list) else 0)
 
             # df = df[df['botName'] == 'Allow Botify'].copy()
@@ -171,16 +174,58 @@ class BotManagerWrapper(BotManager):
             exploded_df = pd.DataFrame(exploded_data)
             col_1 = ['botId', 'botName', 'categoryId', 'conditions', 'conditions_count']
             col_2 = ['type', 'name', 'positiveMatch', 'value', 'checkIps', 'valueCase', 'nameWildcard']
-            columns = col_1 + col_2 + ['IPs']
+            col_2 = [value for value in col_2 if value in columns_to_explode]
 
-            exploded_df['IPs'] = exploded_df.apply(lambda row: network.get_network_list(row['value'][0])
+            try:
+                columns = col_1 + col_2 + ['IPs']
+                exploded_df['IPs'] = exploded_df.apply(lambda row: network.get_network_list(row['value'][0])
                                                    if row['type'] == 'networkListCondition' else '', axis=1)
-            exploded_df['IPs'] = exploded_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
-                                                    if row['type'] == 'networkListCondition' else '', axis=1)
-            exploded_df['name'] = exploded_df.apply(lambda row: dataframe.split_elements_newline_withcomma(row['name'])
-                                                    if row['name'] else '', axis=1)
-            exploded_df['value'] = exploded_df.apply(lambda row: dataframe.split_elements_newline_withcomma(row['value'])
-                                                     if row['value'] else '', axis=1)
+                exploded_df['IPs'] = exploded_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
+                                                        if row['type'] == 'networkListCondition' else '', axis=1)
+                exploded_df['name'] = exploded_df.apply(lambda row: dataframe.split_elements_newline_withcomma(row['name'])
+                                                        if row['name'] else '', axis=1)
+                exploded_df['value'] = exploded_df.apply(lambda row: dataframe.split_elements_newline_withcomma(row['value'])
+                                                        if row['value'] else '', axis=1)
+            except:
+                columns = col_1 + col_2
+
+        return exploded_df[columns]
+
+    def process_custom_rules(self, data, network):
+        feature = 'customRules'
+
+        if isinstance(data, list):
+            try:
+                columns = data[0].keys()
+            except:
+                logger.critical(f'{feature:<30} no data')
+                return pd.DataFrame()
+            logger.debug(f'{feature:<30} {len(columns):<5} {columns}')
+            df = pd.json_normalize(data)
+            original_keys = df.columns.tolist()
+            if 'conditions' not in original_keys:
+                return df
+            else:
+                original_keys.remove('conditions')
+                df['conditions_count'] = df['conditions'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+
+                # extract conditions column
+                all_keys = dataframe.extract_keys(df['conditions'].dropna().sum())
+                columns_to_explode = list(all_keys)
+
+                if all_keys is None:
+                    return pd.DataFrame()
+                else:
+                    logger.debug(columns_to_explode)
+                    for key in all_keys:
+                        df[key] = df['conditions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
+
+                    col_1 = original_keys
+                    col_2 = ['type', 'name', 'value', 'valueWildcard', 'valueCase', 'positiveMatch', 'nameWildcard']
+                    col_2 = [value for value in col_2 if value in columns_to_explode]
+                    columns = col_1 + col_2
+                    exploded_data = dataframe.explode_cell(df, 'conditions', columns_to_explode)
+                    exploded_df = pd.DataFrame(exploded_data)
 
         return exploded_df[columns]
 
@@ -191,37 +236,40 @@ class BotManagerWrapper(BotManager):
             try:
                 columns = data[0].keys()
             except:
-                logger.critical(f'{feature} no data')
-                sys.exit(logger.error(data[0].keys()))
+                logger.critical(f'{feature:<30} no data')
+                return []
 
             logger.debug(f'{feature:<30} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
-            original_keys = df.columns.tolist()
-            logger.debug(original_keys)
-            original_keys.remove('additionalMatchOptions')
+            if 'additionalMatchOptions' not in df.columns.tolist():
+                return df
+            else:
+                original_keys = df.columns.tolist()
+                logger.debug(original_keys)
+                original_keys.remove('additionalMatchOptions')
 
-            df['original_type'] = df['type']
-            df['additionalMatchOptions_count'] = df['additionalMatchOptions'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+                df['original_type'] = df['type']
+                df['additionalMatchOptions_count'] = df['additionalMatchOptions'].apply(lambda x: len(x) if isinstance(x, list) else 0)
 
-            # extract conditions column
-            all_keys = dataframe.extract_keys(df['additionalMatchOptions'].sum())
-            columns_to_explode = list(all_keys)
-            logger.debug(columns_to_explode)
+                # extract conditions column
+                all_keys = dataframe.extract_keys(df['additionalMatchOptions'].dropna().sum())
+                columns_to_explode = list(all_keys)
+                logger.debug(columns_to_explode)
 
-            for key in all_keys:
-                df[key] = df['additionalMatchOptions'].apply(lambda x: [d.get(key) for d in x])
+                for key in all_keys:
+                    df[key] = df['additionalMatchOptions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
-            exploded_data = dataframe.explode_cell(df, 'additionalMatchOptions', columns_to_explode)
-            exploded_df = pd.DataFrame(exploded_data)
-            logger.debug(f'\n{exploded_df}')
+                exploded_data = dataframe.explode_cell(df, 'additionalMatchOptions', columns_to_explode)
+                exploded_df = pd.DataFrame(exploded_data)
+                logger.debug(f'\n{exploded_df}')
 
-            col_1 = original_keys + ['original_type']
-            col_2 = ['additionalMatchOptions', 'additionalMatchOptions_count'] + columns_to_explode
-            columns = col_1 + col_2 + ['IPs']
-            exploded_df['IPs'] = exploded_df.apply(lambda row: network.get_network_list(row['values'])
-                                                   if row['type'] == 'NetworkListCondition' else '', axis=1)
-            exploded_df['IPs'] = exploded_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
-                                                   if row['type'] == 'NetworkListCondition' else '', axis=1)
+                col_1 = original_keys + ['original_type']
+                col_2 = columns_to_explode
+                columns = col_1 + col_2 + ['IPs']
+                exploded_df['IPs'] = exploded_df.apply(lambda row: network.get_network_list(row['values'])
+                                                    if row['type'] == 'NetworkListCondition' else '', axis=1)
+                exploded_df['IPs'] = exploded_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
+                                                    if row['type'] == 'NetworkListCondition' else '', axis=1)
         return exploded_df[columns]
 
     def process_matchTargets(self, data, network):
@@ -231,41 +279,88 @@ class BotManagerWrapper(BotManager):
             try:
                 columns = data[0].keys()
             except:
-                logger.critical(f'{feature} no data')
-                sys.exit(logger.error(data[0].keys()))
+                logger.critical(f'{feature:<30} no data')
+                return []
 
             logger.debug(f'{feature:<30} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
 
             original_keys = df.columns.tolist()
             logger.debug(original_keys)
-            df['original_type'] = df['type']
-            df['original_id'] = df['id']
-            original_keys.remove('type')
-            original_keys.remove('id')
-            original_keys.remove('bypassNetworkLists')
 
-            df['bypassNetworkLists_count'] = df['bypassNetworkLists'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+            if 'bypassNetworkLists' not in original_keys:
+                return df
+            else:
+                df['original_type'] = df['type']
+                df['original_id'] = df['id']
+                original_keys.remove('type')
+                original_keys.remove('id')
+                original_keys.remove('bypassNetworkLists')
 
-            # extract conditions column
-            all_keys = dataframe.extract_keys(df['bypassNetworkLists'].dropna().sum())
-            columns_to_explode = list(all_keys)
-            logger.debug(all_keys)
+                df['bypassNetworkLists_count'] = df['bypassNetworkLists'].apply(lambda x: len(x) if isinstance(x, list) else 0)
 
-            for key in all_keys:
-                df[key] = df['bypassNetworkLists'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
+                # extract conditions column
+                all_keys = dataframe.extract_keys(df['bypassNetworkLists'].dropna().sum())
+                columns_to_explode = list(all_keys)
+                logger.debug(all_keys)
 
-            logger.debug(f'\n{df[columns_to_explode]}')
+                for key in all_keys:
+                    df[key] = df['bypassNetworkLists'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
-            exploded_data = dataframe.explode_cell(df, 'bypassNetworkLists', columns_to_explode)
-            exploded_df = pd.DataFrame(exploded_data)
-            logger.debug(f'\n{exploded_df}')
+                logger.debug(f'\n{df[columns_to_explode]}')
 
-            col_1 = original_keys + ['original_type', 'original_id']
-            col_2 = ['bypassNetworkLists', 'bypassNetworkLists_count'] + ['id', 'listType', 'name', 'type']
-            columns = col_1 + col_2
+                exploded_data = dataframe.explode_cell(df, 'bypassNetworkLists', columns_to_explode)
+                exploded_df = pd.DataFrame(exploded_data)
+
+                exploded_df['IPs'] = exploded_df.apply(lambda row: network.get_network_list(row['id'])
+                                                            if row['listType'] == 'NL' else '', axis=1)
+                exploded_df['IPs'] = exploded_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
+                                                            if row['listType'] == 'NL' else '', axis=1)
+                logger.debug(f'\n{exploded_df}')
+
+                col_1 = original_keys + ['original_type', 'original_id']
+                col_2 = ['bypassNetworkLists', 'bypassNetworkLists_count'] + \
+                        ['id', 'listType', 'name', 'type'] + ['IPs']
+                columns = col_1 + col_2
 
         return exploded_df[columns]
+
+    def process_reputation_profiles(self, data, network):
+        feature = 'reputationProfiles'
+
+        df = pd.json_normalize(data)
+        df = df.sort_values(by=['context', 'threshold'])
+        if 'condition.atomicConditions' not in df.columns.tolist():
+            return df
+        else:
+            df['atomicConditions'] = df['condition.atomicConditions']
+            df['context_id'] = df['id']
+            del df['condition.atomicConditions']
+            del df['id']
+            original_keys = df.columns.tolist()
+
+            df['atomicConditions_count'] = df['atomicConditions'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+            all_keys = dataframe.extract_keys(df['atomicConditions'].dropna().sum())
+            if all_keys:
+                for key in all_keys:
+                    df[key] = df['atomicConditions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
+                rules_columns = list(all_keys)
+                exploded_data = dataframe.explode_cell(df, 'atomicConditions', rules_columns)
+
+                condition_columns = ['className', 'index', 'positiveMatch', 'value', 'valueCase', 'valueWildcard', 'checkIps', 'IPs']
+                condition_columns = [value for value in condition_columns if value in all_keys]
+                condition_df = pd.DataFrame(exploded_data)
+
+                condition_df['condition.version'] = condition_df['condition.version'].astype(str)
+
+                condition_df['condition.version'] = condition_df['condition.version'].replace({'nan': ' '})
+
+                condition_df['IPs'] = condition_df.apply(lambda row: network.get_network_list(row['value'])
+                                                            if row['className'] == 'NetworkListCondition' else '', axis=1)
+                condition_df['IPs'] = condition_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
+                                                            if row['className'] == 'NetworkListCondition' else '', axis=1)
+
+        return condition_df[original_keys + condition_columns]
 
     def process_response_actions(self, data, network):
         feature = 'responseActions'
@@ -280,52 +375,102 @@ class BotManagerWrapper(BotManager):
         # extract conditions column
         all_keys = dataframe.extract_keys(df['conditionalActions'].dropna().sum())
         columns_to_explode = list(all_keys)
-        logger.debug(columns_to_explode)
 
-        for key in all_keys:
-            df[key] = df['conditionalActions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
+        if all_keys is None:
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        else:
+            for key in all_keys:
+                df[key] = df['conditionalActions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
-        logger.debug(f'\n{df[columns_to_explode]}')
+            logger.debug(f'\n{df[columns_to_explode]}')
 
-        exploded_data = dataframe.explode_cell(df, 'conditionalActions', columns_to_explode)
-        exploded_df = pd.DataFrame(exploded_data)
-        logger.debug(f'\n{exploded_df}')
+            exploded_data = dataframe.explode_cell(df, 'conditionalActions', columns_to_explode)
+            exploded_df = pd.DataFrame(exploded_data)
+            conditionalActions_count = exploded_df['conditionalActions_count'].sum()
 
-        col_1 = original_keys
-        col_2 = ['conditionalActions_count', 'conditionalActions'] + \
-         ['actionId', 'actionName', 'defaultAction', 'conditionalActionRules', 'description']
-        # ['challengeActions', 'conditionalActions', 'customDenyActions', 'serveAlternateActions', 'challengeInjectionRules.injectJavaScript', 'challengeInterceptionRules.interceptAllRequests']
-        columns = col_1 + col_2 + ['conditionalActionRules_count']
-        exploded_df['conditionalActionRules_count'] = exploded_df['conditionalActionRules'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+            if conditionalActions_count == 0:
+                return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+            else:
+                col_1 = original_keys
+                col_2 = ['conditionalActions_count', 'conditionalActions'] + ['actionId', 'actionName', 'defaultAction', 'conditionalActionRules', 'description']
+                if 'description' not in all_keys:
+                    col_2.remove('description')
+                    logger.debug(col_2)
+                columns = col_1 + col_2 + ['conditionalActionRules_count']
 
-        all_keys = dataframe.extract_keys(exploded_df['conditionalActionRules'].dropna().sum())
-        columns_to_explode = list(all_keys)
-        logger.debug(columns_to_explode)
-        for key in all_keys:
-            exploded_df[key] = exploded_df['conditionalActionRules'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
+                exploded_df['conditionalActionRules_count'] = exploded_df['conditionalActionRules'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+                all_keys = dataframe.extract_keys(exploded_df['conditionalActionRules'].dropna().sum())
+                columns_to_explode = list(all_keys)
+                logger.debug(columns_to_explode)
+                for key in all_keys:
+                    exploded_df[key] = exploded_df['conditionalActionRules'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
-        exploded_data = dataframe.explode_cell(exploded_df, 'conditionalActionRules', columns_to_explode)
-        new_df = pd.DataFrame(exploded_data)
+                exploded_data = dataframe.explode_cell(exploded_df, 'conditionalActionRules', columns_to_explode)
+                new_df = pd.DataFrame(exploded_data)
 
-        all_keys = dataframe.extract_keys(new_df['conditions'].dropna().sum())
-        columns_to_explode = list(all_keys)
-        logger.debug(columns_to_explode)
-        for key in all_keys:
-            new_df[key] = new_df['conditions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
+                all_keys = dataframe.extract_keys(new_df['conditions'].dropna().sum())
+                columns_to_explode = list(all_keys)
 
-        exploded_data = dataframe.explode_cell(new_df, 'conditions', columns_to_explode)
-        conditions_df = pd.DataFrame(exploded_data)
+                for key in all_keys:
+                    new_df[key] = new_df['conditions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
-        col_1 = ['challengeActions', 'customDenyActions', 'serveAlternateActions', 'challengeInjectionRules.injectJavaScript', 'challengeInterceptionRules.interceptAllRequests']
-        col_2 = ['actionId', 'defaultAction', 'actionName', 'percentageOfTraffic', 'action']
-        col_3 = ['checkIps', 'positiveMatch', 'type', 'value', 'host', 'valueCase', 'nameWildcard', 'valueWildcard']
-        cols = col_1 + col_2 + col_3 + ['IPs']
-        conditions_df['IPs'] = conditions_df.apply(lambda row: network.get_network_list(row['value'])
-                                                   if row['type'] == 'networkListCondition' else '', axis=1)
-        conditions_df['IPs'] = conditions_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
-                                                   if row['type'] == 'NetworkListCondition' else '', axis=1)
+                exploded_data = dataframe.explode_cell(new_df, 'conditions', columns_to_explode)
+                conditions_df = pd.DataFrame(exploded_data)
 
-        return exploded_df[columns], new_df, conditions_df[cols]
+                col_1 = ['challengeActions', 'customDenyActions', 'serveAlternateActions', 'challengeInjectionRules.injectJavaScript', 'challengeInterceptionRules.interceptAllRequests']
+                col_2 = ['actionId', 'defaultAction', 'actionName', 'percentageOfTraffic', 'action']
+                col_3 = ['checkIps', 'positiveMatch', 'type', 'value', 'host', 'valueCase', 'nameWildcard', 'valueWildcard']
+                col_3 = [value for value in col_3 if value in columns_to_explode]
+                cols = col_1 + col_2 + col_3 + ['IPs']
+                conditions_df['IPs'] = conditions_df.apply(lambda row: network.get_network_list(row['value'])
+                                                        if row['type'] == 'networkListCondition' else '', axis=1)
+                conditions_df['IPs'] = conditions_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
+                                                        if row['type'] == 'networkListCondition' else '', axis=1)
+                logger.debug(conditions_df[cols])
+                return exploded_df[columns], new_df, conditions_df[cols]
+
+    def process_rulesets(self, data):
+        feature = 'rulesets'
+        # extract rules column
+        df = pd.json_normalize(data)
+        df['ruleset_id'] = df['id']
+        del df['id']
+        original_keys = df.columns.tolist()
+        original_keys.remove('rules')
+        original_keys.remove('attackGroups')
+        df['rules_count'] = df['rules'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+        all_keys = dataframe.extract_keys(df['rules'].dropna().sum())
+        if all_keys:
+            for key in all_keys:
+                df[key] = df['rules'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
+            rules_columns = list(all_keys)
+            exploded_data = dataframe.explode_cell(df, 'rules', rules_columns)
+            rules_df = pd.DataFrame(exploded_data)
+            original_keys.remove('ruleset_id')
+            rules_columns = ['attackGroups', 'id', 'inspectRequestBody', 'inspectResponseBody', 'outdated', 'ruleVersion', 'score', 'tag', 'title']
+
+            rules_df = rules_df[['ruleset_id'] + original_keys + rules_columns]
+            rules_df = rules_df.sort_values(by='attackGroups')
+        # extract attackGroups column
+        df = pd.json_normalize(data)
+        df['ruleset_id'] = df['id']
+        original_keys = df.columns.tolist()
+        original_keys.remove('attackGroups')
+        original_keys.remove('id')
+        del df['id']
+        df['attackGroups_count'] = df['attackGroups'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+        all_keys = dataframe.extract_keys(df['attackGroups'].dropna().sum())
+
+        if all_keys:
+            for key in all_keys:
+                df[key] = df['attackGroups'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
+            group_columns = list(all_keys)
+            exploded_data = dataframe.explode_cell(df, 'attackGroups', group_columns)
+            attack_group_df = pd.DataFrame(exploded_data)
+            group_columns = ['group', 'groupName', 'threshold']
+            original_keys.remove('ruleset_id')
+            attack_group_df = attack_group_df[['ruleset_id'] + original_keys + group_columns]
+        return rules_df, attack_group_df
 
 
 if __name__ == '__main__':
