@@ -199,7 +199,7 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             subparsers,
                             'security',
                             help='security objects',
-                            required_arguments=[{'name': 'config', 'help': 'security config name'}],
+                            required_arguments=[{'name': 'config', 'help': 'security config name', 'nargs': '+'}],
                             optional_arguments=[{'name': 'version', 'help': 'security config version'},
                                                 {'name': 'output', 'help': 'override excel output file (.xlsx)'},
                                                 {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}])

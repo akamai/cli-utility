@@ -34,157 +34,170 @@ def list_configs(args):
 
     _, resp = appsec.list_waf_configs()
     df = pd.DataFrame(resp)
-    columns = ['name', 'id']
+    df = df.rename(columns={'id': 'configId', 'name': 'configName'})
+    df = df.fillna('')
+    df['stagingVersion'] = df['stagingVersion'].replace('', 0)
+    df['stagingVersion'] = df['stagingVersion'].astype('Int64')
+    df['productionVersion'] = df['productionVersion'].replace('', 0)
+    df['productionVersion'] = df['productionVersion'].astype('Int64')
 
-    df = df[df['name'] == args.config]
-    if df.empty:
-        _, resp = appsec.list_waf_configs()
-        df = pd.DataFrame(resp)
-        columns = ['name', 'id']
-        print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
+    columns = ['configName', 'configId', 'stagingVersion', 'productionVersion', 'latestVersion', 'targetProduct', 'fileType']
+    if 'description' in df.columns:
+        columns.append('description')
 
-        if args.config is None:
-            sys.exit(logger.error('Please enter at least one --config'))
+    all_configs = df['configName'].values.tolist()
+    good_configs = list(set(all_configs).intersection(set(args.config)))
+    good_df = df[df['configName'].isin(good_configs)].copy()
+    good_df = good_df.reset_index(drop=True)
+    if len(good_configs) == 0:
+        print(tabulate(df[columns], headers=columns, tablefmt='grid', numalign='center', showindex=True, maxcolwidths=50))
+
+        modified_list = ["'" + word + "'" for word in all_configs]
+        all_configs_str = ' '.join(modified_list)
+        logger.warning(f'all configName\n{all_configs_str}')
+    else:
+        print(tabulate(good_df[columns], headers=columns, tablefmt='grid', numalign='center', showindex=True, maxcolwidths=50))
+
+    notfound_configs = [x for x in args.config if x not in all_configs]
+    if notfound_configs:
+        logger.error(f'{notfound_configs} not found.  You need to provide an exact spelling')
+
+    all_files = []
+    all_excels = []
+    counter = 0
+    for _, row in good_df.iterrows():
+
+        if row['productionVersion'] == 0:
+            status, policy = appsec.get_config_version_detail(row['configId'], row['latestVersion'])
         else:
-            sys.exit(logger.error(f"'{args.config}' not found.  You need to provide an exact spelling"))
-    else:
-        config_id = df['id'].values[0]
-        status, policy = appsec.get_config_detail(config_id)
-        if status == 200:
-            df = pd.DataFrame(policy, index=[0])
-            try:
-                version = df['productionVersion'].values[0]
-            except:
-                version = df['latestVersion'].values[0]
-                logger.warning('no active production version')
-                logger.debug(f'\n{df}')
+            status, policy = appsec.get_config_version_detail(row['configId'], row['productionVersion'])
+        policy_name = policy['configName'].replace(' ', '')
+        policy_name = policy_name.replace('/', '')
+        filepath = f'{account_folder}/{policy_name}.xlsx' if args.output is None else f'output/{args.output}'
+        files.write_json(f'{account_folder}/{policy_name}.json', policy)
 
-    status, policy = appsec.get_config_version_detail(config_id, version)
-    policy_name = policy['configName'].replace(' ', '')
-    policy_name = policy['configName'].replace('/', '')
-    filepath = f'{account_folder}/{policy_name}.xlsx' if args.output is None else f'output/{args.output}'
-    files.write_json(f'{account_folder}/{policy_name}.json', policy)
+        print()
+        counter += 1
+        logger.warning(f"config no. {counter:<4}'{row['configName']}'")
+        summary = ['configId', 'configName', 'version', 'basedOn', 'versionNotes',
+                   'staging.status', 'production.status', 'createdBy']
+        if 'versionNotes' not in policy.keys():
+            summary.remove('versionNotes')
+        if 'basedOn' not in policy.keys():
+            summary.remove('basedOn')
 
-    summary = ['configId', 'configName', 'version', 'versionNotes', 'basedOn',
-               'staging.status', 'production.status', 'createdBy']
-    if 'versionNotes' not in policy.keys():
-        summary.remove('versionNotes')
-    if 'basedOn' not in policy.keys():
-        summary.remove('basedOn')
+        df = pd.json_normalize(policy)
+        logger.debug(df.columns.values)
+        print(tabulate(df[summary], headers=summary, tablefmt='grid', numalign='center', showindex=False, maxcolwidths=50))
 
-    df = pd.json_normalize(policy)
-    logger.debug(df.columns.values)
-    print(tabulate(df[summary], headers=summary, tablefmt='grid', numalign='center', showindex=False, maxcolwidths=50))
+        sheet = {}
+        advanced = []
+        try:
+            mdf = pd.json_normalize(policy['siem'])
+            mdf.index = pd.Index(['value'])
+            mdf = mdf.T
+            mdf = mdf.reset_index()
+            mdf = mdf.rename(columns={'index': 'title'})
+            mdf['key'] = 'siem'
+            advanced.append(mdf)
+        except:
+            pass
 
-    all_features = list(policy.keys())
-    non_features = ['staging', 'production', 'customBotCategorySequence', 'customClients', 'siem']
-    used = ['advancedOptions', 'advancedSettings', 'customRules', 'securityPolicies', 'rulesets'
-            'customDefinedBots', 'customBotCategories',
-            'selectableHosts', 'selectedHosts', 'matchTargets',
-            'ratePolicies', 'responseActions']
-    features = sorted(list(set(all_features) - set(summary) - set(used) - set(non_features)))
-    print()
+        tdf = pd.json_normalize(policy['advancedOptions'])
+        tdf.index = pd.Index(['value'])
+        tdf = tdf.T
+        tdf = tdf.reset_index()
+        tdf = tdf.rename(columns={'index': 'title'})
+        tdf['key'] = 'advancedOptions'
+        advanced.append(tdf)
 
-    '''
-    logger.warning(features)
-    for feature in features:
-        data = policy[feature]
-        if isinstance(data, list):
-            logger.info(f'{feature:<30} {len(data):<5}')
-        elif isinstance(data, dict):
-            logger.warning(f'{feature:<30} {data.keys()}')
-    '''
-    sheet = {}
-    advanced = []
+        try:
+            sdf = pd.json_normalize(policy['advancedSettings'])
+            sdf.index = pd.Index(['value'])
+            sdf = sdf.T
+            sdf = sdf.reset_index()
+            sdf = sdf.rename(columns={'index': 'title'})
+            sdf['key'] = 'advancedSettings'
+            advanced.append(sdf)
+        except:
+            pass
 
-    mdf = pd.json_normalize(policy['siem'])
-    mdf.index = pd.Index(['value'])
-    mdf = mdf.T
-    mdf = mdf.reset_index()
-    mdf = mdf.rename(columns={'index': 'title'})
-    mdf['key'] = 'siem'
-    advanced.append(mdf)
+        df = pd.concat(advanced, axis=0)
+        sheet['advanced'] = df[['key', 'title', 'value']]
 
-    tdf = pd.json_normalize(policy['advancedOptions'])
-    tdf.index = pd.Index(['value'])
-    tdf = tdf.T
-    tdf = tdf.reset_index()
-    tdf = tdf.rename(columns={'index': 'title'})
-    tdf['key'] = 'advancedOptions'
-    advanced.append(tdf)
+        all_hosts = []
+        selectableHosts_df = pd.DataFrame(policy['selectableHosts'], columns=['selectableHosts'])
+        selectableHosts_df = selectableHosts_df.sort_values(by='selectableHosts').copy()
+        selectableHosts_df = selectableHosts_df.reset_index(drop=True)
+        all_hosts.append(selectableHosts_df)
+        selectedHosts_df = pd.DataFrame(policy['selectedHosts'], columns=['selectedHosts'])
+        selectedHosts_df = selectedHosts_df.sort_values(by='selectedHosts').copy()
+        selectedHosts_df = selectedHosts_df.reset_index(drop=True)
+        all_hosts.append(selectedHosts_df)
 
-    sdf = pd.json_normalize(policy['advancedSettings'])
-    sdf.index = pd.Index(['value'])
-    sdf = sdf.T
-    sdf = sdf.reset_index()
-    sdf = sdf.rename(columns={'index': 'title'})
-    sdf['key'] = 'advancedSettings'
-    advanced.append(sdf)
+        try:
+            errorHosts_df = pd.DataFrame(policy['errorHosts'])
+            errorHosts_df = errorHosts_df.rename(columns={'hostname': 'errorHosts'})
+            errorHosts_df = errorHosts_df.sort_values(by='errorHosts')
+            errorHosts_df = errorHosts_df['errorHosts']
+            all_hosts.append(errorHosts_df)
+        except:
+            pass
 
-    df = pd.concat(advanced, axis=0)
-    sheet['advanced'] = df[['key', 'title', 'value']]
+        sheet['hosts'] = pd.concat(all_hosts, axis=1)
+        sheet['securityPolicies'] = pd.json_normalize(policy['securityPolicies'])
 
-    all_hosts = []
-    selectableHosts_df = pd.DataFrame(policy['selectableHosts'], columns=['selectableHosts'])
-    selectableHosts_df = selectableHosts_df.sort_values(by='selectableHosts').copy()
-    selectableHosts_df = selectableHosts_df.reset_index(drop=True)
-    all_hosts.append(selectableHosts_df)
-    selectedHosts_df = pd.DataFrame(policy['selectedHosts'], columns=['selectedHosts'])
-    selectedHosts_df = selectedHosts_df.sort_values(by='selectedHosts').copy()
-    selectedHosts_df = selectedHosts_df.reset_index(drop=True)
-    all_hosts.append(selectedHosts_df)
+        try:
+            sheet['matchTargets'] = bot.process_matchTargets(policy['matchTargets']['websiteTargets'], network)
+        except:
+            feature = 'matchTargets'
+            logger.critical(f'{feature:<40} no data')
 
-    try:
-        errorHosts_df = pd.DataFrame(policy['errorHosts'])
-        errorHosts_df = errorHosts_df.rename(columns={'hostname': 'errorHosts'})
-        errorHosts_df = errorHosts_df.sort_values(by='errorHosts')
-        errorHosts_df = errorHosts_df['errorHosts']
-        all_hosts.append(errorHosts_df)
-    except:
-        pass
+        try:
+            df = bot.process_custom_bot(policy['customDefinedBots'], network)
+            if not df.empty:
+                sheet['customDefinedBots'] = df
+        except:
+            feature = 'customDefinedBots'
+            logger.critical(f'{feature:<40} no data')
 
-    sheet['hosts'] = pd.concat(all_hosts, axis=1)
-    sheet['securityPolicies'] = pd.json_normalize(policy['securityPolicies'])
+        df = bot.process_custom_deny_list(policy['customDenyList'])
+        if not df.empty:
+            sheet['customDenyList'] = df
 
-    try:
-        sheet['matchTargets'] = bot.process_matchTargets(policy['matchTargets']['websiteTargets'], network)
-    except:
-        feature = 'matchTargets'
-        logger.critical(f'{feature:<30} no data')
+        df = bot.process_custom_rules(policy['customRules'])
+        if not df.empty:
+            sheet['customRules'] = df
 
-    df = bot.process_custom_bot(policy['customDefinedBots'], network)
-    if not df.empty:
-        sheet['customDefinedBots'] = df
+        rate_policy = bot.process_rate_policies(policy['ratePolicies'], network)
+        if len(rate_policy) > 0:
+            sheet['ratePolicies'] = rate_policy
 
-    df = bot.process_custom_deny_list(policy['customDenyList'])
-    if not df.empty:
-        sheet['customDenyList'] = df
+        _, _, response_action_df = bot.process_response_actions(policy['responseActions'], network)
+        if not response_action_df.empty:
+            sheet['responseActions'] = response_action_df
+        else:
+            feature = 'responseActions'
+            logger.critical(f'{feature:<40} no data')
 
-    df = bot.process_custom_rules(policy['customRules'])
-    if not df.empty:
-        sheet['customRules'] = df
+        if len(policy['rulesets']) > 0:
+            sheet['rulesets'], sheet['rulesets_attackgroup'] = bot.process_rulesets(policy['rulesets'])
+        else:
+            feature = 'rulesets'
+            logger.critical(f'{feature:<40} no data')
 
-    rate_policy = bot.process_rate_policies(policy['ratePolicies'], network)
-    if len(rate_policy) > 0:
-        sheet['ratePolicies'] = rate_policy
+        try:
+            sheet['reputationProfiles'] = bot.process_reputation_profiles(policy['reputationProfiles'], network)
+        except:
+            feature = 'reputationProfiles'
+            logger.critical(f'{feature:<40} no data')
 
-    _, _, response_action_df = bot.process_response_actions(policy['responseActions'], network)
-    if not response_action_df.empty:
-        sheet['responseActions'] = response_action_df
+        all_excels.append(sheet)
+        all_files.append(filepath)
 
-    if len(policy['rulesets']) > 0:
-        sheet['rulesets'], sheet['rulesets_attackgroup'] = bot.process_rulesets(policy['rulesets'])
-    else:
-        feature = 'rulesets'
-        logger.critical(f'{feature:<30} no data')
-
-    try:
-        sheet['reputationProfiles'] = bot.process_reputation_profiles(policy['reputationProfiles'], network)
-    except:
-        feature = 'reputationProfiles'
-        logger.critical(f'{feature:<30} no data')
-
-    print()
-    files.write_xlsx(filepath, sheet, adjust_column_width=False, freeze_column=3)
-    if platform.system() == 'Darwin' and args.no_show is False:
-        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
+    if all_files:
+        print()
+        for filepath, excel in zip(all_files, all_excels):
+            files.write_xlsx(filepath, excel, adjust_column_width=False, freeze_column=3)
+            if platform.system() == 'Darwin' and args.no_show is False:
+                subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
