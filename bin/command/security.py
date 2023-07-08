@@ -41,7 +41,7 @@ def list_configs(args):
         _, resp = appsec.list_waf_configs()
         df = pd.DataFrame(resp)
         columns = ['name', 'id']
-        print(tabulate(df[columns], headers=columns, tablefmt='github', numalign='center'))
+        print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
 
         if args.config is None:
             sys.exit(logger.error('Please enter at least one --config'))
@@ -61,6 +61,7 @@ def list_configs(args):
 
     status, policy = appsec.get_config_version_detail(config_id, version)
     policy_name = policy['configName'].replace(' ', '')
+    policy_name = policy['configName'].replace('/', '')
     filepath = f'{account_folder}/{policy_name}.xlsx' if args.output is None else f'output/{args.output}'
     files.write_json(f'{account_folder}/{policy_name}.json', policy)
 
@@ -73,7 +74,7 @@ def list_configs(args):
 
     df = pd.json_normalize(policy)
     logger.debug(df.columns.values)
-    print(tabulate(df[summary], headers=summary, tablefmt='github', numalign='center', showindex=False))
+    print(tabulate(df[summary], headers=summary, tablefmt='grid', numalign='center', showindex=False, maxcolwidths=50))
 
     all_features = list(policy.keys())
     non_features = ['staging', 'production', 'customBotCategorySequence', 'customClients', 'siem']
@@ -123,14 +124,28 @@ def list_configs(args):
     df = pd.concat(advanced, axis=0)
     sheet['advanced'] = df[['key', 'title', 'value']]
 
+    all_hosts = []
     selectableHosts_df = pd.DataFrame(policy['selectableHosts'], columns=['selectableHosts'])
     selectableHosts_df = selectableHosts_df.sort_values(by='selectableHosts').copy()
     selectableHosts_df = selectableHosts_df.reset_index(drop=True)
+    all_hosts.append(selectableHosts_df)
     selectedHosts_df = pd.DataFrame(policy['selectedHosts'], columns=['selectedHosts'])
     selectedHosts_df = selectedHosts_df.sort_values(by='selectedHosts').copy()
     selectedHosts_df = selectedHosts_df.reset_index(drop=True)
-    sheet['hosts'] = pd.concat([selectableHosts_df, selectedHosts_df], axis=1)
+    all_hosts.append(selectedHosts_df)
+
+    try:
+        errorHosts_df = pd.DataFrame(policy['errorHosts'])
+        errorHosts_df = errorHosts_df.rename(columns={'hostname': 'errorHosts'})
+        errorHosts_df = errorHosts_df.sort_values(by='errorHosts')
+        errorHosts_df = errorHosts_df['errorHosts']
+        all_hosts.append(errorHosts_df)
+    except:
+        pass
+
+    sheet['hosts'] = pd.concat(all_hosts, axis=1)
     sheet['securityPolicies'] = pd.json_normalize(policy['securityPolicies'])
+
     try:
         sheet['matchTargets'] = bot.process_matchTargets(policy['matchTargets']['websiteTargets'], network)
     except:
@@ -141,7 +156,11 @@ def list_configs(args):
     if not df.empty:
         sheet['customDefinedBots'] = df
 
-    df = bot.process_custom_rules(policy['customRules'], network)
+    df = bot.process_custom_deny_list(policy['customDenyList'])
+    if not df.empty:
+        sheet['customDenyList'] = df
+
+    df = bot.process_custom_rules(policy['customRules'])
     if not df.empty:
         sheet['customRules'] = df
 
@@ -159,9 +178,13 @@ def list_configs(args):
         feature = 'rulesets'
         logger.critical(f'{feature:<30} no data')
 
-    sheet['reputationProfiles'] = bot.process_reputation_profiles(policy['reputationProfiles'], network)
+    try:
+        sheet['reputationProfiles'] = bot.process_reputation_profiles(policy['reputationProfiles'], network)
+    except:
+        feature = 'reputationProfiles'
+        logger.critical(f'{feature:<30} no data')
 
     print()
-    files.write_xlsx(filepath, sheet, adjust_column_width=False, freeze_column=2)
+    files.write_xlsx(filepath, sheet, adjust_column_width=False, freeze_column=3)
     if platform.system() == 'Darwin' and args.no_show is False:
         subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])

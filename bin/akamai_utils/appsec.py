@@ -60,7 +60,7 @@ class NetworkListWrapper(NetworkList):
                 try:
                     return sorted(result['list'])
                 except:
-                    logger.error(f'{ids} has no IPs')
+                    logger.error(f' {ids:<30} has no IPs')
                     return ['None']
         elif isinstance(ids, list):
             all_ips = []
@@ -70,7 +70,7 @@ class NetworkListWrapper(NetworkList):
                     try:
                         all_ips.extend(result['list'])
                     except:
-                        logger.error(f'{id} has no IPs')
+                        logger.error(f' {id:<30} has no IPs')
                         return ['None']
             return sorted(all_ips)
 
@@ -172,18 +172,20 @@ class BotManagerWrapper(BotManager):
 
             exploded_data = exploded_data = dataframe.explode_cell(df, 'conditions', columns_to_explode)
             exploded_df = pd.DataFrame(exploded_data)
-            col_1 = ['botId', 'botName', 'categoryId', 'conditions', 'conditions_count']
+            col_1 = ['categoryId', 'botId', 'botName', 'conditions_no']
             col_2 = ['type', 'name', 'positiveMatch', 'value', 'checkIps', 'valueCase', 'nameWildcard']
             col_2 = [value for value in col_2 if value in columns_to_explode]
 
             try:
                 columns = col_1 + col_2 + ['IPs']
+                exploded_df['conditions_no'] = (exploded_df.groupby(['categoryId', 'botId', 'botName']).cumcount() + 1)
+
                 exploded_df['IPs'] = exploded_df.apply(lambda row: network.get_network_list(row['value'][0])
                                                    if row['type'] == 'networkListCondition' else '', axis=1)
                 exploded_df['IPs'] = exploded_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
                                                         if row['type'] == 'networkListCondition' else '', axis=1)
                 exploded_df['name'] = exploded_df.apply(lambda row: dataframe.split_elements_newline_withcomma(row['name'])
-                                                        if row['name'] else '', axis=1)
+                                                       if isinstance(row['name'], list) else row['name'], axis=1)
                 exploded_df['value'] = exploded_df.apply(lambda row: dataframe.split_elements_newline_withcomma(row['value'])
                                                         if row['value'] else '', axis=1)
             except:
@@ -191,7 +193,37 @@ class BotManagerWrapper(BotManager):
 
         return exploded_df[columns]
 
-    def process_custom_rules(self, data, network):
+    def process_custom_deny_list(self, data):
+        feature = 'customDenyList'
+
+        if isinstance(data, list):
+            try:
+                columns = data[0].keys()
+            except:
+                logger.critical(f'{feature:<30} no data')
+                return pd.DataFrame()
+
+            logger.debug(f'{feature:<30} {len(columns):<5} {columns}')
+            df = pd.json_normalize(data)
+            df['rule_name'] = df['name']
+            del df['name']
+            if 'description' in df.columns:
+                df['rule_description'] = df['description']
+            df['parameters_count'] = df['parameters'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+            # extract parameters column
+            all_keys = dataframe.extract_keys(df['parameters'].sum())
+            parameters_columns = list(all_keys)
+
+            for key in all_keys:
+                df[key] = df['parameters'].apply(lambda x: [d.get(key) for d in x])
+
+            exploded_data = exploded_data = dataframe.explode_cell(df, 'parameters', parameters_columns)
+            exploded_df = pd.DataFrame(exploded_data)
+            original_columns = ['id', 'rule_name', 'rule_description']
+            exploded_df['parameters_no'] = (exploded_df.groupby(['id', 'rule_name']).cumcount() + 1)
+            return exploded_df[original_columns + ['parameters_no'] + ['name', 'displayName', 'value']]
+
+    def process_custom_rules(self, data):
         feature = 'customRules'
 
         if isinstance(data, list):
@@ -223,10 +255,10 @@ class BotManagerWrapper(BotManager):
                     col_1 = original_keys
                     col_2 = ['type', 'name', 'value', 'valueWildcard', 'valueCase', 'positiveMatch', 'nameWildcard']
                     col_2 = [value for value in col_2 if value in columns_to_explode]
-                    columns = col_1 + col_2
+                    columns = col_1 + ['conditions_no'] + col_2
                     exploded_data = dataframe.explode_cell(df, 'conditions', columns_to_explode)
                     exploded_df = pd.DataFrame(exploded_data)
-
+                    exploded_df['conditions_no'] = (exploded_df.groupby(['id']).cumcount() + 1)
         return exploded_df[columns]
 
     def process_rate_policies(self, data, network):
@@ -241,17 +273,17 @@ class BotManagerWrapper(BotManager):
 
             logger.debug(f'{feature:<30} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
+
             if 'additionalMatchOptions' not in df.columns.tolist():
                 return df
             else:
                 original_keys = df.columns.tolist()
                 logger.debug(original_keys)
                 original_keys.remove('additionalMatchOptions')
+                original_keys.remove('type')
 
-                df['original_type'] = df['type']
+                df['policy_type'] = df['type']
                 df['additionalMatchOptions_count'] = df['additionalMatchOptions'].apply(lambda x: len(x) if isinstance(x, list) else 0)
-
-                # extract conditions column
                 all_keys = dataframe.extract_keys(df['additionalMatchOptions'].dropna().sum())
                 columns_to_explode = list(all_keys)
                 logger.debug(columns_to_explode)
@@ -261,16 +293,16 @@ class BotManagerWrapper(BotManager):
 
                 exploded_data = dataframe.explode_cell(df, 'additionalMatchOptions', columns_to_explode)
                 exploded_df = pd.DataFrame(exploded_data)
-                logger.debug(f'\n{exploded_df}')
-
-                col_1 = original_keys + ['original_type']
-                col_2 = columns_to_explode
-                columns = col_1 + col_2 + ['IPs']
+                col_1 = original_keys + ['policy_type']
+                columns = col_1 + ['additionalMatchOptions_no'] + columns_to_explode + ['IPs']
                 exploded_df['IPs'] = exploded_df.apply(lambda row: network.get_network_list(row['values'])
                                                     if row['type'] == 'NetworkListCondition' else '', axis=1)
                 exploded_df['IPs'] = exploded_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
                                                     if row['type'] == 'NetworkListCondition' else '', axis=1)
-        return exploded_df[columns]
+
+                exploded_df['additionalMatchOptions_no'] = (exploded_df.groupby(['id']).cumcount() + 1)
+
+                return exploded_df[columns]
 
     def process_matchTargets(self, data, network):
         feature = 'matchTargets'
@@ -280,10 +312,12 @@ class BotManagerWrapper(BotManager):
                 columns = data[0].keys()
             except:
                 logger.critical(f'{feature:<30} no data')
-                return []
+                return pd.DataFrame()
 
             logger.debug(f'{feature:<30} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
+            df['policyId'] = df['securityPolicy.policyId']
+            del df['securityPolicy.policyId']
 
             original_keys = df.columns.tolist()
             logger.debug(original_keys)
@@ -291,12 +325,11 @@ class BotManagerWrapper(BotManager):
             if 'bypassNetworkLists' not in original_keys:
                 return df
             else:
-                df['original_type'] = df['type']
-                df['original_id'] = df['id']
+                df['matchTarget_type'] = df['type']
+                df['matchTarget_id'] = df['id']
                 original_keys.remove('type')
                 original_keys.remove('id')
                 original_keys.remove('bypassNetworkLists')
-
                 df['bypassNetworkLists_count'] = df['bypassNetworkLists'].apply(lambda x: len(x) if isinstance(x, list) else 0)
 
                 # extract conditions column
@@ -317,11 +350,14 @@ class BotManagerWrapper(BotManager):
                 exploded_df['IPs'] = exploded_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
                                                             if row['listType'] == 'NL' else '', axis=1)
                 logger.debug(f'\n{exploded_df}')
+                exploded_df = exploded_df.rename(columns={'id': 'bypassNetworkListsId'})
 
-                col_1 = original_keys + ['original_type', 'original_id']
-                col_2 = ['bypassNetworkLists', 'bypassNetworkLists_count'] + \
-                        ['id', 'listType', 'name', 'type'] + ['IPs']
-                columns = col_1 + col_2
+                original_keys.remove('policyId')
+                original_keys.remove('sequence')
+                col_1 = ['policyId', 'sequence'] + ['matchTarget_type', 'matchTarget_id']
+                col_2 = ['bypassNetworkListsId', 'listType', 'name', 'type'] + ['IPs']
+                columns = col_1 + ['NetworkListsId_no'] + col_2 + original_keys
+                exploded_df['NetworkListsId_no'] = (exploded_df.groupby(['policyId']).cumcount() + 1)
 
         return exploded_df[columns]
 
@@ -458,8 +494,16 @@ class BotManagerWrapper(BotManager):
         original_keys.remove('attackGroups')
         original_keys.remove('id')
         del df['id']
+
+        '''
+        attack_group_df = pd.json_normalize(df['attackGroups'].explode().reset_index(drop=True))
+        attack_group_df['order'] = attack_group_df.index + 1
+        '''
+
         df['attackGroups_count'] = df['attackGroups'].apply(lambda x: len(x) if isinstance(x, list) else 0)
         all_keys = dataframe.extract_keys(df['attackGroups'].dropna().sum())
+        # col = ['attackGroups', 'attackGroups_count']
+        # logger.info(df[col])
 
         if all_keys:
             for key in all_keys:
