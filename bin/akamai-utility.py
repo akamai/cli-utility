@@ -39,6 +39,8 @@ if __name__ == '__main__':
             dc.hostnames(args)
         elif args.subcommand == 'behavior':
             dc.get_property_all_behaviors(args)
+        elif args.subcommand == 'origin-certificate':
+            dc.get_origin_certificate(args)
         else:
             dc.main(args)
 

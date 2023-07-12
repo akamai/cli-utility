@@ -24,6 +24,7 @@ from rich.syntax import Syntax
 from tabulate import tabulate
 from utils import _logging as lg
 from utils import files
+from utils import ssl
 
 logger = lg.setup_logger()
 pd.set_option('display.max_colwidth', None)
@@ -182,9 +183,9 @@ def main(args):
                             properties_df['cpcode_unique_value'] = properties_df[['cpcode_unique_value']].parallel_apply(
                                 lambda x: ',\n'.join(map(str, x.iloc[0])) if isinstance(x.iloc[0], (list, tuple)) and x[0] != '0' else '', axis=1)
 
-                    del properties_df['propertyName']  # drop original column
+                    # del properties_df['propertyName']  # drop original column
 
-                    properties_df = properties_df.rename(columns={'url': 'propertyName'})  # show column with hyperlink instead
+                    properties_df = properties_df.rename(columns={'url': 'propertyName(hyperlink)'})  # show column with hyperlink instead
                     properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
                     properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
 
@@ -192,7 +193,7 @@ def main(args):
 
                     columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
                                'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
-                               'productId', 'ruleFormat', 'hostname_count', 'hostname']
+                               'productId', 'ruleFormat', 'hostname_count', 'hostname', 'propertyName(hyperlink)']
                     if args.behavior:
                         columns.extend(sorted(updated_behaviors))
                         if 'cpcode' in original_behaviors:
@@ -213,6 +214,57 @@ def main(args):
 
     files.write_xlsx(filepath, sheet, freeze_column=6) if not properties_df.empty else None
     subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not properties_df.empty else None
+    return properties_df
+
+
+def get_origin_certificate(args):
+    properties_df = main(args)
+    properties = properties_df[['propertyName', 'propertyId', 'productionVersion', 'latestVersion']].copy()
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+
+    if args.property:
+        pandarallel.initialize(progress_bar=False)
+
+    properties['rules'] = properties.parallel_apply(lambda row: papi.get_property_ruletree(int(row['propertyId']), row['productionVersion'])['rules'], axis=1)
+    property_name = properties['propertyName'].values
+    rules = properties['rules'].values
+
+    prop = {key: value for key, value in zip(property_name, rules)}
+    all_behaviors = []
+    for property_name, rule in prop.items():
+        all_behaviors.append(papi.collect_property_behavior(property_name, rule))
+    origin = pd.concat(all_behaviors)
+    origin = origin.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
+
+    origin = origin.query("name == 'origin'").copy()
+    origin = origin.reset_index(drop=True)
+    sheet = {}
+    if not origin.empty:
+        expanded = pd.json_normalize(origin['json_or_xml']).rename(columns=lambda x: x.replace('.', '_'))
+        origin = origin.reset_index(drop=True)
+        expanded = expanded.reset_index(drop=True)
+        origin_df = pd.concat([origin.drop(columns='json_or_xml'), expanded], axis=1)
+        origin = origin_df.query("originType == 'CUSTOMER'").copy()
+        origin = origin.reset_index(drop=True)
+
+    if not origin.empty:
+        columns = ['property', 'path', 'hostname', 'forwardHostHeader', 'originSni', 'originType']
+        origin_df = origin[columns].copy()
+        sheet['origin'] = origin_df
+        filepath = 'output/origin.xlsx'
+        files.write_xlsx(filepath, sheet, freeze_column=6) if not origin_df.empty else None
+        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not origin_df.empty else None
+
+        origin_df['originSni_temp'] = origin_df['originSni'].map({'TRUE': True, 'FALSE': False})
+        # origin_df[['expired_date', 'PEM']] = origin_df.parallel_apply(lambda row: ssl.get_cert(row['hostname'], 443, row['originSni']), axis=1).apply(pd.Series)
+        origin_df[['expired_date', 'PEM']] = origin_df.apply(lambda row: ssl.get_cert(row['hostname'], 443, row['originSni_temp']), axis=1).apply(pd.Series)
+        columns = ['property', 'path', 'hostname', 'forwardHostHeader', 'originSni', 'expired_date', 'PEM']
+        sheet['origin'] = origin_df[columns]
+        filepath = 'output/origin-1.xlsx'
+        files.write_xlsx(filepath, sheet, freeze_column=6) if not origin_df.empty else None
+        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not origin_df.empty else None
+        print()
+        logger.info('Decode PEM at https://certlogik.com/decoder/')
 
 
 def activate_from_excel(args):

@@ -298,6 +298,10 @@ class PapiWrapper(Papi):
     def get_property_version_hostnames(self, property_id: int, version: int) -> dict:
         return super().get_property_version_hostnames(property_id, version)
 
+    def get_property_version_full_detail(self, property_id: int, version: int, dict_key: str):
+        data = super().get_property_version_full_detail(property_id, version)
+        return data[dict_key]
+
     def get_property_version_detail(self, property_id: int, version: int, dict_key: str):
         '''
         df['ruleFormat'] = df.parallel_apply(

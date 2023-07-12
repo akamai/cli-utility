@@ -121,6 +121,12 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                          {'name': 'hidexml', 'help': 'use this argument to hide XML result from the terminal', 'action': 'store_false'},
                                          {'name': 'lineno', 'help': 'show line number', 'action': 'store_true'},
                                          {'name': 'no-show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'}]},
+                 {'name': 'origin-certificate',
+                  'help': 'check certificate for all origin servers',
+                  'optional_arguments': [{'name': 'group-id', 'help': 'provide at least one groupId without prefix grp_ ', 'nargs': '+'},
+                                         {'name': 'property', 'help': 'provide at least one property name ', 'nargs': '+'},
+                                         {'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
+                                         {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'}]},
                  {'name': 'activate',
                   'help': 'activate property',
                   'required_arguments': [{'name': 'file', 'help': 'excel file'},
@@ -213,6 +219,7 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                          {'name': 'left', 'help': 'version for the 1st property'},
                                          {'name': 'right', 'help': 'version for the 2nd property'},
                                          {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'},
+                                         {'name': 'output', 'help': 'override excel output file (.xlsx)'},
                                          {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}]
                   }]
 

@@ -190,26 +190,59 @@ class Papi(AkamaiSession):
         else:
             return response.json()
 
-    def get_property_version_detail(self, property_id: int, version: int) -> list:
+    def get_property_version_full_detail(self, property_id: int, version: int) -> list:
         '''
         sample response
         {
             "propertyId": "prp_303315",
-            "propertyName": "i-internal.walmartimages.com_pm",
+            "propertyName": "i-internal.test.com_pm",
             "accountId": "act_1-1IY5Z",
             "contractId": "ctr_3-M4N4PX",
             "groupId": "grp_14788",
             "assetId": "aid_10395498",
             "versions": {
                 "items": [ {"propertyVersion": 4,
-                            "updatedByUser": "shubham.srivastava@walmartlabs.com",
+                            "updatedByUser": "test@akamai.com",
                             "updatedDate": "2020-06-30T06:40:54Z",
                             "productionStatus": "ACTIVE",
                             "stagingStatus": "ACTIVE",
                             "etag": "62682b5e5b57f282ef7e927ecbfe97d6f3f9d355",
                             "productId": "prd_SPM",
                             "ruleFormat": "latest",
-                            "note": "BFDTORBIT-17686: Updated Walmart Headers."
+                            "note": "test note"
+                            }
+                          ]
+                        }
+        }
+        '''
+        url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}')
+        response = self.session.get(url)
+        logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return response.json()
+
+    def get_property_version_detail(self, property_id: int, version: int) -> list:
+        '''
+        sample response
+        {
+            "propertyId": "prp_303315",
+            "propertyName": "i-internal.test.com_pm",
+            "accountId": "act_1-1IY5Z",
+            "contractId": "ctr_3-M4N4PX",
+            "groupId": "grp_14788",
+            "assetId": "aid_10395498",
+            "versions": {
+                "items": [ {"propertyVersion": 4,
+                            "updatedByUser": "test@akamai.com",
+                            "updatedDate": "2020-06-30T06:40:54Z",
+                            "productionStatus": "ACTIVE",
+                            "stagingStatus": "ACTIVE",
+                            "etag": "62682b5e5b57f282ef7e927ecbfe97d6f3f9d355",
+                            "productId": "prd_SPM",
+                            "ruleFormat": "latest",
+                            "note": "test note"
                             }
                           ]
                         }
