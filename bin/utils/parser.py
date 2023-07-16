@@ -156,7 +156,8 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
 
         actions['delivery-config'] = cls.create_main_command(
             subparsers, 'delivery-config', help=f'{config_help}',
-            optional_arguments=[{'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
+            optional_arguments=[{'name': 'summary', 'help': 'only show account summary', 'action': 'store_true'},
+                                {'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
                                 {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'},
                                 {'name': 'behavior', 'help': 'behaviors you want to audit on the property', 'nargs': '+'},
                                 {'name': 'group-id', 'help': 'provide at least one groupId without prefix grp_ ', 'nargs': '+'},
