@@ -17,12 +17,14 @@ import pandas as pd
 import swifter
 from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import papi as p
+from akamai_utils import siteshield as ss
 from pandarallel import pandarallel
 from rich import print_json
 from rich.console import Console
 from rich.syntax import Syntax
 from tabulate import tabulate
 from utils import _logging as lg
+from utils import dataframe
 from utils import files
 from utils import ssl
 
@@ -45,9 +47,12 @@ def main(args):
     iam = IdentityAccessManagement(args.account_switch_key)
     account = iam.search_account_name(value=args.account_switch_key)[0]
     account = account.replace(' ', '_')
+    print()
     logger.warning(f'Found account {account}')
     account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
+    Path('output').mkdir(parents=True, exist_ok=True)
     filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
+    print()
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     sheet = {}
     if args.property:
@@ -89,8 +94,8 @@ def main(args):
         properties_df['propertyURL'] = properties_df.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
         properties_df['url'] = properties_df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
 
-        del properties_df['propertyName']  # drop original column
-        properties_df = properties_df.rename(columns={'url': 'propertyName'})  # show column with hyperlink instead
+        # del properties_df['propertyName']  # drop original column
+        properties_df = properties_df.rename(columns={'url': 'propertyName(hyperlink)'})  # show column with hyperlink instead
         properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
         properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
 
@@ -98,7 +103,7 @@ def main(args):
 
         columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
                     'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
-                    'productId', 'ruleFormat', 'hostname_count', 'hostname']
+                    'productId', 'ruleFormat', 'hostname_count', 'hostname', 'propertyName(hyperlink)']
         properties_df['propertyId'] = properties_df['propertyId'].astype(str)
         properties_df = properties_df[columns].copy()
         properties_df = properties_df.reset_index(drop=True)
@@ -140,6 +145,14 @@ def main(args):
                 logger.critical(' 800 properties take ~ 30 minutes')
                 logger.critical('2200 properties take ~ 80 minutes')
                 logger.critical('please consider using --group-id to reduce total properties')
+                print()
+                all_groups = group_df['groupId'].values.tolist()
+                modified_list = ["'" + word + "'" for word in all_groups]
+                all_groups = ' '.join(modified_list)
+                logger.warning(f'--group-id {all_groups}')
+
+        if args.summary is True:
+            sys.exit()
 
         # collect properties detail for all groups
         properties_df = pd.DataFrame()
@@ -218,14 +231,23 @@ def main(args):
 
 
 def get_origin_certificate(args):
+
     properties_df = main(args)
+    if properties_df.empty:
+        sys.exit()
+
     properties = properties_df[['propertyName', 'propertyId', 'productionVersion', 'latestVersion']].copy()
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
 
     if args.property:
+        print()
         pandarallel.initialize(progress_bar=False)
+        print()
 
-    properties['rules'] = properties.parallel_apply(lambda row: papi.get_property_ruletree(int(row['propertyId']), row['productionVersion'])['rules'], axis=1)
+    properties['rules'] = properties.parallel_apply(
+        lambda row: papi.get_property_ruletree(int(row['propertyId']),
+                                               int(row['productionVersion']) if pd.notnull(row['productionVersion'])
+                                               else row['latestVersion'])['rules'], axis=1)
     property_name = properties['propertyName'].values
     rules = properties['rules'].values
 
@@ -233,12 +255,61 @@ def get_origin_certificate(args):
     all_behaviors = []
     for property_name, rule in prop.items():
         all_behaviors.append(papi.collect_property_behavior(property_name, rule))
-    origin = pd.concat(all_behaviors)
-    origin = origin.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
+    behavior = pd.concat(all_behaviors)
+    behavior = behavior.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
 
-    origin = origin.query("name == 'origin'").copy()
-    origin = origin.reset_index(drop=True)
+    siteshield = behavior.query("name == 'siteShield'").copy()
+    siteshield = siteshield.rename(columns={'name': 'behaviorName'})
     sheet = {}
+    if not siteshield.empty:
+        expanded = siteshield.apply(lambda row: dataframe.extract_dictionary_columns(row['json_or_xml']['ssmap']), axis=1).rename(columns=lambda x: x.replace('.', '_'))
+        siteshield = siteshield.reset_index(drop=True)
+        expanded = expanded.reset_index(drop=True)
+        siteshield_df = pd.concat([siteshield.drop(columns='json_or_xml'), expanded], axis=1)
+        del siteshield_df['behaviorName']
+        del siteshield_df['type']
+        if 'custom_behaviorId' in siteshield_df.columns:
+            del siteshield_df['custom_behaviorId']
+        siteshield_df = siteshield_df.rename(columns={'name': 'siteShieldName',
+                                                      'path': 'rule_path',
+                                                      'value': 'siteShieldValue'})
+        siteshield_df = siteshield_df.reset_index(drop=True)
+        columns = ['property', 'siteShieldName', 'src', 'srmap', 'siteShieldValue', 'rule_path']
+        columns = [value for value in columns if value in siteshield_df.columns]
+        sheet['siteshield'] = siteshield_df[columns]
+        map_alias = list(set(siteshield_df.siteShieldValue.values))
+
+        logger.warning(map_alias)
+
+    if not siteshield.empty:
+        ss_api = ss.SiteShieldWrapper(args.account_switch_key)
+        df = ss_api.list_maps()
+        df = df[df['ruleName'].isin(map_alias)].copy()
+        logger.debug(f'\n{df}')
+        maps_alias = df['mapAlias'].values
+        ids = df.id.values
+        rules = df.ruleName.values
+        sss = []
+        for alias, map_id, rule in zip(maps_alias, ids, rules):
+            ips = ss_api.get_map(alias, map_id, rule)
+            sss.append(ips)
+
+        sss_df = pd.DataFrame([{'siteshield_name': key,
+                                'map_id': value['map_id'],
+                                'map_alias': value['map_alias'],
+                                'ips_size': value['ips_size'],
+                                'cidr': value['cidr'],
+                                'all_ips': value['all_ips']
+                            } for item in sss for key, value in item.items()])
+        sss_df['cidr'] = sss_df.apply(lambda row: dataframe.split_elements_newline(row['cidr']), axis=1)
+        sss_df['all_ips'] = sss_df.apply(lambda row: dataframe.split_elements_newline(row['all_ips']), axis=1)
+        sheet['siteshield_ip'] = sss_df
+        logger.debug(sss_df)
+
+    origin = behavior.query("name == 'origin'").copy()
+    origin = origin.reset_index(drop=True)
+    logger.debug(f'\n{origin}')
+
     if not origin.empty:
         expanded = pd.json_normalize(origin['json_or_xml']).rename(columns=lambda x: x.replace('.', '_'))
         origin = origin.reset_index(drop=True)
@@ -250,19 +321,28 @@ def get_origin_certificate(args):
     if not origin.empty:
         columns = ['property', 'path', 'hostname', 'forwardHostHeader', 'originSni', 'originType']
         origin_df = origin[columns].copy()
-        sheet['origin'] = origin_df
-        filepath = 'output/origin.xlsx'
-        files.write_xlsx(filepath, sheet, freeze_column=6) if not origin_df.empty else None
-        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not origin_df.empty else None
 
-        origin_df['originSni_temp'] = origin_df['originSni'].map({'TRUE': True, 'FALSE': False})
+        # Don't process if hostname uses a variable
+        ignore = origin_df[origin_df['hostname'].str.contains('{{')].copy()
+        logger.debug(ignore.hostname.values) if not ignore.empty else None
+        origin_df = origin_df[~origin_df['hostname'].str.contains('{{')].copy()
+        sheet['origin'] = origin_df
+
+        combined_df = origin_df.groupby(['property', 'hostname', 'forwardHostHeader', 'originSni', 'originType']).agg({'path': list}).reset_index()
+        combined_df.columns = ['property', 'hostname', 'forwardHostHeader', 'originSni', 'originType', 'path']
+        combined_df = combined_df[columns]
+        combined_df['originSni_temp'] = combined_df['originSni'].map({'TRUE': True, 'FALSE': False})
+
         # origin_df[['expired_date', 'PEM']] = origin_df.parallel_apply(lambda row: ssl.get_cert(row['hostname'], 443, row['originSni']), axis=1).apply(pd.Series)
-        origin_df[['expired_date', 'PEM']] = origin_df.apply(lambda row: ssl.get_cert(row['hostname'], 443, row['originSni_temp']), axis=1).apply(pd.Series)
-        columns = ['property', 'path', 'hostname', 'forwardHostHeader', 'originSni', 'expired_date', 'PEM']
-        sheet['origin'] = origin_df[columns]
-        filepath = 'output/origin-1.xlsx'
-        files.write_xlsx(filepath, sheet, freeze_column=6) if not origin_df.empty else None
-        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not origin_df.empty else None
+        combined_df[['expired_date', 'commonName', 'PEM']] = combined_df.apply(lambda row: ssl.get_cert(row['hostname'], 443, row['originSni_temp']), axis=1).apply(pd.Series)
+        columns = ['property', 'hostname', 'forwardHostHeader', 'originSni', 'expired_date', 'commonName', 'PEM', 'rule_path']
+        combined_df = combined_df.rename(columns={'path': 'rule_path'})
+        combined_df['rule_path'] = combined_df.apply(lambda row: dataframe.split_elements_newline_withcomma(row['rule_path'])
+                                                        if row['rule_path'] else '', axis=1)
+        sheet['origin'] = combined_df[columns]
+        filepath = 'output/origin.xlsx'
+        files.write_xlsx(filepath, sheet, freeze_column=6) if not combined_df.empty else None
+        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not combined_df.empty else None
         print()
         logger.info('Decode PEM at https://certlogik.com/decoder/')
 

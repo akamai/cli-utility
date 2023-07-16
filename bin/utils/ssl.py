@@ -10,6 +10,7 @@ import ssl
 import time
 
 from cryptography import x509
+from cryptography.x509.oid import NameOID
 from utils import _logging as lg
 
 logger = lg.setup_logger()
@@ -18,11 +19,11 @@ logger = lg.setup_logger()
 def cert_decode_pem(pem_data):
     pem_data_bytes = pem_data.encode('utf-8')
     cert = x509.load_pem_x509_certificate(pem_data_bytes)
-    expired_dt = cert.not_valid_after.strftime('%Y-%m-%d %H:%M:%S')
-    return expired_dt
+    return cert
 
 
 def get_cert(hostname: str, port: int, sni: bool, retries=2, delay=1):
+    count = 0
     for attempt in range(1, retries + 1):
         try:
             conn = ssl.create_connection((hostname, port), timeout=5)
@@ -37,18 +38,24 @@ def get_cert(hostname: str, port: int, sni: bool, retries=2, delay=1):
             except:
                 pem_certificate = ''
             try:
-                expired_dt = cert_decode_pem(pem_certificate)
+                cert = cert_decode_pem(pem_certificate)
+                expired_dt = cert.not_valid_after.strftime('%Y-%m-%d %H:%M:%S')
+                common_name = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+                logger.debug(common_name)
             except:
                 expired_dt = ''
-            return expired_dt, pem_certificate
+                common_name = ''
+            return expired_dt, common_name, pem_certificate
         except socket.timeout as e:
             logger.debug(f'{hostname:<80} Connection {attempt}/{retries} timed out: {str(e)}')
+            count += 1
             time.sleep(delay)
         except Exception as e:
             logger.error(f'{hostname:<80} Error occurred during connection: {str(e)}')
             break
-    logger.error(f'{hostname:<80} Failed to establish a connection')
-    return None, None
+    if count > 0:
+        logger.error(f'{hostname:<80} Failed to establish a connection')
+    return None, None, None
 
 
 if __name__ == '__main__':
