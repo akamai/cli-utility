@@ -152,10 +152,10 @@ def write_xlsx(filepath: str, dict_value: dict,
                     ws.set_column(2, 2, None, format1)
                 else:
                     total, last_sheet = divmod(len(df.index), MAX_XLXS_ROW)
-                    logger.info(f'{total=} {last_sheet=} dataset={len(df.index)}')
+                    logger.debug(f'{total=} {last_sheet=} dataset={len(df.index)}')
                     if last_sheet <= MAX_XLXS_ROW:
                         for sheet in (n + 1 for n in range(total+1)):
-                            logger.info(f'Sheet{sheet}')
+                            logger.debug(f'Sheet{sheet}')
 
                             sheet_no = sheet
                             if sheet == 1:
@@ -167,7 +167,7 @@ def write_xlsx(filepath: str, dict_value: dict,
                                 last_row = len(df.index)
 
                             if sheet == total+1 and last_sheet > 0:
-                                logger.warning(f'{total=} {sheet_no=} {sheet=}')
+                                logger.debug(f'{total=} {sheet_no=} {sheet=}')
                                 sheet_no = total + 1
                             logger.warning(f'Sheet{sheet}: from {first_row} to {last_row}')
                             df.iloc[first_row:last_row].to_excel(writer, sheet_name=f'{sheetname}_{sheet_no}')
