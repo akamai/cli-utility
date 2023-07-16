@@ -799,10 +799,6 @@ def get_custom_behavior(args):
                 syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=args.lineno)
                 console = Console()
                 console.print(syntax)
-
-                if args.lineno is False:
-                    print()
-                    logger.warning('add --lineno to display line number')
         else:
             if not df.empty:
                 print(tabulate(df[columns], headers=columns, tablefmt='simple'))
