@@ -130,7 +130,10 @@ class Papi(AkamaiSession):
     def search_property_by_name(self, property_name: str) -> tuple:
         url = self.form_url(f'{self.MODULE}/search/find-by-value')
         payload = {'propertyName': property_name}
-        resp = self.session.post(url, json=payload, headers=self.headers)
+        headers = {'PAPI-Use-Prefixes': 'false',
+                   'Accept': 'application/json',
+                   'Content-Type': 'application/json'}
+        resp = self.session.post(url, json=payload, headers=headers)
         if resp.status_code == 200:
             try:
                 property_items = resp.json()['versions']['items']
@@ -384,19 +387,17 @@ class Papi(AkamaiSession):
                  }
         resp = self.session.get(url, headers=self.headers, params=params)
         logger.debug(f'{resp.status_code} {resp.url} {params} {self.headers}')
-
-        # tags we are not interested to compare
-        self.property_name = resp.json()['propertyName']
-        ignore_keys = ['etag', 'errors', 'warnings', 'ruleFormat', 'comments',
-                       'accountId', 'contractId', 'groupId',
-                       'propertyId', 'propertyName', 'propertyVersion']
-        if remove_tags is not None:
-            addl_keys = [tag for tag in remove_tags]
-            if addl_keys is not None:
-                ignore_keys = ignore_keys + addl_keys
-        logger.debug(f'{ignore_keys}')
-
         if resp.status_code == 200:
+            # tags we are not interested to compare
+            self.property_name = resp.json()['propertyName']
+            ignore_keys = ['etag', 'errors', 'warnings', 'ruleFormat', 'comments',
+                        'accountId', 'contractId', 'groupId',
+                        'propertyId', 'propertyName', 'propertyVersion']
+            if remove_tags is not None:
+                addl_keys = [tag for tag in remove_tags]
+                if addl_keys is not None:
+                    ignore_keys = ignore_keys + addl_keys
+            logger.debug(f'{ignore_keys}')
             mod_resp = remap(resp.json(), lambda p, k, v: k not in ignore_keys)
             logger.debug(params)
             logger.debug(resp.status_code)

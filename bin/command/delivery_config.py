@@ -636,68 +636,74 @@ def get_property_advanced_behavior(args):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
     sheet = {}
-
+    options = []
+    columns = ['property', 'type', 'xml', 'path']
     for property in args.property:
         print()
         status, resp = papi.search_property_by_name(property)
         if status != 200:
-            logger.info(f'property {property:<50} not found')
+            logger.warning(f'property {property:<50} not found')
             break
         else:
             stg, prd = papi.property_version(resp)
             version = prd
             if args.version:
                 version = args.version
-                logger.critical(f'lookup requested v{version}')
-            property_name = f'{property}_v{version}'
-            if len(property_name) > 26:
-                property_name = f'{papi.property_id}_v{version}'
+                logger.warning(f'lookup requested v{version}')
+        property_name = f'{property}_v{version}'
         status, json = papi.property_ruletree(papi.property_id, version)
+        if status != 200:
+            sys.exit(logger.error(f'{json["title"]}. please provide correct version'))
 
-        if not args.advBehavior and not args.advMatch:
-            args.advBehavior = True
-            args.advMatch = True
-
-        options = []
-        if args.advBehavior:
-            print()
-            logger.critical('Searching for advanced behavior')
-            behaviors = papi_rules.collect_property_behavior(property_name, json['rules'], path='', navigation=[])
-            db = pd.DataFrame(behaviors)
-            db = db[db['name'] == 'advanced'].copy()
+        behaviors = papi_rules.collect_property_behavior(property_name, json['rules'])
+        db = pd.DataFrame(behaviors)
+        db = db[db['name'] == 'advanced'].copy()
+        if db.empty:
+            logger.info('advanced behavior not found')
+        else:
             db = db.reset_index(drop=True)
-            db = db.rename(columns={'json': 'xml'})
-            columns = ['property', 'type', 'path', 'xml']
+            db = db.rename(columns={'json_or_xml': 'xml'})
+            db['type'] = 'advBehavior'
             db = db[columns]
             options.append(db)
 
-        if args.advMatch:
-            print()
-            logger.critical('Searching for advanced match')
-            criteria = papi_rules.collect_property_criteria(property_name, json['rules'], path='', navigation=[])
-            dc = pd.DataFrame(criteria)
-            dc = dc[dc['name'] == 'matchAdvanced'].copy()
+        criteria = papi_rules.collect_property_criteria(property_name, json['rules'])
+        dc = pd.DataFrame(criteria)
+        dc = dc[dc['name'] == 'matchAdvanced'].copy()
+        if dc.empty:
+            logger.info('advanced match not found')
+        else:
             dc = dc.reset_index(drop=True)
-            dc = dc.rename(columns={'json': 'xml'})
-            columns = ['property', 'type', 'path', 'xml']
+            dc = dc.rename(columns={'json_or_xml': 'xml'})
+            dc['type'] = 'advMatch'
             dc = dc[columns]
             options.append(dc)
 
-        df = pd.concat(options).reset_index(drop=True)
-        sheet[property_name] = df
+        adv_override = papi.get_property_advanced_override(papi.property_id, version)
+        do = pd.DataFrame.from_dict({property_name: adv_override}, orient='index', columns=['xml'])
+        if do.empty:
+            logger.info('advanced override not found')
+        else:
+            do.index.name = 'property'
+            do = do.reset_index()
+            do['type'] = 'advOverride'
+            do['path'] = ''
+            do = do[columns]
+            options.append(do)
 
-        if args.hidexml is True:
-            for path, xml_string in df[['path', 'xml']].values:
-                print()
-                logger.warning(path)
-                syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=args.lineno)
-                console = Console()
-                console.print(syntax)
-
+    df = pd.concat(options).reset_index(drop=True)
+    if args.hidexml is True:
+        for property, type, path, xml_string in df[['property', 'type', 'path', 'xml']].values:
+            print()
+            logger.warning(f'{type:<20} {property:<70} {path}')
+            syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=args.lineno)
+            console = Console()
+            console.print(syntax)
+    sheet['advancedXML'] = df
     if sheet:
         print()
-        filepath = 'advancedBehavior.xlsx'
-        files.write_xlsx(filepath, sheet, show_index=True)
+        filepath = 'metadata.xlsx'
+        files.write_xlsx(filepath, sheet, show_index=False)
         if args.no_show is False and platform.system() == 'Darwin':
             subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
         else:
@@ -737,14 +743,15 @@ def get_property_advanced_override(args):
         if adv_override:
             property_dict[title] = [adv_override]
             property_list.append(property_dict)
-            sheet_df = pd.DataFrame.from_dict({'advancedOverride': adv_override}, orient='index', columns=['adv_override'])
-            sheet_df.index.name = title
+            sheet_df = pd.DataFrame.from_dict({title: adv_override}, orient='index', columns=['xml'])
+            sheet_df.index.name = 'property'
+            sheet_df['type'] = 'advOverride'
+
             sheet_df = sheet_df.reset_index()
 
             sheet_name = f'{property}_v{version}'
             if len(sheet_name) > 26:
                 sheet_name = f'{papi.property_id}_v{version}'
-
             sheet[sheet_name] = sheet_df
 
             if args.hidexml is True:

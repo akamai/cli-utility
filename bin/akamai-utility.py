@@ -27,10 +27,7 @@ if __name__ == '__main__':
         if args.subcommand == 'custom-behavior':
             dc.get_custom_behavior(args)
         elif args.subcommand == 'metadata':
-            if args.advOverride:
-                dc.get_property_advanced_override(args)
-            else:
-                dc.get_property_advanced_behavior(args)
+            dc.get_property_advanced_behavior(args)
         elif args.subcommand == 'activate':
             dc.activate_from_excel(args)
         elif args.subcommand == 'ruletree':
