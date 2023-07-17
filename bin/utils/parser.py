@@ -104,7 +104,12 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             ])
 
         config_help = 'many things you may need to (know about/check on/perform on) configs on the account'
-        dc_sc = [{'name': 'custom-behavior',
+        dc_sc = [{'name': 'behavior',
+                  'help': 'list all behaviors on the property',
+                  'required_arguments': [{'name': 'property', 'help': 'property name'}],
+                  'optional_arguments': [{'name': 'version', 'help': 'version'},
+                                         {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}]},
+                 {'name': 'custom-behavior',
                   'help': 'show information about custome behavior',
                   'optional_arguments': [{'name': 'id', 'help': 'behaviorId', 'nargs': '+'},
                                          {'name': 'namecontains', 'help': 'behavior name contains keyword search'},
@@ -137,14 +142,9 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                   'required_arguments': [{'name': 'property', 'help': 'property name', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'version', 'help': 'version'},
                                          {'name': 'no-show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'}]},
-                 {'name': 'behavior',
-                  'help': 'list all behaviors on the property',
-                  'required_arguments': [{'name': 'property', 'help': 'property name'}],
-                  'optional_arguments': [{'name': 'version', 'help': 'version'},
-                                         {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}]},
                  {'name': 'ruletree',
                   'help': 'view ruletree structure format',
-                  'required_arguments': [{'name': 'property-id', 'help': 'provide at least one property without prefix prp_', 'nargs': '+'}],
+                  'required_arguments': [{'name': 'property', 'help': 'property name', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'version', 'help': 'version'},
                                          {'name': 'show-depth', 'help': 'to display max depth', 'action': 'store_true'},
                                          {'name': 'show-limit', 'help': 'show config limit ie. max-nested-rules-limit', 'action': 'store_true'}]}

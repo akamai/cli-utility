@@ -435,19 +435,40 @@ def activation_status(args):
 
 def get_property_ruletree(args):
     '''
-    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config ruletree --property-id 219351 --version 27 --ruletree --show
+    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config ruletree --property AAA BBB
     '''
+
+    if args.version and len(args.property) > 1:
+        sys.exit(logger.error('If --version is specified, only one property is supported'))
 
     Path('output/ruletree').mkdir(parents=True, exist_ok=True)
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-    for property_id in args.property_id:
-        limit, full_ruletree = papi.get_property_limit(property_id, args.version)
+    for property in args.property:
+        status, resp = papi.search_property_by_name(property)
+        # print_json(data=resp)
+        if status != 200:
+            logger.info(f'property {property:<50} not found')
+            break
+        else:
+            stg, prd = papi.property_version(resp)
+            try:
+                version = prd
+            except:
+                version = stg
+            if args.version:
+                version = int(args.version)
+            logger.debug(f'{papi.group_id} {papi.contract_id} {papi.property_id}')
+            status, _ = papi.property_ruletree(papi.property_id, version)
+            if status != 200:
+                sys.exit(logger.error(f'{json["title"]}. please provide correct version'))
+            limit, full_ruletree = papi.get_property_limit(papi.property_id, version)
+
         if args.show_limit:
             df = pd.DataFrame.from_dict(limit, orient='index')
             print(tabulate(df, headers=['value'], tablefmt='github', showindex='always'))
 
-        ruletree = papi.get_property_ruletree(property_id, args.version)
+        ruletree = papi.get_property_ruletree(papi.property_id, version)
         config, version = full_ruletree['propertyName'], full_ruletree['propertyVersion']
         title = f'{config}_v{version}'
 
@@ -485,8 +506,6 @@ def get_property_ruletree(args):
                 description_limit = 130
                 max_depth = max(depth)
                 logger.debug(f'{max_depth=}')
-                if args.show_depth is False:
-                    logger.warning('To display max depth, add --show-depth')
                 tree_depth_dict = dict(zip(rules, depth))
 
                 if max_depth > 0:
@@ -525,6 +544,8 @@ def get_property_ruletree(args):
                     Popen(command, stdout=os.open(os.devnull, os.O_RDWR), stderr=STDOUT)
                 except:
                     subprocess.call(['open', '-a', 'TextEdit', Path(TREE_FILE).absolute()])
+    if args.show_depth is False:
+        logger.warning('To display max depth, add --show-depth')
 
 
 def hostnames(args):
@@ -533,7 +554,7 @@ def hostnames(args):
     '''
 
     if args.version and len(args.property) > 1:
-        sys.exit(logger.error('If --version is specified, we can lookup one property'))
+        sys.exit(logger.error('If --version is specified, only one property is supported'))
 
     # display full account name
     iam = IdentityAccessManagement(args.account_switch_key)
