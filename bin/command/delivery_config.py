@@ -50,7 +50,6 @@ def main(args):
     print()
     logger.warning(f'Found account {account}')
     account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
-    Path('output').mkdir(parents=True, exist_ok=True)
     filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
     print()
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
@@ -230,7 +229,7 @@ def main(args):
     return properties_df
 
 
-def get_origin_certificate(args):
+def origin_certificate(args):
 
     properties_df = main(args)
     if properties_df.empty:
@@ -548,9 +547,9 @@ def get_property_ruletree(args):
         logger.warning('To display max depth, add --show-depth')
 
 
-def hostnames(args):
+def hostnames_certificate(args):
     '''
-    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config hostname --property --version 27 --show
+    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config hostname --property --version 27
     '''
 
     if args.version and len(args.property) > 1:
@@ -575,17 +574,27 @@ def hostnames(args):
             break
         else:
             stg, prd = papi.property_version(resp)
-            version = prd
+            try:
+                version = prd
+            except:
+                version = stg
 
             hostname = papi.get_property_version_hostnames(papi.property_id, version)
             df = pd.json_normalize(hostname)
             logger.debug(df.columns.values.tolist())
+            # columns = ['certStatus.validationCname.hostname', 'certStatus.validationCname.target']
+            # logger.info(df[columns])
 
             columns = ['propertyName', 'Property_Hostname', 'Edge_Hostname', 'certProvisioningType', 'production', 'staging']
+            if 'certStatus.validationCname.hostname' in df.columns:
+                columns.append('validationCname.hostname')
+                columns.append('validationCname.target')
             df = df.rename(columns={'cnameFrom': 'Property_Hostname',
                                     'cnameTo': 'Edge_Hostname',
                                     'certStatus.production': 'production',
-                                    'certStatus.staging': 'staging'})
+                                    'certStatus.staging': 'staging',
+                                    'certStatus.validationCname.hostname': 'validationCname.hostname',
+                                    'certStatus.validationCname.target': 'validationCname.target'})
             df['propertyName'] = f'{property}_v{version}'
 
             if 'production' in df.columns.values.tolist():
@@ -701,16 +710,17 @@ def get_property_advanced_behavior(args):
             options.append(dc)
 
         adv_override = papi.get_property_advanced_override(papi.property_id, version)
-        do = pd.DataFrame.from_dict({property_name: adv_override}, orient='index', columns=['xml'])
-        if do.empty:
-            logger.info('advanced override not found')
-        else:
-            do.index.name = 'property'
-            do = do.reset_index()
-            do['type'] = 'advOverride'
-            do['path'] = ''
-            do = do[columns]
-            options.append(do)
+        if adv_override is not None:
+            do = pd.DataFrame.from_dict({property_name: adv_override}, orient='index', columns=['xml'])
+            if do.empty:
+                logger.info('advanced override not found')
+            else:
+                do.index.name = 'property'
+                do = do.reset_index()
+                do['type'] = 'advOverride'
+                do['path'] = ''
+                do = do[columns]
+                options.append(do)
 
     df = pd.concat(options).reset_index(drop=True)
     if args.hidexml is True:
@@ -795,6 +805,8 @@ def get_custom_behavior(args):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     status, response = papi.list_custom_behaviors()
     if status == 200:
+        if len(response) == 0:
+            sys.exit(logger.info('No custome behavior found'))
         df = pd.DataFrame(response)
         columns = df.columns.values.tolist()
         for x in ['xml', 'updatedDate', 'sharingLevel', 'description', 'status', 'updatedByUser', 'approvedByUser']:

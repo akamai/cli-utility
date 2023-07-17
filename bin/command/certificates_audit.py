@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime
 
 import pandas as pd
 from akamai_api.cps import CpsWrapper
@@ -11,6 +12,7 @@ from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import papi as p
 from ipwhois import IPWhois
 from pandarallel import pandarallel
+from pytz import utc
 from rich import print_json
 from tabulate import tabulate
 from utils import _logging as lg
@@ -109,7 +111,21 @@ def audit(args):
             columns = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'expiration_date',
                        'hostname_count', 'hostname_one_per_line', 'hostname_with_ending_comma']
             df['expiration_date'] = df['id'].parallel_apply(lambda x: cps.certificate_expiration_date(x))
-            contract_data.append(df[columns])
+            if args.expire is True:
+                filtered = True
+                filtered_df = df.copy()
+                today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=utc)
+                filtered_df['expiration_date'] = pd.to_datetime(df['expiration_date'])
+                filtered_df = filtered_df.query('expiration_date < @today')
+                filtered_df = filtered_df.reset_index(drop=True)
+                filtered_df['expiration_date'] = filtered_df['expiration_date'].apply(
+                    lambda x: x.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%dT%H:%M:%SZ'))
+                temp_col = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'expiration_date']
+                logger.info(f'\n{filtered_df[temp_col]}')
+                if not filtered_df.empty:
+                    contract_data.append(filtered_df[columns])
+            else:
+                contract_data.append(df[columns])
 
             # sheet[f'summary_{contract_id}'] = df
             # sheet[f'hostname_{contract_id}'] = hostname_df
@@ -126,7 +142,7 @@ def audit(args):
             ip_df = y.to_frame()
             ip_df = ip_df.sort_values(by='cname')
             ip_df = ip_df.reset_index(drop=True)
-            logger.info(f'\n{ip_df}')
+            logger.debug(f'\n{ip_df}')
             ip_df['ASN_Description'] = ip_df['cname'].parallel_apply(lambda x: asn(x))
             sheet['ip'] = ip_df
 

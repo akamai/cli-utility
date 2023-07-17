@@ -606,7 +606,7 @@ class PapiWrapper(Papi):
             advancedOverride = full_ruletree['rules']['advancedOverride']
             return advancedOverride
         except:
-            return ''
+            return None
 
     def get_property_path_n_behavior(self, json: dict):
         navigation = []

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from time import perf_counter
 
 from command import admin
@@ -24,7 +25,10 @@ if __name__ == '__main__':
     start_time = perf_counter()
 
     if args.command == 'delivery-config':
-        if args.subcommand == 'custom-behavior':
+        Path('output').mkdir(parents=True, exist_ok=True)
+        if args.subcommand == 'behavior':
+            dc.get_property_all_behaviors(args)
+        elif args.subcommand == 'custom-behavior':
             dc.get_custom_behavior(args)
         elif args.subcommand == 'metadata':
             dc.get_property_advanced_behavior(args)
@@ -32,12 +36,10 @@ if __name__ == '__main__':
             dc.activate_from_excel(args)
         elif args.subcommand == 'ruletree':
             dc.get_property_ruletree(args)
-        elif args.subcommand == 'hostname':
-            dc.hostnames(args)
-        elif args.subcommand == 'behavior':
-            dc.get_property_all_behaviors(args)
-        elif args.subcommand == 'origin-certificate':
-            dc.get_origin_certificate(args)
+        elif args.subcommand == 'hostname-cert':
+            dc.hostnames_certificate(args)
+        elif args.subcommand == 'origin-cert':
+            dc.origin_certificate(args)
         else:
             dc.main(args)
 
