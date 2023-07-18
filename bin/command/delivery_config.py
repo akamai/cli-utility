@@ -27,6 +27,8 @@ from utils import _logging as lg
 from utils import dataframe
 from utils import files
 from utils import ssl
+from yaspin import yaspin
+from yaspin.spinners import Spinners
 
 logger = lg.setup_logger()
 pd.set_option('display.max_colwidth', None)
@@ -47,11 +49,9 @@ def main(args):
     iam = IdentityAccessManagement(args.account_switch_key)
     account = iam.search_account_name(value=args.account_switch_key)[0]
     account = account.replace(' ', '_')
-    print()
     logger.warning(f'Found account {account}')
     account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
     filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
-    print()
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     sheet = {}
     if args.property:
@@ -116,7 +116,8 @@ def main(args):
         '''
     else:
         # build group structure as displayed on control.akamai.com
-        allgroups_df, columns = papi.account_group_summary()
+        with yaspin() as sp:
+            allgroups_df, columns = papi.account_group_summary()
         allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)  # change groupId to str before load into excel
 
         if args.group_id:
@@ -137,21 +138,13 @@ def main(args):
             if group_df.shape[0] > 0:
                 logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
             total = allgroups_df['propertyCount'].sum()
-            if total > 100:
-                logger.warning(f'This account has {total:,} properties, please be patient')
-                print()
-                logger.critical(' 200 properties take ~  7 minutes')
-                logger.critical(' 800 properties take ~ 30 minutes')
-                logger.critical('2200 properties take ~ 80 minutes')
-                logger.critical('please consider using --group-id to reduce total properties')
-                print()
-                all_groups = group_df['groupId'].values.tolist()
-                modified_list = ["'" + word + "'" for word in all_groups]
-                all_groups = ' '.join(modified_list)
-                logger.warning(f'--group-id {all_groups}')
+            all_groups = group_df['groupId'].values.tolist()
+            modified_list = ["'" + word + "'" for word in all_groups]
+            all_groups = ' '.join(modified_list)
+            logger.warning(f'--group-id {all_groups}')
 
         if args.summary is True:
-            sys.exit()
+            return None
 
         # collect properties detail for all groups
         properties_df = pd.DataFrame()
@@ -164,58 +157,59 @@ def main(args):
                 logger.info('no property to collect.')
             else:
                 logger.warning('collecting properties ...')
-                account_properties = papi.property_summary(group_df)
-                if len(account_properties) > 0:
-                    properties_df = pd.concat(account_properties, axis=0)
+                with yaspin(Spinners.star, timer=True) as sp:
+                    account_properties = papi.property_summary(group_df)
+                    if len(account_properties) > 0:
+                        properties_df = pd.concat(account_properties, axis=0)
+                        properties_df['ruletree'] = properties_df.parallel_apply(
+                            lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
+                                                                if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
 
-                    properties_df['ruletree'] = properties_df.parallel_apply(
-                        lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
-                                                            if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
+                        if args.behavior:
+                            original_behaviors = [x.lower() for x in args.behavior]
+                            updated_behaviors = copy.deepcopy(original_behaviors)
 
-                    if args.behavior:
-                        original_behaviors = [x.lower() for x in args.behavior]
-                        updated_behaviors = copy.deepcopy(original_behaviors)
+                            if 'cpcode' in original_behaviors:
+                                updated_behaviors.remove('cpcode')
 
-                        if 'cpcode' in original_behaviors:
-                            updated_behaviors.remove('cpcode')
+                            for behavior in updated_behaviors:
+                                properties_df[behavior] = properties_df.parallel_apply(
+                                    lambda row: papi.behavior_count(row['propertyName'],
+                                    row['ruletree']['rules'], behavior), axis=1)
 
-                        for behavior in updated_behaviors:
-                            properties_df[behavior] = properties_df.parallel_apply(
-                                lambda row: papi.behavior_count(row['propertyName'],
-                                row['ruletree']['rules'], behavior), axis=1)
+                            if 'cpcode' in original_behaviors:
+                                properties_df['cpcodes'] = properties_df.apply(
+                                        lambda row: papi.cpcode_value(row['propertyName'],
+                                        row['ruletree']['rules']) if row['productionVersion'] else 0, axis=1)
+                                properties_df['cpcode_unique_value'] = properties_df['cpcodes'].parallel_apply(lambda x: list(set(x)) if isinstance(x, list) else [])
+                                properties_df['cpcode_unique_value'] = properties_df['cpcode_unique_value'].parallel_apply(lambda x: sorted(x))
+                                properties_df['cpcode_count'] = properties_df['cpcode_unique_value'].parallel_apply(lambda x: len(x))
+                                # display one value per line
+                                properties_df['cpcode_unique_value'] = properties_df[['cpcode_unique_value']].parallel_apply(
+                                    lambda x: ',\n'.join(map(str, x.iloc[0])) if isinstance(x.iloc[0], (list, tuple)) and x[0] != '0' else '', axis=1)
 
-                        if 'cpcode' in original_behaviors:
-                            properties_df['cpcodes'] = properties_df.apply(
-                                    lambda row: papi.cpcode_value(row['propertyName'],
-                                    row['ruletree']['rules']) if row['productionVersion'] else 0, axis=1)
-                            properties_df['cpcode_unique_value'] = properties_df['cpcodes'].parallel_apply(lambda x: list(set(x)) if isinstance(x, list) else [])
-                            properties_df['cpcode_unique_value'] = properties_df['cpcode_unique_value'].parallel_apply(lambda x: sorted(x))
-                            properties_df['cpcode_count'] = properties_df['cpcode_unique_value'].parallel_apply(lambda x: len(x))
-                            # display one value per line
-                            properties_df['cpcode_unique_value'] = properties_df[['cpcode_unique_value']].parallel_apply(
-                                lambda x: ',\n'.join(map(str, x.iloc[0])) if isinstance(x.iloc[0], (list, tuple)) and x[0] != '0' else '', axis=1)
+                        # del properties_df['propertyName']  # drop original column
 
-                    # del properties_df['propertyName']  # drop original column
+                        properties_df = properties_df.rename(columns={'url': 'propertyName(hyperlink)'})  # show column with hyperlink instead
+                        properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
+                        properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
 
-                    properties_df = properties_df.rename(columns={'url': 'propertyName(hyperlink)'})  # show column with hyperlink instead
-                    properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
-                    properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
+                        # properties_df.loc[pd.notnull(properties_df['cpcode_unique_value']) & (properties_df['cpcode_unique_value'] == ''), 'cpcode'] = '0'
 
-                    # properties_df.loc[pd.notnull(properties_df['cpcode_unique_value']) & (properties_df['cpcode_unique_value'] == ''), 'cpcode'] = '0'
+                        columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
+                                'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
+                                'productId', 'ruleFormat', 'hostname_count', 'hostname', 'propertyName(hyperlink)']
+                        if args.behavior:
+                            columns.extend(sorted(updated_behaviors))
+                            if 'cpcode' in original_behaviors:
+                                columns.extend(['cpcode_unique_value', 'cpcode_count'])
 
-                    columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
-                               'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
-                               'productId', 'ruleFormat', 'hostname_count', 'hostname', 'propertyName(hyperlink)']
-                    if args.behavior:
-                        columns.extend(sorted(updated_behaviors))
-                        if 'cpcode' in original_behaviors:
-                            columns.extend(['cpcode_unique_value', 'cpcode_count'])
-
-                    properties_df['propertyId'] = properties_df['propertyId'].astype(str)
-                    properties_df = properties_df[columns].copy()
-                    properties_df = properties_df.reset_index(drop=True)
-                    sheet['properties'] = properties_df
-
+                        properties_df['propertyId'] = properties_df['propertyId'].astype(str)
+                        properties_df = properties_df[columns].copy()
+                        properties_df = properties_df.reset_index(drop=True)
+                        sheet['properties'] = properties_df
+                    sp.color = 'green'
+                    sp.ok('✔')
         # add hyperlink to groupName column
         if args.group_id is not None:
             sheet['group_filtered'] = add_group_url(group_df, papi)
@@ -240,7 +234,7 @@ def origin_certificate(args):
 
     if args.property:
         print()
-        pandarallel.initialize(progress_bar=False)
+        pandarallel.initialize(progress_bar=False, verbose=0)
         print()
 
     properties['rules'] = properties.parallel_apply(
@@ -559,6 +553,7 @@ def hostnames_certificate(args):
     iam = IdentityAccessManagement(args.account_switch_key)
     account = iam.search_account_name(value=args.account_switch_key)[0]
     account = account.replace(' ', '_')
+    print()
     logger.warning(f'Found account {account}')
     account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
     filepath = f'output/{account}_hostname_certificate.xlsx' if args.output is None else f'output/{args.output}'

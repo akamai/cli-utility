@@ -123,7 +123,7 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                          {'name': 'lineno', 'help': 'show line number', 'action': 'store_true'},
                                          {'name': 'no-show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'}]},
                   {'name': 'hostname-cert',
-                  'help': 'detail certificate for property hostnames',
+                  'help': 'Show if property hostnames use Security By Default or Certificate managed in CPS.',
                   'required_arguments': [{'name': 'property', 'help': 'property name', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'version', 'help': 'version'},
                                          {'name': 'no-show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'}]},
@@ -213,8 +213,6 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                   'required_arguments': [{'name': 'property', 'help': 'propertyname', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'behavior', 'help': 'behavior', 'nargs': '+'},
                                          {'name': 'criteria', 'help': 'criteria', 'nargs': '+'},
-                                         {'name': 'left', 'help': 'version for the 1st property'},
-                                         {'name': 'right', 'help': 'version for the 2nd property'},
                                          {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'},
                                          {'name': 'output', 'help': 'override excel output file (.xlsx)'},
                                          {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}]

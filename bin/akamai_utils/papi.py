@@ -401,7 +401,13 @@ class PapiWrapper(Papi):
         df = df.fillna('')
         df = df.reset_index(drop=True)
 
-        pandarallel.initialize(progress_bar=False)
+        pandarallel.initialize(progress_bar=False, verbose=0)
+        logger.warning('Collecting properties summary for the account')
+        logger.critical(' 200 properties take ~  7 minutes')
+        logger.critical(' 800 properties take ~ 30 minutes')
+        logger.critical('2200 properties take ~ 80 minutes')
+        logger.critical('please consider using --group-id to reduce total properties')
+
         df['account'] = self.account_switch_key
         df['propertyCount'] = df.parallel_apply(lambda row: self.get_properties_count(row), axis=1)
         df['contractId'] = df.parallel_apply(lambda row: self.get_valid_contract(row), axis=1)
@@ -475,7 +481,7 @@ class PapiWrapper(Papi):
             if row['propertyCount'] == 0:
                 logger.info(f'{msg} no property to collect')
             else:
-                logger.info(f"{msg} {row['propertyCount']}")
+                logger.info(f"{msg} {row['propertyCount']:>5}")
                 properties = self.get_properties_detail_per_group(row['groupId'], row['contractId'])
                 if not properties.empty:
                     properties['propertyId'] = properties['propertyId'].astype('Int64')

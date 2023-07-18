@@ -14,7 +14,6 @@ from command import ruleformat
 from command import security as sec
 from utils import _logging as lg
 from utils.parser import AkamaiParser as Parser
-# from command import security as sec
 
 
 logger = lg.setup_logger()
