@@ -110,7 +110,7 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                   'optional_arguments': [{'name': 'version', 'help': 'version'},
                                          {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}]},
                  {'name': 'custom-behavior',
-                  'help': 'show information about custome behavior',
+                  'help': 'list custom behavior on the account',
                   'optional_arguments': [{'name': 'id', 'help': 'behaviorId', 'nargs': '+'},
                                          {'name': 'namecontains', 'help': 'behavior name contains keyword search'},
                                          {'name': 'hidexml', 'help': 'use this argument to hide XML result from the terminal', 'action': 'store_false'},

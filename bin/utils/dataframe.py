@@ -76,6 +76,14 @@ def explode_columns(row):
     return exploded_row
 
 
+def extract_dictionary_columns(row):
+    extracted_values = {}
+    for key, value in row.items():
+        extracted_values[key] = value
+
+    return pd.Series(extracted_values)
+
+
 def json_extract(obj, search_key: str):
     """ Recursively fetch values from nested JSON. """
     values = []
