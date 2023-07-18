@@ -49,7 +49,7 @@ def audit(args):
     sheet = {}
     contract_data = []
     contract_host = []
-    pandarallel.initialize(progress_bar=False)
+    pandarallel.initialize(progress_bar=False, verbose=0)
 
     for contract_id in contracts:
         print()
