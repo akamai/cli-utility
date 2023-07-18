@@ -44,7 +44,7 @@ def audit(args):
             df = pd.DataFrame.from_dict(response, orient='index')
             df = df.sort_index()
             print(tabulate(df, showindex=True))
-            sys.exit()
+            return None
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     contracts = args.contract_id if args.contract_id else papi.get_contracts()
@@ -56,7 +56,7 @@ def audit(args):
     for contract_id in contracts:
         print()
         msg = f'Collect certificate for {contract_id=}'
-        _, df = cps.list_enrollments(contract_id, enrollment_ids=csv_list)
+        _, df = cps.list_enrollments(contract_id)
 
         filtered = False
         if df.empty:
@@ -79,6 +79,10 @@ def audit(args):
             if args.slot:
                 filtered = True
                 df = df[df['Slot'].isin(args.slot)].copy()
+                df = df.reset_index(drop=True)
+            if args.enrollment_id:
+                filtered = True
+                df = df[df['id'].isin(csv_list)].copy()
                 df = df.reset_index(drop=True)
 
         if not df.empty:
@@ -120,11 +124,15 @@ def audit(args):
                     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=utc)
                     filtered_df['expiration_date'] = pd.to_datetime(df['expiration_date'])
                     filtered_df = filtered_df.query('expiration_date < @today')
+                    filtered_df = filtered_df.sort_values(by='common_name')
                     filtered_df = filtered_df.reset_index(drop=True)
                     filtered_df['expiration_date'] = filtered_df['expiration_date'].apply(
                         lambda x: x.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%dT%H:%M:%SZ'))
                     temp_col = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'expiration_date']
-                    logger.info(f'\n{filtered_df[temp_col]}')
+                    # logger.info(f'\n{filtered_df[temp_col]}')
+                    table = tabulate(filtered_df[temp_col], headers=temp_col, showindex=True, tablefmt='github')
+                    print()
+                    print(table)
                     if not filtered_df.empty:
                         contract_data.append(filtered_df[columns])
                 else:
@@ -132,8 +140,6 @@ def audit(args):
 
                 # sheet[f'summary_{contract_id}'] = df
                 # sheet[f'hostname_{contract_id}'] = hostname_df
-            sp.color = 'green'
-            sp.ok('✔')
 
     if len(contract_data) > 0:
         sheet['summary'] = pd.concat(contract_data)
