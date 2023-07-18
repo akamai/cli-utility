@@ -18,6 +18,8 @@ from tabulate import tabulate
 from utils import _logging as lg
 from utils import files
 from utils import google_dns as gg
+from yaspin import yaspin
+from yaspin.spinners import Spinners
 
 logger = lg.setup_logger()
 
@@ -85,50 +87,53 @@ def audit(args):
                 columns = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'hostname_count']
                 print(tabulate(df[columns], headers=columns))
 
-            hostname_df = pd.DataFrame
-            hostname_df = df.query('hostname_count > 0')
-            hostname_df = hostname_df.explode('hostname')
-            if not hostname_df.empty:
-                del hostname_df['hostname_count']
-                hostname_df['Slot'] = hostname_df['Slot'].astype(str)
-                total = sum(df['hostname_count'])
+            with yaspin(Spinners.star, timer=True) as sp:
+                hostname_df = pd.DataFrame
+                hostname_df = df.query('hostname_count > 0')
+                hostname_df = hostname_df.explode('hostname')
+                if not hostname_df.empty:
+                    del hostname_df['hostname_count']
+                    hostname_df['Slot'] = hostname_df['Slot'].astype(str)
+                    total = sum(df['hostname_count'])
 
-                logger.warning(f'Collecting CNAME for all {total:,} hosts, please be patient')
-                hostname_df['cname'] = hostname_df['hostname'].parallel_apply(lambda x: gg.dnslookup(x) if x is not None else '')
+                    logger.warning(f'Collecting CNAME for all {total:,} hosts, please be patient')
+                    hostname_df['cname'] = hostname_df['hostname'].parallel_apply(lambda x: gg.dnslookup(x) if x is not None else '')
 
-                logger.warning('Determine if CNAMEd to Akamai')
-                hostname_df['cname_to_akamai'] = hostname_df['cname'].parallel_apply(lambda x: 'True' if 'edgekey' in x or 'edgesuite' in x else '')
+                    logger.warning('Determine if CNAMEd to Akamai')
+                    hostname_df['cname_to_akamai'] = hostname_df['cname'].parallel_apply(lambda x: 'True' if 'edgekey' in x or 'edgesuite' in x else '')
 
-                logger.warning('Determine if IP belongs to Akamai')
-                hostname_df['valid_ip'] = hostname_df.parallel_apply(lambda row: is_valid_ip(row['cname']), axis=1)
-                hostname_df['ASN_Description'] = hostname_df.parallel_apply(lambda row: asn(row['cname']) if row['valid_ip'] is True else None, axis=1)
-                contract_host.append(hostname_df)
+                    logger.warning('Determine if IP belongs to Akamai')
+                    hostname_df['valid_ip'] = hostname_df.parallel_apply(lambda row: is_valid_ip(row['cname']), axis=1)
+                    hostname_df['ASN_Description'] = hostname_df.parallel_apply(lambda row: asn(row['cname']) if row['valid_ip'] is True else None, axis=1)
+                    contract_host.append(hostname_df)
 
-            df['hostname_one_per_line'] = df['hostname'].parallel_apply(lambda x: '\n'.join(''.join(c) for c in x))
-            df['hostname_with_ending_comma'] = df['hostname'].parallel_apply(lambda x: ',\n'.join(''.join(c) for c in x))
-            del df['hostname']
+                df['hostname_one_per_line'] = df['hostname'].parallel_apply(lambda x: '\n'.join(''.join(c) for c in x))
+                df['hostname_with_ending_comma'] = df['hostname'].parallel_apply(lambda x: ',\n'.join(''.join(c) for c in x))
+                del df['hostname']
 
-            columns = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'expiration_date',
-                       'hostname_count', 'hostname_one_per_line', 'hostname_with_ending_comma']
-            df['expiration_date'] = df['id'].parallel_apply(lambda x: cps.certificate_expiration_date(x))
-            if args.expire is True:
-                filtered = True
-                filtered_df = df.copy()
-                today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=utc)
-                filtered_df['expiration_date'] = pd.to_datetime(df['expiration_date'])
-                filtered_df = filtered_df.query('expiration_date < @today')
-                filtered_df = filtered_df.reset_index(drop=True)
-                filtered_df['expiration_date'] = filtered_df['expiration_date'].apply(
-                    lambda x: x.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%dT%H:%M:%SZ'))
-                temp_col = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'expiration_date']
-                logger.info(f'\n{filtered_df[temp_col]}')
-                if not filtered_df.empty:
-                    contract_data.append(filtered_df[columns])
-            else:
-                contract_data.append(df[columns])
+                columns = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'expiration_date',
+                        'hostname_count', 'hostname_one_per_line', 'hostname_with_ending_comma']
+                df['expiration_date'] = df['id'].parallel_apply(lambda x: cps.certificate_expiration_date(x))
+                if args.expire is True:
+                    filtered = True
+                    filtered_df = df.copy()
+                    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=utc)
+                    filtered_df['expiration_date'] = pd.to_datetime(df['expiration_date'])
+                    filtered_df = filtered_df.query('expiration_date < @today')
+                    filtered_df = filtered_df.reset_index(drop=True)
+                    filtered_df['expiration_date'] = filtered_df['expiration_date'].apply(
+                        lambda x: x.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%dT%H:%M:%SZ'))
+                    temp_col = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'expiration_date']
+                    logger.info(f'\n{filtered_df[temp_col]}')
+                    if not filtered_df.empty:
+                        contract_data.append(filtered_df[columns])
+                else:
+                    contract_data.append(df[columns])
 
-            # sheet[f'summary_{contract_id}'] = df
-            # sheet[f'hostname_{contract_id}'] = hostname_df
+                # sheet[f'summary_{contract_id}'] = df
+                # sheet[f'hostname_{contract_id}'] = hostname_df
+            sp.color = 'green'
+            sp.ok('✔')
 
     if len(contract_data) > 0:
         sheet['summary'] = pd.concat(contract_data)
