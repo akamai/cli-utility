@@ -18,8 +18,7 @@ class AppsecWrapper(Appsec):
     def __init__(self, account_switch_key: str | None = None,
                  section: str | None = None,
                  cookies: str | None = None):
-        super().__init__()
-        self.account_switch_key = account_switch_key
+        super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
 
     def get_config_detail(self, config_id: int):
         return super().get_config_detail(config_id)
