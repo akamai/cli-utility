@@ -256,7 +256,7 @@ def compare_config(args):
 
 def compare_delivery_behaviors(args):
     '''
-    python bin/akamai-utility.py -a 1-1S6D diff behavior --property api.nike.com_pm ecn-api.nike.com_pm --left 1372 --right 1143 \
+    python bin/akamai-utility.py -a 1-1S6D diff behavior --property AAA BBB CCC \
         --remove-tags advanced uuid variables templateUuid templateLink xml \
         --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost
     '''
@@ -310,7 +310,7 @@ def compare_delivery_behaviors(args):
     df = df.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
     df = df.reset_index(drop=True)
 
-    if df['custom_behaviorId'].notnull().any():
+    if not df['custom_behaviorId'].notnull().any():
         del df['custom_behaviorId']
 
     df['character_count'] = df['json_or_xml'].str.len()
