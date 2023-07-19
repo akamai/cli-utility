@@ -132,6 +132,7 @@ def write_xlsx(filepath: str, dict_value: dict,
                     cell_format = workbook.add_format()
                     cell_format.set_bold()
                     cell_format.set_font_color('blue')
+                    cell_format.set_text_wrap()
                     header_format = workbook.add_format({'bold': True,
                                                          'text_wrap': True,
                                                          'valign': 'top',
@@ -150,11 +151,12 @@ def write_xlsx(filepath: str, dict_value: dict,
                             ws.write(0, col_num, value, header_format)
                     format1 = workbook.add_format({'num_format': '#,##0'})
                     ws.set_column(2, 2, None, format1)
+                    ws.autofit()
                 else:
                     total, last_sheet = divmod(len(df.index), MAX_XLXS_ROW)
                     logger.debug(f'{total=} {last_sheet=} dataset={len(df.index)}')
                     if last_sheet <= MAX_XLXS_ROW:
-                        for sheet in (n + 1 for n in range(total+1)):
+                        for sheet in (n + 1 for n in range(total + 1)):
                             logger.debug(f'Sheet{sheet}')
 
                             sheet_no = sheet
@@ -166,7 +168,7 @@ def write_xlsx(filepath: str, dict_value: dict,
                                 first_row = last_row + 1
                                 last_row = len(df.index)
 
-                            if sheet == total+1 and last_sheet > 0:
+                            if sheet == total + 1 and last_sheet > 0:
                                 logger.debug(f'{total=} {sheet_no=} {sheet=}')
                                 sheet_no = total + 1
                             logger.warning(f'Sheet{sheet}: from {first_row} to {last_row}')
@@ -185,6 +187,7 @@ def write_xlsx(filepath: str, dict_value: dict,
                             cell_format = workbook.add_format()
                             cell_format.set_bold()
                             cell_format.set_font_color('blue')
+                            cell_format.set_text_wrap()
 
                             header_format = workbook.add_format({'bold': True,
                                                                 'text_wrap': True,
@@ -204,6 +207,7 @@ def write_xlsx(filepath: str, dict_value: dict,
 
                             format1 = workbook.add_format({'num_format': '#,##0'})
                             ws.set_column(2, 2, None, format1)
+                            ws.autofit()
 
     filepath = str(Path(f'{filepath}').absolute())
     logger.info(f'{filepath=}')
