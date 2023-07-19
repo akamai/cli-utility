@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 from pathlib import Path
@@ -383,10 +384,12 @@ class PapiWrapper(Papi):
 
     # WHOLE ACCOUNT
     def account_group_summary(self) -> tuple:
-        _, all_groups = self.get_all_groups()
-
-        df = self.create_groups_dataframe(all_groups)
-        logger.debug(df)
+        status_code, all_groups = self.get_all_groups()
+        if status_code == 200:
+            df = self.create_groups_dataframe(all_groups)
+            logger.debug(df)
+        else:
+            return None, None
 
         df['name'] = df['L0'].str.lower()  # this column will be used for sorting later
         df['groupId'] = df['groupId'].astype(int)  # API has groupId has interger
@@ -402,12 +405,6 @@ class PapiWrapper(Papi):
         df = df.reset_index(drop=True)
 
         pandarallel.initialize(progress_bar=False, verbose=0)
-        logger.warning('Collecting properties summary for the account')
-        logger.critical(' 200 properties take ~  7 minutes')
-        logger.critical(' 800 properties take ~ 30 minutes')
-        logger.critical('2200 properties take ~ 80 minutes')
-        logger.critical('please consider using --group-id to reduce total properties')
-
         df['account'] = self.account_switch_key
         df['propertyCount'] = df.parallel_apply(lambda row: self.get_properties_count(row), axis=1)
         df['contractId'] = df.parallel_apply(lambda row: self.get_valid_contract(row), axis=1)
@@ -491,7 +488,10 @@ class PapiWrapper(Papi):
                     properties['hostname'] = properties[['propertyId']].parallel_apply(lambda x: self.get_property_hostnames(*x), axis=1)
                     properties['hostname_count'] = properties['hostname'].str.len()
                     # show one hostname per list and remove list syntax
-                    properties['hostname'] = properties[['hostname']].parallel_apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
+                    # properties['hostname'] = properties[['hostname']].parallel_apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
+                    logger.debug(properties.head(5)['hostname'])
+                    properties['hostname'] = properties[['hostname']].parallel_apply(lambda x: dataframe.split_elements_newline(x[0])
+                                                        if len(x[0]) > 0 else '', axis=1)
 
                     logger.debug(' Collecting updatedDate')
                     properties['updatedDate'] = properties.apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
@@ -741,6 +741,28 @@ class PapiWrapper(Papi):
             else:
                 return value
 
+    def check_behavior(self, behavior: list, df: pd.DataFrame):
+        for behavior in behavior:
+            df[behavior] = df.parallel_apply(
+                lambda row: self.behavior_count(row['propertyName'],
+                row['ruletree']['rules'], behavior), axis=1)
+
+        if 'cpcode' in behavior:
+            df['cpcodes'] = df.apply(
+                    lambda row: self.cpcode_value(row['propertyName'],
+                    row['ruletree']['rules']) if row['productionVersion'] else 0, axis=1)
+            df['cpcode_unique_value'] = df['cpcodes'].parallel_apply(lambda x: list(set(x)) if isinstance(x, list) else [])
+            df['cpcode_unique_value'] = df['cpcode_unique_value'].parallel_apply(lambda x: sorted(x))
+            df['cpcode_count'] = df['cpcode_unique_value'].parallel_apply(lambda x: len(x))
+            logger.debug(df.head(5)['cpcode_unique_value'])
+            # display one value per line
+            # properties_df['cpcode_unique_value'] = properties_df[['cpcode_unique_value']].parallel_apply(
+            #    lambda x: ',\n'.join(map(str, x.iloc[0])) if isinstance(x.iloc[0], (list, tuple)) and x[0] != '0' else '', axis=1)
+            df['cpcode_unique_value'] = df[['cpcode_unique_value']].parallel_apply(
+                lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+
+        return df
+
     @staticmethod
     def behavior_count(property_name: str, rules: dict, target_behavior: str):
         parent_count = 0
@@ -765,16 +787,23 @@ class PapiWrapper(Papi):
                     try:
                         values.append(behavior['options']['value']['id'])
                     except:
-                        values.append(0)
+                        logger.error(f'{property_name} cpCode not found')
+                elif behavior['name'] == 'failAction':  # Site Failover
+                    try:
+                        values.append(behavior['options']['cpCode']['id'])
+                    except:
+                        logger.warning(f'{property_name} cpCode not found for Site Failover')
+
                 elif behavior['name'] == 'visitorPrioritization':
                     try:
-                        values.append(behavior['options']['waitingRoomCpCode']['id'])
+                        values.append(behavior['options']['waitingRoomCpCode']['cpCode'])
                     except:
-                        values.append(0)
+                        pass
                     try:
                         values.append(behavior['options']['waitingRoomNetStorage']['cpCode'])
                     except:
-                        values.append(0)
+                        pass
+
             if 'children' in rules and isinstance(rules['children'], list):
                 for child_rule in rules['children']:
                     child_values = PapiWrapper.cpcode_value(property_name, child_rule)

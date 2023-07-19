@@ -14,6 +14,7 @@ from rich import print_json
 from utils import _logging as lg
 from utils import files
 
+
 logger = lg.setup_logger()
 
 
@@ -122,8 +123,12 @@ class Papi(AkamaiSession):
         response = self.session.get(f'{self.MODULE}/groups', params=self.params, headers=self.headers)
         if response.status_code == 200:
             return 200, response.json()['groups']['items']
+        elif response.status_code == 401:
+            # accountSwitchKey is invalid
+            logger.error(response.json()['title'])
+            return response.status_code, response.json()['title']
         else:
-            logger.debug(f'{response.status_code}\n{response.text}')
+            logger.error(f'{response.status_code}\n{response.text}')
             return response.status_code, response.json()
 
     # SEARCH

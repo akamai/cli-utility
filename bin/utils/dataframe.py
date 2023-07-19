@@ -28,7 +28,10 @@ def split_rows(row, column_name: str):
 
 
 def split_elements_newline(elements):
-    return '\n'.join(elements)
+    if isinstance(elements, (list, tuple)):
+        return '\n'.join(map(str, elements))
+    else:
+        return ''
 
 
 def split_elements_newline_withcomma(elements):
