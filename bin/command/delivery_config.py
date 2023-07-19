@@ -157,8 +157,8 @@ def main(args):
             if group_df.shape[0] > 0:
                 logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
             total = allgroups_df['propertyCount'].sum()
-            all_groups = group_df['groupId'].values.tolist()
-            modified_list = ["'" + word + "'" for word in all_groups]
+            all_groups = group_df['groupId'].unique().tolist()
+            modified_list = [word for word in all_groups]
             all_groups = ' '.join(modified_list)
             logger.warning(f'--group-id {all_groups}')
 
