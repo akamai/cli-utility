@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import swifter
 from akamai_api.identity_access import IdentityAccessManagement
+from akamai_utils import cpcode as cp
 from akamai_utils import papi as p
 from akamai_utils import siteshield as ss
 from pandarallel import pandarallel
@@ -53,6 +54,9 @@ def main(args):
     account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
     filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    cpc = cp.CpCodeWrapper(account_switch_key=args.account_switch_key)
+    if args.behavior:
+        original_behaviors = [x.lower() for x in args.behavior]
     sheet = {}
     if args.property:
         all_properties = []
@@ -103,21 +107,17 @@ def main(args):
         # properties.loc[pd.notnull(properties['cpcode_unique_value']) & (properties['cpcode_unique_value'] == ''), 'cpcode'] = '0'
 
         if args.behavior:
-            original_behaviors = [x.lower() for x in args.behavior]
-            updated_behaviors = copy.deepcopy(original_behaviors)
-            if 'cpcode' in original_behaviors:
-                updated_behaviors.remove('cpcode')
             pandarallel.initialize(progress_bar=False, verbose=0)
-            properties_df = papi.check_behavior(original_behaviors, properties_df)
+            properties_df = papi.check_behavior(original_behaviors, properties_df, cpc)
 
-        columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
-                    'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
+        # columns = ['accountId', 'groupId', 'groupName',
+        columns = ['propertyName', 'propertyId', 'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
                     'productId', 'ruleFormat', 'hostname_count', 'hostname']
         properties_df['propertyId'] = properties_df['propertyId'].astype(str)
         if args.behavior:
-            columns.extend(sorted(updated_behaviors))
+            columns.extend(sorted(original_behaviors))
             if 'cpcode' in original_behaviors:
-                columns.extend(['cpcode_unique_value', 'cpcode_count'])
+                columns.append('cpcode_name')
         columns.extend(['propertyName(hyperlink)'])
         properties_df = properties_df[columns].copy()
         properties_df = properties_df.reset_index(drop=True)
@@ -176,42 +176,37 @@ def main(args):
                 logger.info('no property to collect.')
             else:
                 logger.warning('collecting properties ...')
-                with yaspin(Spinners.star, timer=True) as sp:
-                    account_properties = papi.property_summary(group_df)
-                    if len(account_properties) > 0:
-                        properties_df = pd.concat(account_properties, axis=0)
-                        properties_df['ruletree'] = properties_df.parallel_apply(
-                            lambda row: papi.get_property_ruletree(
-                                row['propertyId'],
-                                int(row['productionVersion'])
-                                if pd.notnull(row['productionVersion'])
-                                else row['latestVersion']), axis=1)
+                account_properties = papi.property_summary(group_df)
+                if len(account_properties) > 0:
+                    df = pd.concat(account_properties, axis=0)
+                    df['ruletree'] = df.apply(
+                        lambda row: papi.get_property_ruletree(int(row['propertyId']),
+                                                                int(row['productionVersion'])
+                                                                if pd.notnull(row['productionVersion'])
+                                                                else row['latestVersion']), axis=1)
+                    df = df.rename(columns={'url': 'propertyName(hyperlink)'})  # show column with hyperlink instead
+                    df = df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
+                    df = df.sort_values(by=['groupName', 'propertyName'])
 
-                        if args.behavior:
-                            original_behaviors = [x.lower() for x in args.behavior]
-                            updated_behaviors = copy.deepcopy(original_behaviors)
-                            if 'cpcode' in original_behaviors:
-                                updated_behaviors.remove('cpcode')
-                            properties_df = papi.check_behavior(original_behaviors, properties_df)
-
-                        properties_df = properties_df.rename(columns={'url': 'propertyName(hyperlink)'})  # show column with hyperlink instead
-                        properties_df = properties_df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
-                        properties_df = properties_df.sort_values(by=['groupName', 'propertyName'])
-
-                        columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
+                    columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
                                 'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
                                 'productId', 'ruleFormat', 'hostname_count', 'hostname']
-                        if args.behavior:
-                            columns.extend(sorted(updated_behaviors))
-                            if 'cpcode' in original_behaviors:
-                                columns.extend(['cpcode_unique_value', 'cpcode_count'])
-                        columns.extend(['propertyName(hyperlink)'])
-                        properties_df['propertyId'] = properties_df['propertyId'].astype(str)
-                        properties_df = properties_df[columns].copy()
-                        properties_df = properties_df.reset_index(drop=True)
-                        sheet['properties'] = properties_df
-                    sp.color = 'green'
-                    sp.ok('✔')
+
+                    if args.behavior:
+                        original_behaviors
+                        df = papi.check_behavior(original_behaviors, df, cpc)
+                        columns.extend(sorted(original_behaviors))
+                        if 'cpcode' in original_behaviors:
+                            columns.remove('cpcode')
+                            columns.extend(['cpcode', 'cpcode_name'])
+
+                    columns.extend(['propertyName(hyperlink)'])
+                    df['propertyId'] = df['propertyId'].astype(str)  # for excel format
+                    df = df[columns].copy()
+                    df = df.reset_index(drop=True)
+                    properties_df = df[columns]
+                    sheet['properties'] = properties_df
+
         # add hyperlink to groupName column
         if args.group_id is not None:
             sheet['group_filtered'] = add_group_url(group_df, papi)
@@ -219,8 +214,17 @@ def main(args):
             sheet['account_summary'] = add_group_url(allgroups_df, papi)
 
     logger.debug(properties_df.columns.values.tolist()) if not properties_df.empty else None
+    if 'custombehavior' in properties_df.columns.values.tolist():
+        status, response = papi.list_custom_behaviors()
+        if status == 200:
+            custom_behavior_df = pd.DataFrame(response)
+            columns = custom_behavior_df.columns.values.tolist()
+            if columns:
+                for x in ['xml', 'updatedDate', 'sharingLevel', 'description', 'status', 'updatedByUser', 'approvedByUser']:
+                    columns.remove(x)
+                sheet['custom_behavior'] = custom_behavior_df
 
-    files.write_xlsx(filepath, sheet, freeze_column=6) if not properties_df.empty else None
+    files.write_xlsx(filepath, sheet, freeze_column=1) if not properties_df.empty else None
     subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not properties_df.empty else None
     return properties_df
 
@@ -861,14 +865,16 @@ def load_config_from_xlsx(papi, filepath: str, sheet_name: str | None = None, fi
 
 
 def add_group_url(df: pd.DataFrame, papi) -> pd.DataFrame:
+    df['accountId'] = papi.account_switch_key
     df['groupURL'] = df.apply(lambda row: papi.group_url(row['groupId']), axis=1)
-    df['groupName_url'] = df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['groupName']), axis=1)
+    df['groupName_url'] = df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['propertyCount']) if row['propertyCount'] else '', axis=1)
     del df['groupURL']
-    del df['groupName']
-    df = df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
+    del df['propertyCount']
+    df = df.rename(columns={'groupName_url': 'propertyCount'})  # show column with hyperlink instead
+    summary_columns = ['accountId', 'contractId', 'groupId', 'groupName']
     if 'parentGroupId' in df.columns.values.tolist():
-        summary_columns = ['group_structure', 'groupName', 'groupId', 'parentGroupId', 'contractId', 'propertyCount']
+        summary_columns.extend(['parentGroupId', 'propertyCount'])
     else:
-        summary_columns = ['group_structure', 'groupName', 'groupId', 'contractId', 'propertyCount']
+        summary_columns.extend(['propertyCount'])
     return df[summary_columns]
 # END helper method

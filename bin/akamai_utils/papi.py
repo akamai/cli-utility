@@ -741,25 +741,35 @@ class PapiWrapper(Papi):
             else:
                 return value
 
-    def check_behavior(self, behavior: list, df: pd.DataFrame):
-        for behavior in behavior:
-            df[behavior] = df.parallel_apply(
-                lambda row: self.behavior_count(row['propertyName'],
-                row['ruletree']['rules'], behavior), axis=1)
-
-        if 'cpcode' in behavior:
-            df['cpcodes'] = df.apply(
-                    lambda row: self.cpcode_value(row['propertyName'],
-                    row['ruletree']['rules']) if row['productionVersion'] else 0, axis=1)
-            df['cpcode_unique_value'] = df['cpcodes'].parallel_apply(lambda x: list(set(x)) if isinstance(x, list) else [])
-            df['cpcode_unique_value'] = df['cpcode_unique_value'].parallel_apply(lambda x: sorted(x))
-            df['cpcode_count'] = df['cpcode_unique_value'].parallel_apply(lambda x: len(x))
-            logger.debug(df.head(5)['cpcode_unique_value'])
-            # display one value per line
-            # properties_df['cpcode_unique_value'] = properties_df[['cpcode_unique_value']].parallel_apply(
-            #    lambda x: ',\n'.join(map(str, x.iloc[0])) if isinstance(x.iloc[0], (list, tuple)) and x[0] != '0' else '', axis=1)
-            df['cpcode_unique_value'] = df[['cpcode_unique_value']].parallel_apply(
-                lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+    def check_behavior(self, behaviors: list, df: pd.DataFrame, cpcode):
+        for behavior in behaviors:
+            logger.debug(behavior)
+            if behavior == 'origin':
+                df[behavior] = df.parallel_apply(lambda row: self.origin_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+                df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            elif behavior == 'siteshield':
+                df[behavior] = df.parallel_apply(lambda row: self.siteshield_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+                df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            elif behavior == 'sureroute':
+                df[behavior] = df.parallel_apply(lambda row: self.sureroute_value_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+                df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            elif behavior == 'custombehavior':
+                try:
+                    df[behavior] = df.parallel_apply(lambda row: self.custom_behavior_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+                    df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+                except:
+                    logger.error(behavior)
+            elif behavior == 'cpcode':
+                df[behavior] = df.parallel_apply(lambda row: self.cpcode_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+                df[f'{behavior}_name'] = df['cpcode'].parallel_apply(lambda x: [cpcode.get_cpcode_name(cp) for cp in x])
+                df[behavior] = df[[behavior]].parallel_apply(
+                    lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+                df['cpcode_name'] = df[['cpcode_name']].parallel_apply(
+                    lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            else:
+                df[behavior] = df.parallel_apply(
+                    lambda row: self.behavior_count(row['propertyName'],
+                                                    row['ruletree']['rules'], behavior), axis=1)
 
         return df
 
@@ -792,7 +802,7 @@ class PapiWrapper(Papi):
                     try:
                         values.append(behavior['options']['cpCode']['id'])
                     except:
-                        logger.warning(f'{property_name} cpCode not found for Site Failover')
+                        logger.warning(f'{property_name:<40} cpCode not found for Site Failover')
 
                 elif behavior['name'] == 'visitorPrioritization':
                     try:
@@ -809,6 +819,75 @@ class PapiWrapper(Papi):
                     child_values = PapiWrapper.cpcode_value(property_name, child_rule)
                     values.extend(child_values)
         return list(set(values))
+
+    @staticmethod
+    def custom_behavior_value(property_name: str, rules: dict):
+        values = []
+        if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
+            for behavior in rules['behaviors']:
+                if behavior['name'] == 'customBehavior':
+                    try:
+                        values.append(behavior['options']['behaviorId'])
+                    except:
+                        logger.error(f'{property_name:<40} behaviorId not found')
+            if 'children' in rules and isinstance(rules['children'], list):
+                for child_rule in rules['children']:
+                    child_values = PapiWrapper.custom_behavior_value(property_name, child_rule)
+                    values.extend(child_values)
+        return list(set(values))
+
+    @staticmethod
+    def origin_value(property_name: str, rules: dict):
+        values = []
+        if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
+            for behavior in rules['behaviors']:
+                if behavior['name'] == 'origin':
+                    try:
+                        values.append(behavior['options']['hostname'])
+                    except:
+                        pass
+                    try:
+                        values.append(behavior['options']['netStorage']['downloadDomainName'])
+                    except:
+                        pass
+
+            if 'children' in rules and isinstance(rules['children'], list):
+                for child_rule in rules['children']:
+                    child_values = PapiWrapper.origin_value(property_name, child_rule)
+                    values.extend(child_values)
+        return sorted(list(set(values)))
+
+    @staticmethod
+    def siteshield_value(property_name: str, rules: dict):
+        values = []
+        if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
+            for behavior in rules['behaviors']:
+                if behavior['name'] == 'siteShield':
+                    try:
+                        values.append(behavior['options']['ssmap']['value'])
+                    except:
+                        logger.error(f'{property_name:<40} siteShield not found')
+            if 'children' in rules and isinstance(rules['children'], list):
+                for child_rule in rules['children']:
+                    child_values = PapiWrapper.siteshield_value(property_name, child_rule)
+                    values.extend(child_values)
+        return sorted(list(set(values)))
+
+    @staticmethod
+    def sureroute_value(property_name: str, rules: dict):
+        values = []
+        if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
+            for behavior in rules['behaviors']:
+                if behavior['name'] == 'siteShield':
+                    try:
+                        values.append(behavior['options']['ssmap']['srmap'])
+                    except:
+                        logger.error(f'{property_name} sureRoute map not found')
+            if 'children' in rules and isinstance(rules['children'], list):
+                for child_rule in rules['children']:
+                    child_values = PapiWrapper.sureroute_value(property_name, child_rule)
+                    values.extend(child_values)
+        return sorted(list(set(values)))
 
     # ACTIVATION
     def activate_property_version(self, property_id: int, version: int, network: str, note: str, emails: list):
