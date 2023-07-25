@@ -58,10 +58,14 @@ if __name__ == '__main__':
         log.main(args)
 
     if args.command == 'report':
-        if args.url_offload is True:
-            report.url_offload(args)
+        if args.subcommand == 'list':
+            report.all_reports(args)
+        elif args.subcommand == 'url-offload':
+            report.offload_by_url(args)
+        elif args.subcommand == 'response-class':
+            report.traffic_by_response_class(args)
         else:
-            report.offload(args)
+            report.offload_by_hostname(args)
 
     if args.command == 'ruleformat':
         ruleformat.get_ruleformat_schema(args)

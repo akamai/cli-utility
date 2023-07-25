@@ -73,13 +73,32 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
         # move actions['diff] before line actions['admin]
         actions = {}
 
+        report_sc = [{'name': 'list',
+                      'help': 'list all available reports',
+                      'optional_arguments': [{'name': 'type', 'help': 'Options: account_id, contractId, contracts, cpcode, edns, fpdomain, reportPackId',
+                                              'choices': ['account_id', 'contractId', 'contracts', 'cpcode', 'edns', 'fpdomain', 'reportPackId']},
+                                             {'name': 'namecontains', 'help': 'report name contains'}]},
+                     {'name': 'url-offload',
+                      'help': 'list report by url',
+                      'optional_arguments': [{'name': 'cpcode', 'help': '1 or more reporting cpcodes ', 'nargs': '+'}]},
+                     {'name': 'response-class',
+                      'help': 'list report by response codes',
+                      'optional_arguments': [{'name': 'cpcode', 'help': '1 or more reporting cpcodes ', 'nargs': '+'},
+                                             {'name': 'interval', 'help': 'The duration of each data record',
+                                              'choices': ['MONTH', 'WEEK', 'DAY', 'HOUR', 'FIVE_MINUTES'],
+                                              'default': 'HOUR'},
+                                             {'name': 'file', 'help': 'input file you stores one cpcode per line'},
+                                             {'name': 'ratelimit', 'help': 'rate limit [numeric]', 'default': 5},
+                                             {'name': 'concurrency', 'help': 'process X [numeric] requests at a time', 'default': 2},
+                                             {'name': 'timeout', 'help': 'http timeout in second [numeric]', 'default': 15},
+                                             {'name': 'sample', 'help': 'sample size [numeric]', 'default': None},
+                                             {'name': 'output', 'help': 'json or csv', 'default': 'json'}]}
+                     ]
         actions['report'] = cls.create_main_command(
                             subparsers, 'report',
                             help='list traffic report',
-                            optional_arguments=[
-                                {'name': 'url-offload', 'help': 'url hit offload', 'action': 'store_true'},
-                                {'name': 'cpcodes', 'help': '1 or more reporting cpcodes ', 'nargs': '+'}
-                            ])
+                            subcommands=report_sc,
+                            options=None)
 
         actions['gtm'] = cls.create_main_command(
                             subparsers, 'gtm',

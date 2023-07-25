@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-import json
 import os
+import platform
+import re
+import subprocess
+import sys
 import urllib
+from pathlib import Path
 
 import pandas as pd
+from akamai_api.identity_access import IdentityAccessManagement
 from akamai_api.papi import Papi
 from akamai_api.reporting import Reporting
+from akamai_utils import cpcode as cp
 from akamai_utils import reporting
 from pandarallel import pandarallel
 from rich import print_json
@@ -20,7 +26,45 @@ from utils import files
 logger = lg.setup_logger()
 
 
-def offload(args):
+def all_reports(args):
+    rpt = Reporting(account_switch_key=args.account_switch_key)
+    data = rpt.list_report()
+    df = pd.json_normalize(data)
+
+    if not df.empty:
+        columns = df.columns.values.tolist()
+        columns.remove('description')
+        columns.remove('metrics')
+        df = df.sort_values(by=['businessObjectName', 'deprecated', 'timeBased', 'name'])
+        df['endpoint'] = df['links'].apply(lambda x: reporting.get_execute_report_href(x))
+        df = df.query('deprecated == False').copy()
+
+        columns = ['name', 'businessObjectName', 'dataRetentionDays', 'limit', 'maxLimit', 'timeBased', 'endpoint']
+        if args.type:
+            df = df.query(f"businessObjectName == '{args.type}'").copy()
+            if args.namecontains:
+                df = df[df['name'].str.contains(args.namecontains)].copy()
+            df = df.fillna('')
+            df = df.sort_values(by='name')
+            df = df.reset_index(drop=True)
+            limit = df.limit.unique()
+            maxLimit = df.maxLimit.unique()
+            console_columns = ['name', 'dataRetentionDays', 'limit', 'maxLimit', 'timeBased', 'endpoint', 'version']
+            if limit == maxLimit and limit == ['']:
+                console_columns.remove('limit')
+                console_columns.remove('maxLimit')
+            print()
+            print(tabulate(df[console_columns], headers=console_columns, tablefmt='github', showindex='false'))
+            print()
+
+        sheet = {}
+        sheet['report'] = df
+        filepath = 'output/reports_type.xlsx'
+        files.write_xlsx(filepath, sheet, freeze_column=1) if not df.empty else None
+        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' else None
+
+
+def offload_by_hostname(args):
 
     rpt = Reporting(account_switch_key=args.account_switch_key)
     papi = Papi(account_switch_key=args.account_switch_key)
@@ -45,17 +89,21 @@ def offload(args):
     logger.warning('Top 5 hits, for a full list please check excel file')
     print(tabulate(top_five, headers=['hostname', 'edgeHits'], tablefmt='simple', showindex='false'))
     print()
-    files.write_xlsx('output/reporting_offload_by_host.xlsx', sheets)
+    filepath = 'output/reporting_offload_by_host.xlsx'
+    files.write_xlsx(filepath, sheets)
+    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' else None
 
 
-def url_offload(args):
+def offload_by_url(args):
 
     rpt = Reporting(account_switch_key=args.account_switch_key)
-    papi = Papi(account_switch_key=args.account_switch_key)
     start, end = reporting.get_start_end()
-    cpcode_list = args.cpcodes
+    cpcode_list = args.cpcode
     logger.info(f'Report CpCodes are {" ".join(cpcode_list)}')
-    data = rpt.hits_by_url(start, end, cpcode_list)
+    status, data = rpt.hits_by_url(start, end, cpcode_list)
+
+    if not status == 200:
+        sys.exit(logger.info('no data found'))
 
     # extract file extension from urls
     for url in data:
@@ -91,11 +139,123 @@ def url_offload(args):
     console.print(table)
 
 
-def all_reports(args):
-    rpt = Reporting(account_switch_key=args.account_switch_key)
-    data = rpt.list_report()
-    df = pd.DataFrame(data)
-    logger.debug(df)
-    sheets = {}
-    sheets['report'] = df
-    files.write_xlsx('output/reporting.xlsx', sheets)
+def traffic_by_response_class(args):
+    rpt = Reporting(args.output, account_switch_key=args.account_switch_key)
+    iam = IdentityAccessManagement(args.account_switch_key)
+    account = iam.search_account_name(value=args.account_switch_key)[0]
+    account = account.replace(' ', '_')
+    print()
+    logger.warning(f'Found account {account}')
+    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
+    account_folder = f'output/reports/{account}'
+    Path(account_folder).mkdir(parents=True, exist_ok=True)
+
+    if args.file and args.cpcode:
+        sys.exit(logger.error('Please use either --file or --cpcode, not both'))
+
+    start, end = reporting.get_start_end()
+    # use parallel_apply
+    concurrency = int(args.concurrency)
+    pandarallel.initialize(progress_bar=True, nb_workers=concurrency, verbose=0)
+
+    if args.cpcode:
+        df = pd.DataFrame({'cpcode': args.cpcode})
+        df['api'] = df['cpcode'].parallel_apply(lambda x: rpt.traffic_by_response_class(start, end, args.interval, x))
+        original_cpcode = df['cpcode'].unique()
+    elif args.file:
+        sample = int(args.sample) if args.sample else None
+        df = pd.read_csv(args.file, header=1, names=['cpcode'], dtype={'cpcode': str}, nrows=sample)
+
+        df = df.drop_duplicates().copy()
+        original_cpcode = df['cpcode'].unique()
+        df = df.sort_values(by='cpcode')
+        df = df.reset_index(drop=True)
+        df['api'] = df['cpcode'].parallel_apply(lambda x: rpt.traffic_by_response_class(start, end, args.interval, x))
+
+        # user mapply
+        '''
+        mapply.init(
+            n_workers=-concurrency,
+            chunk_size=1,
+            max_chunks_per_worker=2,
+            progressbar=True
+        )
+        df['api'] = df['cpcode'].mapply(lambda x:rpt.traffic_by_response_class(start, end, x))
+        '''
+        # use swifter
+        '''
+        processed_chunks = []
+        chunks = [df.iloc[i:i + concurrency] for i in range(0, len(df), concurrency)]
+        for i, chunk in enumerate(chunks):
+            chunk_copy = chunk.copy()
+            chunk_copy['api'] = chunk_copy.swifter.apply(lambda row: rpt.traffic_by_response_class(start, end, row['cpcode']), axis=1)
+            # chunk_copy['api'] = chunk_copy.swifter.progress_bar(False).apply(lambda row: rpt.traffic_by_response_class(start, end, row['cpcode']), axis=1)
+            processed_chunks.append(chunk_copy)
+            logger.info(f'{i:>3} {len(processed_chunks):>4}')
+
+        all_df = pd.concat(processed_chunks)
+        '''
+    else:
+        df = rpt.traffic_by_response_class(start, end)
+
+    sheet = {}
+    all_df = df.copy()
+    logger.debug(all_df.shape)
+    all_df = all_df.reset_index(drop=True)
+
+    # layout 1
+    # metrics = ['edgeHits', 'edgeHitsPercent', 'originHits', 'originHitsPercent']
+    metrics = ['edgeHitsPercent', 'originHitsPercent']
+    exploded_df = all_df.explode('api', ignore_index=True)
+    for metric in metrics:
+        exploded_df[metric] = exploded_df['api'].apply(lambda x: x.get(metric) if isinstance(x, dict) else None)
+
+    exploded_df[metrics] = exploded_df[metrics].apply(pd.to_numeric, errors='coerce').fillna(0)
+    exploded_df['response_class'] = exploded_df['api'].apply(lambda x: x.get('response_class') if isinstance(x, dict) else None)
+    logger.debug(exploded_df.shape)
+    valid_response_classes = exploded_df['response_class'].dropna().unique()
+    filtered_df = exploded_df[exploded_df['response_class'].isin(valid_response_classes)]
+
+    pivot_df = filtered_df.pivot_table(index='cpcode', columns='response_class', values=metrics, fill_value=0)
+    pivot_df.columns = [f'{metric}_{col}' for metric, col in pivot_df.columns]
+    pivot_df.reset_index(inplace=True)
+    logger.warning('Completed - Response class ')
+    cpc = cp.CpCodeWrapper(account_switch_key=args.account_switch_key)
+    print()
+    logger.warning('Collecting cpcode name')
+    pandarallel.initialize(progress_bar=False, verbose=0)
+    pivot_df['cpcode_name'] = pivot_df['cpcode'].parallel_apply(lambda x: cpc.get_cpcode_name(x))
+
+    '''
+    # layout 2
+    normalized_df = pd.json_normalize(exploded_df['api'])
+    normalized_df[metric] = normalized_df[metric].apply(pd.to_numeric, errors='coerce').fillna(0)
+    normalized_df['cpcode'] = exploded_df['cpcode']
+    normalized_df = normalized_df.sort_values(by=['cpcode', 'response_class'])
+    normalized_df = normalized_df.reset_index(drop=True)
+    columns = ['cpcode', 'response_class', 'edgeHitsPercent', 'originHitsPercent']
+    logger.warning(normalized_df.shape)
+    sheet['report'] = normalized_df[columns]
+    '''
+    final_cpcode = pivot_df['cpcode'].unique()
+    diff = list(set(original_cpcode) - set(final_cpcode))
+    if len(diff) > 0:
+        diff_df = pd.DataFrame(diff, columns=['cpcode'])
+        diff_df = diff_df.sort_values(by='cpcode')
+        diff_df = diff_df.reset_index(drop=True)
+        diff_df['cpcode_name'] = diff_df['cpcode'].parallel_apply(lambda x: cpc.get_cpcode_name(x))
+
+    columns = list(pivot_df.columns)
+    columns.remove('cpcode')
+    columns.remove('cpcode_name')
+    columns.insert(0, 'cpcode_name')
+    columns.insert(0, 'cpcode')
+
+    sheet['report'] = pivot_df[columns]
+    if len(diff) > 0:
+        sheet['cpcode_with_no_data'] = diff_df
+        sheet['original'] = all_df
+
+    filepath = f'{account_folder}/response_class.xlsx'
+    files.write_xlsx(filepath, sheet, freeze_column=2) if not pivot_df.empty else None
+    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' else None

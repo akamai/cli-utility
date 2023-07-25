@@ -20,8 +20,16 @@ def get_start_end():
     start = end_datetime + relativedelta(days=-90)
     end = end_datetime.isoformat().replace('+00:00', 'Z')
     start = start.isoformat().replace('+00:00', 'Z')
-    logger.info(f'Report from {start} to {end}')
+    print()
+    logger.warning(f'Report from {start} to {end}')
     return start, end
+
+
+def get_execute_report_href(links):
+    for link in links:
+        if link['rel'] == 'execute-report':
+            return link['href']
+    return None
 
 
 if __name__ == '__main__':
