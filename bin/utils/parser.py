@@ -127,7 +127,7 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                   'help': 'list all behaviors on the property',
                   'required_arguments': [{'name': 'property', 'help': 'property name'}],
                   'optional_arguments': [{'name': 'version', 'help': 'version'},
-                                         {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}]},
+                                         {'name': 'remove-tag', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}]},
                  {'name': 'custom-behavior',
                   'help': 'list custom behavior on the account',
                   'optional_arguments': [{'name': 'id', 'help': 'behaviorId', 'nargs': '+'},
@@ -232,7 +232,7 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                   'required_arguments': [{'name': 'property', 'help': 'propertyname', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'behavior', 'help': 'behavior', 'nargs': '+'},
                                          {'name': 'criteria', 'help': 'criteria', 'nargs': '+'},
-                                         {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'},
+                                         {'name': 'remove-tag', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'},
                                          {'name': 'output', 'help': 'override excel output file (.xlsx)'},
                                          {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}]
                   }]
@@ -246,12 +246,12 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                                                 {'name': 'json', 'help': 'compare json', 'action': 'store_false'},
                                                 {'name': 'config2', 'help': 'another config to be compared with config #1'},
                                                 {'name': 'security', 'help': 'required argument if the comparison if for security config', 'action': 'store_true'},
-                                                {'name': 'name-contains', 'help': 'security config name keyword'},
+                                                {'name': 'namecontains', 'help': 'security config name keyword'},
                                                 {'name': 'left', 'help': 'config1 version'},
                                                 {'name': 'right', 'help': 'config2 version'},
                                                 {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'},
                                                 {'name': 'acc-cookies', 'help': '3 cookies value from control.akamai.com'},
-                                                {'name': 'remove-tags', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}
+                                                {'name': 'remove-tag', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}
                                                 ],
                             subcommands=diff_sc,
                             options=None)

@@ -365,7 +365,7 @@ class Papi(AkamaiSession):
                 stg_version = max(dd['propertyVersion'])
             if prd_version == 0:
                 prd_version = max(dd['propertyVersion'])
-        logger.info(f'Found staging v{stg_version:<4} production v{prd_version:<4} {items[0]["propertyName"]}')
+        logger.info(f'Found {items[0]["propertyName"]:<40} staging:production v{stg_version}:v{prd_version}')
         return stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):

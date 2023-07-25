@@ -122,16 +122,16 @@ def compare_config(args):
                 sys.exit(logger.error('Same version, nothing to compare'))
             else:
                 print()
-                v1 = delivery_config_json(papi, config1, left, args.remove_tags)
-                v2 = delivery_config_json(papi, config1, right, args.remove_tags)
+                v1 = delivery_config_json(papi, config1, left, args.remove_tag)
+                v2 = delivery_config_json(papi, config1, right, args.remove_tag)
 
         if config2:
             if not all([left, right]):
                 sys.exit(logger.error('Missing --left and --right argument and integer value of version'))
             # this value will override config1.v2 when --config2 is provided
             print()
-            v1 = delivery_config_json(papi, config1, left, args.remove_tags)
-            v2 = delivery_config_json(papi, config2, right, args.remove_tags)
+            v1 = delivery_config_json(papi, config1, left, args.remove_tag)
+            v2 = delivery_config_json(papi, config2, right, args.remove_tag)
 
     # compare security config
     if args.security is True:
@@ -157,9 +157,9 @@ def compare_config(args):
                         response = resp_2
                         logger.warning(f"Found security config name '{waf_config_name}' config_id {config1}")
                 else:
-                    if args.name_contains:
+                    if args.namecontains:
                         df = pd.DataFrame(resp_1)
-                        df = df[df['name'].str.contains(args.name_contains, case=False)].copy()
+                        df = df[df['name'].str.contains(args.namecontains, case=False)].copy()
 
                         if not df.empty:
                             if df.shape[0] == 1:
@@ -201,14 +201,14 @@ def compare_config(args):
                 if left == right:
                     sys.exit(logger.error(f'Same version {left}, nothing to compare'))
 
-            v1 = security_config_json(appsec, waf_config_name, config1, left, args.remove_tags)
-            v2 = security_config_json(appsec, waf_config_name, config1, right, args.remove_tags)
+            v1 = security_config_json(appsec, waf_config_name, config1, left, args.remove_tag)
+            v2 = security_config_json(appsec, waf_config_name, config1, right, args.remove_tag)
 
         if config2:
             if not all([left, right]):
                 sys.exit(logger.error('Missing --left and --right argument and integer value of version'))
-            v1 = security_config_json(appsec, waf_config_name, config1, left, args.remove_tags)
-            v2 = security_config_json(appsec, waf_config_name, config2, right, args.remove_tags)
+            v1 = security_config_json(appsec, waf_config_name, config1, left, args.remove_tag)
+            v2 = security_config_json(appsec, waf_config_name, config2, right, args.remove_tag)
 
     title = 'Compare report in HTML format is saved at: '
     if args.json is True:
@@ -263,6 +263,9 @@ def compare_delivery_behaviors(args):
     properties, left, right = args.property, args.left, args.right
     papi = Papi(account_switch_key=args.account_switch_key, section=args.section)
     papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    print()
+    account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
+    logger.warning(f'Akamai Control Center Homepage: {account_url}')
     prop = {}
     sheet = {}
     all_properties = []
@@ -274,7 +277,7 @@ def compare_delivery_behaviors(args):
         else:
             if not (left and right):
                 _, version = papi.property_version(resp)
-                ruletree_status, json = papi.property_ruletree(papi.property_id, version, args.remove_tags)
+                ruletree_status, json = papi.property_ruletree(papi.property_id, version, args.remove_tag)
             else:
                 if left and i == 0:
                     version = left
@@ -283,7 +286,7 @@ def compare_delivery_behaviors(args):
                     version = right
                     ruletree_status, json = papi.property_ruletree(papi.property_id, version, args.remove_tags)
             if ruletree_status == 200:
-                logger.warning(f'{property:<50} {papi.property_id}')
+                logger.debug(f'{property:<50} {papi.property_id}')
                 property_name = f'{property}_v{version}'
                 all_properties.append(property_name)
                 prop[property_name] = json['rules']

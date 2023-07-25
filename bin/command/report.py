@@ -103,7 +103,7 @@ def offload_by_url(args):
     status, data = rpt.hits_by_url(start, end, cpcode_list)
 
     if not status == 200:
-        sys.exit(logger.info('no data found'))
+        sys.exit()
 
     # extract file extension from urls
     for url in data:
@@ -132,7 +132,6 @@ def offload_by_url(args):
 
     for row in ext_dict_data:
         row['offload'] = str('{:.2f}%'.format(row['offload']))
-
         table.add_row(str(row['extension']), str(row['allEdgeHits']), str(row['allOriginHits']), row['offload'])
 
     console = Console()

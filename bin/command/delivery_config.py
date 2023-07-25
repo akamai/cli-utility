@@ -111,13 +111,16 @@ def main(args):
             properties_df = papi.check_behavior(original_behaviors, properties_df, cpc)
 
         # columns = ['accountId', 'groupId', 'groupName',
-        columns = ['propertyName', 'propertyId', 'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
-                    'productId', 'ruleFormat', 'hostname_count', 'hostname']
+        columns = ['propertyName', 'propertyId', 'latestVersion', 'stagingVersion', 'productionVersion',
+                   'updatedDate', 'productId', 'ruleFormat', 'hostname_count', 'hostname']
         properties_df['propertyId'] = properties_df['propertyId'].astype(str)
+
         if args.behavior:
             columns.extend(sorted(original_behaviors))
             if 'cpcode' in original_behaviors:
-                columns.append('cpcode_name')
+                columns.remove('cpcode')
+                columns.extend(['cpcode_count', 'cpcode', 'cpcode_name'])
+
         columns.extend(['propertyName(hyperlink)'])
         properties_df = properties_df[columns].copy()
         properties_df = properties_df.reset_index(drop=True)
@@ -189,8 +192,8 @@ def main(args):
                     df = df.sort_values(by=['groupName', 'propertyName'])
 
                     columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
-                                'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
-                                'productId', 'ruleFormat', 'hostname_count', 'hostname']
+                               'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
+                               'productId', 'ruleFormat', 'hostname_count', 'hostname']
 
                     if args.behavior:
                         original_behaviors
@@ -198,7 +201,7 @@ def main(args):
                         columns.extend(sorted(original_behaviors))
                         if 'cpcode' in original_behaviors:
                             columns.remove('cpcode')
-                            columns.extend(['cpcode', 'cpcode_name'])
+                            columns.extend(['cpcode_count', 'cpcode', 'cpcode_name'])
 
                     columns.extend(['propertyName(hyperlink)'])
                     df['propertyId'] = df['propertyId'].astype(str)  # for excel format
@@ -640,7 +643,7 @@ def get_property_all_behaviors(args):
             stg, prd = papi.property_version(resp)
             version = prd
 
-    tree_status, json_response = papi.property_ruletree(papi.property_id, version, args.remove_tags)
+    tree_status, json_response = papi.property_ruletree(papi.property_id, version, args.remove_tag)
     if tree_status == 200:
         # print_json(data=json_response)
         behaviors = papi.get_property_behavior(json_response['rules'])

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import html
 import sys
 
 from akamai_api.edge_auth import AkamaiSession
+from bs4 import BeautifulSoup
 from rich import print_json
 from utils import _logging as lg
 from utils import files
+
 
 logger = lg.setup_logger()
 
@@ -86,18 +89,19 @@ class Reporting(AkamaiSession):
         }
 
         resp = self.session.post(url, json=payload, params=params, headers=self.headers)
-
         if resp.status_code == 200:
             files.write_json('output/reporting_trace.json', resp.json())
             return resp.status_code, resp.json()['data']
-        elif resp.status_code == 403:
-            print_json(data=resp.json())
+        elif 400 <= resp.status_code <= 499:
             return resp.status_code, resp.json()
-        elif 'WAF deny rule IPBLOCK' in resp.json()['data']:
-            lg.countdown(540, msg='Oopsie! You just hit rate limit.')
-            sys.exit(logger.error(print_json(data=resp.json())))
+        elif resp.status_code == 504:
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            encoded_reference = soup.body.get_text()
+            decoded_reference = html.unescape(encoded_reference)
+            logger.error(decoded_reference)
+            return resp.status_code, resp.text
         else:
-            logger.error(print_json(data=resp.json()))
+            logger.error(f'{resp.status_code=} {resp.text}')
             return resp.status_code, resp.json()
 
     def traffic_by_response_class(self, start: str, end: str, interval: str, cpcode: str | None = None):

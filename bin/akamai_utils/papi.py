@@ -761,6 +761,7 @@ class PapiWrapper(Papi):
                     logger.error(behavior)
             elif behavior == 'cpcode':
                 df[behavior] = df.parallel_apply(lambda row: self.cpcode_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+                df['cpcode_count'] = df[behavior].str.len()
                 df[f'{behavior}_name'] = df['cpcode'].parallel_apply(lambda x: [cpcode.get_cpcode_name(cp) for cp in x])
                 df[behavior] = df[[behavior]].parallel_apply(
                     lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
@@ -802,7 +803,8 @@ class PapiWrapper(Papi):
                     try:
                         values.append(behavior['options']['cpCode']['id'])
                     except:
-                        logger.warning(f'{property_name:<40} cpCode not found for Site Failover')
+                        # logger.warning(f'{property_name:<40} cpCode not found for Site Failover')
+                        pass
 
                 elif behavior['name'] == 'visitorPrioritization':
                     try:
