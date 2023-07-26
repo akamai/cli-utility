@@ -276,8 +276,8 @@ def compare_delivery_behaviors(args):
     account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
     logger.warning(f'Akamai Control Center Homepage: {account_url}')
 
-    filename = args.output if args.output else args.property[0]  # by default use the first property
-    filepath = f'output/{filename}_compare.xlsx'
+    filename = args.output if args.output else f'{args.property[0]}_compare.xlsx'  # by default use the first property
+    filepath = f'output/{filename}'
     prop = {}
     sheet = {}
     all_properties = []

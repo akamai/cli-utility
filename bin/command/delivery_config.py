@@ -675,6 +675,16 @@ def get_property_advanced_behavior(args):
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
     papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    iam = IdentityAccessManagement(args.account_switch_key)
+    account = iam.search_account_name(value=args.account_switch_key)[0]
+    account = account.replace(' ', '_')
+    print()
+    logger.warning(f'Found account {account}')
+    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
+    filepath = f'output/{account}_metadata.xlsx'
+    account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
+    logger.warning(f'Akamai Control Center Homepage: {account_url}')
+
     sheet = {}
     options = []
     columns = ['property', 'type', 'xml', 'path']
@@ -743,7 +753,6 @@ def get_property_advanced_behavior(args):
     sheet['advancedXML'] = df
     if sheet:
         print()
-        filepath = 'metadata.xlsx'
         files.write_xlsx(filepath, sheet, show_index=False)
         if args.no_show is False and platform.system() == 'Darwin':
             subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
