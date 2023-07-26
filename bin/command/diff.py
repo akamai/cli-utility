@@ -17,6 +17,7 @@ from akamai_utils import papi as p
 from rich import print_json
 from tabulate import tabulate
 from utils import _logging as lg
+from utils import dataframe
 from utils import diff_html as compare
 from utils import files
 from utils.parser import AkamaiParser as Parser
@@ -40,6 +41,8 @@ def delivery_config_json(papi, config: str, version: int | None = None, exclude:
     status, _ = papi.search_property_by_name(config)
     if status == 200:
         json_tree_status, json_response = papi.property_ruletree(papi.property_id, version, exclude)
+        logger.warning(config)
+        _ = papi.get_property_version_detail(papi.property_id, version)
     if json_tree_status == 200:
         return collect_json(config, version, json_response)
     else:
@@ -83,6 +86,9 @@ def compare_config(args):
 
     papi = Papi(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies)
     appsec = a.AppsecWrapper(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies)
+    print()
+    account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
+    logger.warning(f'Akamai Control Center Homepage: {account_url}')
 
     if args.xml is True:
         Path('output/diff/xml').mkdir(parents=True, exist_ok=True)
@@ -260,12 +266,18 @@ def compare_delivery_behaviors(args):
         --remove-tags advanced uuid variables templateUuid templateLink xml \
         --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost
     '''
+    if args.rulenotcontains and args.rulecontains:
+        sys.exit(logger.error('Please use either --rulecontains or --rulenotcontains, not both'))
+
     properties, left, right = args.property, args.left, args.right
     papi = Papi(account_switch_key=args.account_switch_key, section=args.section)
     papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
     print()
     account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
     logger.warning(f'Akamai Control Center Homepage: {account_url}')
+
+    filename = args.output if args.output else args.property[0]  # by default use the first property
+    filepath = f'output/{filename}_compare.xlsx'
     prop = {}
     sheet = {}
     all_properties = []
@@ -288,6 +300,7 @@ def compare_delivery_behaviors(args):
             if ruletree_status == 200:
                 logger.debug(f'{property:<50} {papi.property_id}')
                 property_name = f'{property}_v{version}'
+                _ = papi.get_property_version_detail(papi.property_id, version)  # show direct url to config on ACC
                 all_properties.append(property_name)
                 prop[property_name] = json['rules']
 
@@ -335,10 +348,114 @@ def compare_delivery_behaviors(args):
         sheet['summary'] = pivot_df
         '''
 
-        filename = all_properties[0]  # by default use the first property
-        filepath = f'output/{filename}_compare.xlsx'
-        files.write_xlsx(filepath, sheet, show_index=False, adjust_column_width=True, freeze_column=4)
+        path_n_behavior = []
+        if 'path' in args.criteria:
+            path = dc.query("name == 'path'").copy()
+            path = path.reset_index(drop=True)
+            if not path.empty:
+                expanded = pd.json_normalize(path['json_or_xml']).rename(columns=lambda x: x.replace('.', '_'))
+                path = path.reset_index(drop=True)
+                expanded = expanded.reset_index(drop=True)
+                path_df = pd.concat([path.drop(columns='json_or_xml'), expanded], axis=1)
+                path = path_df.copy()
+                path['type'] = 'path_match'
+                path = path.reset_index(drop=True)
 
+            if not path.empty:
+                columns = ['property', 'path', 'type', 'values']
+                path_df = path[columns].copy()
+                path_df['path_match_count'] = path_df['values'].str.len()
+                path_df['values'] = path_df[['values']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+                path_n_behavior.append(path_df)
+
+        if 'origin' in args.behavior:
+            origin = db.query("name == 'origin'").copy()
+            origin = origin.reset_index(drop=True)
+            logger.debug(f'\n{origin}')
+
+            if not origin.empty:
+                expanded = pd.json_normalize(origin['json_or_xml']).rename(columns=lambda x: x.replace('.', '_'))
+                origin = origin.reset_index(drop=True)
+                expanded = expanded.reset_index(drop=True)
+                origin_df = pd.concat([origin.drop(columns='json_or_xml'), expanded], axis=1)
+                origin = origin_df.query("originType == 'CUSTOMER'").copy()
+                origin['type'] = 'origin_behavior'
+                origin = origin.reset_index(drop=True)
+
+            if not origin.empty:
+                columns = ['property', 'path', 'type', 'hostname']
+                origin_df = origin[columns].copy()
+                origin_df['path_match_count'] = 0  # set header columns to match path_df
+                origin_df = origin_df.rename(columns={'hostname': 'values'})
+                path_n_behavior.append(origin_df)
+
+        if len(path_n_behavior) > 0:
+            original = pd.concat(path_n_behavior).sort_values(by=['path', 'property', 'type'], ascending=[True, True, False])
+            excluded_rules = args.rulenotcontains if args.rulenotcontains else None
+            included_rules = args.rulecontains if args.rulecontains else None
+
+            original = original.rename(columns={'path': 'rulename'})
+
+            # excluded_rules = ['Non Russia', 'Kasada', 'CiC Dev', 'Custom Bot', 'Sport and User Services Alternate', 'Pre-Prod']
+            if excluded_rules:
+                excluded = original[original['rulename'].str.contains('|'.join(excluded_rules))].copy()
+                included = original[~original['rulename'].str.contains('|'.join(excluded_rules))].copy()
+
+            # included_rules = ['API']
+            if included_rules:
+                included = original[original['rulename'].str.contains('|'.join(included_rules))].copy()
+                excluded = original[~original['rulename'].str.contains('|'.join(included_rules))].copy()
+
+            original_pivot = original.pivot_table(index=['property', 'rulename'], columns='type', values='values', aggfunc='first')
+            columns = ['property', 'path_match_count', 'path_match', 'origin_behavior', 'rulename']
+
+            try:
+                included_pivot = included.pivot_table(index=['property', 'rulename'], columns='type', values='values', aggfunc='first')
+                included_pivot = included_pivot.reset_index()
+                included = included.rename(columns={'values': 'path_match'})
+                included_pivot = included_pivot.merge(
+                    included[['property', 'rulename', 'path_match', 'path_match_count']],
+                    on=['property', 'rulename', 'path_match'],
+                    suffixes=('', '_included'))
+                included = included.reset_index(drop=True)
+                included_pivot.columns.name = None
+                sheet['included_mod'] = included_pivot[columns]
+                included = included.rename(columns={'path_match': 'values'})
+                sheet['included_rules'] = included
+            except Exception as e:
+                msg = '--rulecontains'
+                logger.info(f'{msg:<20} not provided')
+
+            try:
+                excluded_pivot = excluded.pivot_table(index=['property', 'rulename'], columns='type', values='values', aggfunc='first')
+                excluded_pivot = excluded_pivot.reset_index()
+                excluded = excluded.rename(columns={'values': 'path_match'})
+                excluded_pivot = excluded_pivot.merge(
+                    excluded[['property', 'rulename', 'path_match', 'path_match_count']],
+                    on=['property', 'rulename', 'path_match'],
+                    suffixes=('', '_included'))
+                excluded = excluded.reset_index(drop=True)
+                excluded_pivot.columns.name = None
+                sheet['excluded_mod'] = excluded_pivot[columns]
+                excluded = excluded.rename(columns={'path_match': 'values'})
+                sheet['excluded_rules'] = excluded
+            except Exception as e:
+                msg = '--rulenotcontains'
+                logger.info(f'{msg:<20} not provided')
+
+            original_pivot = original_pivot.reset_index()
+            original = original.rename(columns={'values': 'path_match'})
+            original_pivot = original_pivot.merge(
+                original[['property', 'rulename', 'path_match', 'path_match_count']],
+                on=['property', 'rulename', 'path_match'],
+                suffixes=('', '_included'))
+            original = original.reset_index(drop=True)
+            original_pivot.columns.name = None
+            sheet['original_mod'] = original_pivot[columns]
+            original = original.rename(columns={'path_match': 'values'})
+            sheet['original_rules'] = original
+
+        files.write_xlsx(filepath, sheet, show_index=False, adjust_column_width=True, freeze_column=4)
         if args.no_show is False and platform.system() == 'Darwin':
             subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
         else:

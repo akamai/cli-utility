@@ -155,10 +155,12 @@ class Papi(AkamaiSession):
                 self.group_id = int(property_items[0]['groupId'])
                 self.property_id = int(property_items[0]['propertyId'])
                 return 200, property_items
-        elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
-            lg.countdown(540, msg='Oopsie! You just hit rate limit.')
-            sys.exit(logger.error(resp.json()['detail']))
+        # elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
+        #     lg.countdown(540, msg='Oopsie! You just hit rate limit.')
+        #     sys.exit(logger.error(resp.json()['detail']))
         else:
+            logger.info(f'{property_name:<40} {resp.status_code}')
+            print_json(data=resp.json())
             return resp.status_code, resp.json()
 
     def search_property_by_hostname(self, hostname: str) -> tuple:
@@ -260,6 +262,10 @@ class Papi(AkamaiSession):
         response = self.session.get(url)
         logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
+            assetId = response.json()['assetId'][4:]
+            gid = response.json()['groupId'][4:]
+            acc_url = f'https://control.akamai.com/apps/property-manager/#/property-version/{assetId}/{version}/edit?gid={gid}'
+            logger.info(acc_url)
             return response.json()['versions']['items']
         else:
             return response.json()

@@ -232,6 +232,8 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                   'required_arguments': [{'name': 'property', 'help': 'propertyname', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'behavior', 'help': 'behavior', 'nargs': '+'},
                                          {'name': 'criteria', 'help': 'criteria', 'nargs': '+'},
+                                         {'name': 'rulecontains', 'help': 'include rules contains', 'nargs': '+'},
+                                         {'name': 'rulenotcontains', 'help': 'exclude rules contains', 'nargs': '+'},
                                          {'name': 'remove-tag', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'},
                                          {'name': 'output', 'help': 'override excel output file (.xlsx)'},
                                          {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}]
