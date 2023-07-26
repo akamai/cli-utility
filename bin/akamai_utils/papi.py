@@ -746,6 +746,7 @@ class PapiWrapper(Papi):
             logger.debug(behavior)
             if behavior == 'origin':
                 df[behavior] = df.parallel_apply(lambda row: self.origin_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+                df[f'{behavior}_count'] = df[behavior].str.len()
                 df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
             elif behavior == 'siteshield':
                 df[behavior] = df.parallel_apply(lambda row: self.siteshield_value(row['propertyName'], row['ruletree']['rules']), axis=1)

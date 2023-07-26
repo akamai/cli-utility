@@ -120,6 +120,9 @@ def main(args):
             if 'cpcode' in original_behaviors:
                 columns.remove('cpcode')
                 columns.extend(['cpcode_count', 'cpcode', 'cpcode_name'])
+            if 'origin' in original_behaviors:
+                columns.remove('origin')
+                columns.extend(['origin_count', 'origin'])
 
         columns.extend(['propertyName(hyperlink)'])
         properties_df = properties_df[columns].copy()
@@ -202,6 +205,9 @@ def main(args):
                         if 'cpcode' in original_behaviors:
                             columns.remove('cpcode')
                             columns.extend(['cpcode_count', 'cpcode', 'cpcode_name'])
+                        if 'origin' in original_behaviors:
+                            columns.remove('origin')
+                            columns.extend(['origin_count', 'origin'])
 
                     columns.extend(['propertyName(hyperlink)'])
                     df['propertyId'] = df['propertyId'].astype(str)  # for excel format
