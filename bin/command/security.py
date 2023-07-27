@@ -18,16 +18,12 @@ from utils import files
 logger = lg.setup_logger()
 
 
-def list_configs(args):
+def list_config(args):
     iam = IdentityAccessManagement(args.account_switch_key)
     account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = account.replace(' ', '_')
-    print()
-    logger.warning(f'Found account {account}')
-    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
+    account = iam.show_account_summary(account)
     account_folder = f'output/security/{account}'
     Path(account_folder).mkdir(parents=True, exist_ok=True)
-
     appsec = sec.AppsecWrapper(account_switch_key=args.account_switch_key)
     network = sec.NetworkListWrapper(account_switch_key=args.account_switch_key)
     bot = sec.BotManagerWrapper(account_switch_key=args.account_switch_key)
@@ -35,13 +31,14 @@ def list_configs(args):
     _, resp = appsec.list_waf_configs()
     df = pd.DataFrame(resp)
     df = df.rename(columns={'id': 'configId', 'name': 'configName'})
+    df['groupId'] = df['groupId'].apply(lambda x: str(int(x)) if pd.notna(x) else x)
     df = df.fillna('')
     df['stagingVersion'] = df['stagingVersion'].replace('', 0)
     df['stagingVersion'] = df['stagingVersion'].astype('Int64')
     df['productionVersion'] = df['productionVersion'].replace('', 0)
     df['productionVersion'] = df['productionVersion'].astype('Int64')
 
-    columns = ['configName', 'configId', 'stagingVersion', 'productionVersion', 'latestVersion', 'targetProduct', 'fileType']
+    columns = ['configName', 'configId', 'groupId', 'stagingVersion', 'productionVersion', 'latestVersion', 'targetProduct', 'fileType']
     if 'description' in df.columns:
         columns.append('description')
 
@@ -51,14 +48,26 @@ def list_configs(args):
         good_configs = list(set(all_configs).intersection(set(args.config)))
         good_df = df[df['configName'].isin(good_configs)].copy()
         good_df = good_df.reset_index(drop=True)
+
     if len(good_configs) == 0:
-        print(tabulate(df[columns], headers=columns, tablefmt='grid', numalign='center', showindex=True, maxcolwidths=50))
+        if args.group_id:
+            df = df[df['groupId'].isin(args.group_id)].copy()
+            df = df.reset_index(drop=True)
+            all_configs = df['configName'].values.tolist()
+
+        print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center', showindex=True, maxcolwidths=50))
 
         modified_list = ["'" + word + "'" for word in all_configs]
         all_configs_str = ' '.join(modified_list)
-        logger.warning(f'all configName\n{all_configs_str}')
+        logger.warning(f'--config {all_configs_str}')
     else:
-        print(tabulate(good_df[columns], headers=columns, tablefmt='grid', numalign='center', showindex=True, maxcolwidths=50))
+        if args.group_id:
+            good_df = good_df[good_df['groupId'].isin(args.group_id)].copy()
+            good_df = good_df.reset_index(drop=True)
+        if not good_df.empty:
+            print(tabulate(good_df[columns], headers=columns, tablefmt='simple', numalign='center', showindex=True, maxcolwidths=50))
+        else:
+            logger.info('not found any security configuration based on the search criteria')
 
     if args.config:
         notfound_configs = [x for x in args.config if x not in all_configs]
@@ -85,8 +94,8 @@ def list_configs(args):
             print()
             counter += 1
             logger.warning(f"config no. {counter:<4}'{row['configName']}'")
-            summary = ['configId', 'configName', 'version', 'basedOn', 'versionNotes',
-                    'staging.status', 'production.status', 'createdBy']
+            summary = ['configId', 'configName', 'version', 'basedOn',
+                    'staging.status', 'production.status', 'createdBy', 'versionNotes']
             if 'versionNotes' not in policy.keys():
                 summary.remove('versionNotes')
             if 'basedOn' not in policy.keys():
@@ -94,7 +103,7 @@ def list_configs(args):
 
             df = pd.json_normalize(policy)
             logger.debug(df.columns.values)
-            print(tabulate(df[summary], headers=summary, tablefmt='grid', numalign='center', showindex=False, maxcolwidths=50))
+            print(tabulate(df[summary], headers=summary, tablefmt='simple', numalign='center', showindex=False, maxcolwidths=50))
 
             sheet = {}
             advanced = []

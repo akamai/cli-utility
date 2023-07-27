@@ -217,12 +217,20 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             optional_arguments=[{'name': 'account', 'help': 'keyword search at least 3 characters', 'nargs': '+'},
                                                 {'name': 'accountkey', 'help': argparse.SUPPRESS}])
 
+        sec_sc = [{'name': 'hostname',
+                  'help': 'audit hostnames not yet assigned to the security configurations',
+                  'optional_arguments': [{'name': 'group-id', 'help': 'group-id', 'nargs': '+'},
+                                         {'name': 'output', 'help': 'override excel output file (.xlsx)'},
+                                         {'name': 'no-show', 'help': 'automatically open excel', 'action': 'store_true'}]
+                  }]
         actions['security'] = cls.create_main_command(
                             subparsers,
                             'security',
-                            help='security objects',
+                            help='collect detail about security configuration',
+                            subcommands=sec_sc,
                             required_arguments=[{'name': 'config', 'help': 'security config name', 'nargs': '+'}],
                             optional_arguments=[{'name': 'version', 'help': 'security config version'},
+                                                {'name': 'group-id', 'help': 'group-id', 'nargs': '+'},
                                                 {'name': 'output', 'help': 'override excel output file (.xlsx)'},
                                                 {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}])
 

@@ -97,3 +97,12 @@ class IdentityAccessManagement(AkamaiSession):
             sys.exit(logger.error(resp.json()['detail']))
         else:
             sys.exit(logger.error(resp.json()['detail']))
+
+    def show_account_summary(self, account: str):
+        account = account.replace(' ', '_')
+        print()
+        logger.warning(f'Found account {account}')
+        account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
+        account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={self.account_switch_key}&targetUrl='
+        logger.warning(f'Akamai Control Center Homepage: {account_url}')
+        return account

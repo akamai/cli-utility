@@ -64,6 +64,7 @@ if __name__ == '__main__':
             report.offload_by_url(args)
         elif args.subcommand == 'response-class':
             report.traffic_by_response_class(args)
+            # report.traffic_by_response_class_async(args)
         else:
             report.offload_by_hostname(args)
 
@@ -74,7 +75,10 @@ if __name__ == '__main__':
         admin.lookup_account(args)
 
     if args.command == 'security':
-        sec.list_configs(args)
+        if args.subcommand == 'list':
+            sec.audit_hostname(args)
+        else:
+            sec.list_config(args)
 
     end_time = lg.log_cli_timing(start_time)
     logger.info(end_time)

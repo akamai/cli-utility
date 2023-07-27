@@ -28,7 +28,7 @@ class Appsec(AkamaiSession):
         self.cookies = self.cookies
 
     def list_waf_configs(self):
-        url = self.form_url(f'{self.MODULE}/configs')
+        url = self.form_url(f'{self.MODULE}/configs?includeHostnames=true&includeContractGroup=true')
         response = self.session.get(url, headers=self.headers)
         return response.status_code, response.json()['configurations']
 
