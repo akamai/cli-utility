@@ -2,26 +2,27 @@
 # https://techdocs.akamai.com/cps/reference/api-summary
 from __future__ import annotations
 
+import logging
 from urllib.parse import urlparse
 
 import pandas as pd
 from akamai_api.edge_auth import AkamaiSession
 from rich import print_json
-from utils import _logging as lg
 from utils import google_dns as gg
-
-logger = lg.setup_logger()
 
 
 class CpsWrapper(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None):
+    def __init__(self, account_switch_key: str | None = None, section: str | None = None,
+                 cookies: str | None = None,
+                 logger: logging.Logger = None):
         super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
         self.MODULE = f'{self.base_url}/cps/v2'
         self.headers = {'Accept': 'application/vnd.akamai.cps.enrollments.v11+json'}
         self.account_switch_key = account_switch_key if account_switch_key else None
+        self.logger = logger
 
     def list_enrollments(self, contract_id: str, enrollment_ids: list | None = None) -> list:
-        logger.debug(f'{contract_id=} {enrollment_ids=}')
+        self.logger.debug(f'{contract_id=} {enrollment_ids=}')
 
         params = self.params
         params['contractId'] = contract_id
@@ -30,7 +31,7 @@ class CpsWrapper(AkamaiSession):
         empty_df = pd.DataFrame()
         if resp.status_code == 200:
 
-            logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
+            self.logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
             enrollments = resp.json()['enrollments']
 
             df = pd.DataFrame(enrollments)
@@ -62,13 +63,13 @@ class CpsWrapper(AkamaiSession):
                 df['Slot'] = df['Slot'].astype(str)
 
             if not empty_df.empty:
-                logger.critical(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do have hostname assigned to')
+                self.logger.critical(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do have hostname assigned to')
                 columns = ['contractId', 'id', 'Slot', 'ra', 'common_name', 'sni', 'hostname_count', 'hostname']
                 return enrollments, df[columns]
             else:
                 return [], pd.DataFrame()
         else:
-            logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
+            self.logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
             return [], pd.DataFrame()
 
     def collect_enrollments(self, contract_id: str, enrollments: list, enrollment_ids: list | None = None) -> list:
@@ -80,14 +81,14 @@ class CpsWrapper(AkamaiSession):
                 temp_list = self.enrollment_detail(certificates['id'], certificates)
                 df = pd.DataFrame(temp_list)
                 enrollment_subset.extend(temp_list)
-                logger.debug(f'enrollment id: {certificates["id"]} {len(temp_list)}')
+                self.logger.debug(f'enrollment id: {certificates["id"]} {len(temp_list)}')
         else:
-            logger.debug('Collect certificate detail ie. cName and expiration date.  Please be patient.')
+            self.logger.debug('Collect certificate detail ie. cName and expiration date.  Please be patient.')
             for i, certificates in enumerate(enrollments):
                 try:
                     temp_list = self.enrollment_detail(contract_id, certificates)
                 except:
-                    logger.debug(f'{contract_id=:<20} {certificates["id"]=}')
+                    self.logger.debug(f'{contract_id=:<20} {certificates["id"]=}')
                 finally:
                     try:
                         slot = certificates['productionSlots'][0]
@@ -97,12 +98,12 @@ class CpsWrapper(AkamaiSession):
                         common_name = certificates['csr']['cn']
                     except:
                         common_name = ''
-                    logger.debug(f'{i:<5} {slot:<10} {common_name:<50} {len(temp_list):>4} hostnames')
+                    self.logger.debug(f'{i:<5} {slot:<10} {common_name:<50} {len(temp_list):>4} hostnames')
                     if len(temp_list) > 0:
                         enrollment_subset.extend(temp_list)
-        logger.info(f'{contract_id=} Size={len(enrollment_subset)}')
+        self.logger.info(f'{contract_id=} Size={len(enrollment_subset)}')
         df = pd.DataFrame(enrollment_subset)
-        logger.debug(f'\n{df}')
+        self.logger.debug(f'\n{df}')
         return enrollment_subset
 
     def enrollment_detail(self, contract_id: str, certificates: dict):
@@ -110,7 +111,7 @@ class CpsWrapper(AkamaiSession):
         try:
             expire_date, _ = self.certificate_deployment(enrollment_id=enrollment_id)
         except:
-            logger.debug(f'{contract_id=:<20} {enrollment_id=:<20} no expire_date')
+            self.logger.debug(f'{contract_id=:<20} {enrollment_id=:<20} no expire_date')
 
         # from rich import print_json
         # print_json(data=certificates)
@@ -143,7 +144,7 @@ class CpsWrapper(AkamaiSession):
             for hostname in certificates['csr']['sans']:
                 cname = gg.dnslookup(hostname=hostname)
                 if 'edgesuite.net' in cname:
-                    logger.info(f'{contract_id=:<20} {enrollment_id=:<20} {hostname:<40} cname to {cname}')
+                    self.logger.info(f'{contract_id=:<20} {enrollment_id=:<20} {hostname:<40} cname to {cname}')
                 enrollment_subset.append({'contractId': contract_id,
                                           'enrollmentId': enrollment_id,
                                           'slot': slot,
@@ -191,7 +192,7 @@ class CpsWrapper(AkamaiSession):
             else:
                 expire_date = None
         else:
-            logger.error(f'Deployment for {enrollment_id} {urlparse(resp.url).path:>20} {resp.status_code}')
+            self.logger.error(f'Deployment for {enrollment_id} {urlparse(resp.url).path:>20} {resp.status_code}')
         # print_json(data=resp.json())
         # logger.info(resp.url)
         return expire_date, resp.json()['production']['primaryCertificate']
@@ -207,10 +208,10 @@ class CpsWrapper(AkamaiSession):
             try:
                 return resp.json()['production']['primaryCertificate']['expiry']
             except:
-                logger.debug(f'{enrollment_id:<7} {resp.json()}')
+                self.logger.debug(f'{enrollment_id:<7} {resp.json()}')
                 return ''
         else:
-            logger.error(f'Deployment for {enrollment_id} {urlparse(resp.url).path:>20} {resp.status_code}')
+            self.logger.error(f'Deployment for {enrollment_id} {urlparse(resp.url).path:>20} {resp.status_code}')
             return ''
 
     def get_enrollment(self, enrollment_id: int):

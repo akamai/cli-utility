@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 from akamai_api.cps import CpsWrapper
@@ -15,26 +16,23 @@ from pandarallel import pandarallel
 from pytz import utc
 from rich import print_json
 from tabulate import tabulate
-from utils import _logging as lg
 from utils import files
 from utils import google_dns as gg
 from yaspin import yaspin
 from yaspin.spinners import Spinners
 
-logger = lg.setup_logger()
 
-
-def audit(args):
+def audit(args, logger):
 
     # display full account name
-    iam = IdentityAccessManagement(args.account_switch_key)
+    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
     account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = account.replace(' ', '_')
-    logger.warning(f'Found account {account}')
-    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
-    filepath = f'output/{account}_certificate.xlsx' if args.output is None else f'output/{args.output}'
+    account = iam.show_account_summary(account)
+    account_folder = f'output/{account}'
+    Path(account_folder).mkdir(parents=True, exist_ok=True)
+    filepath = f'{account_folder}/certificate.xlsx' if args.output is None else f'output/{args.output}'
 
-    cps = CpsWrapper(account_switch_key=args.account_switch_key)
+    cps = CpsWrapper(account_switch_key=args.account_switch_key, logger=logger)
     csv_list = []
     if args.enrollment_id and not args.contract_id:
         csv_list = [int(value) for value in args.enrollment_id]
@@ -46,7 +44,7 @@ def audit(args):
             print(tabulate(df, showindex=True))
             return None
 
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     contracts = args.contract_id if args.contract_id else papi.get_contracts()
     sheet = {}
     contract_data = []
@@ -101,14 +99,14 @@ def audit(args):
                     total = sum(df['hostname_count'])
 
                     logger.warning(f'Collecting CNAME for all {total:,} hosts, please be patient')
-                    hostname_df['cname'] = hostname_df['hostname'].parallel_apply(lambda x: gg.dnslookup(x) if x is not None else '')
+                    hostname_df['cname'] = hostname_df['hostname'].parallel_apply(lambda x: gg.dnslookup(x, logger=logger) if x is not None else '')
 
                     logger.warning('Determine if CNAMEd to Akamai')
                     hostname_df['cname_to_akamai'] = hostname_df['cname'].parallel_apply(lambda x: 'True' if 'edgekey' in x or 'edgesuite' in x else '')
 
                     logger.warning('Determine if IP belongs to Akamai')
                     hostname_df['valid_ip'] = hostname_df.parallel_apply(lambda row: is_valid_ip(row['cname']), axis=1)
-                    hostname_df['ASN_Description'] = hostname_df.parallel_apply(lambda row: asn(row['cname']) if row['valid_ip'] is True else None, axis=1)
+                    hostname_df['ASN_Description'] = hostname_df.parallel_apply(lambda row: asn(row['cname'], logger=logger) if row['valid_ip'] is True else None, axis=1)
                     contract_host.append(hostname_df)
 
                 df['hostname_one_per_line'] = df['hostname'].parallel_apply(lambda x: '\n'.join(''.join(c) for c in x))
@@ -154,12 +152,12 @@ def audit(args):
             ip_df = ip_df.sort_values(by='cname')
             ip_df = ip_df.reset_index(drop=True)
             logger.debug(f'\n{ip_df}')
-            ip_df['ASN_Description'] = ip_df['cname'].parallel_apply(lambda x: asn(x))
+            ip_df['ASN_Description'] = ip_df['cname'].parallel_apply(lambda x: asn(x, logger=logger))
             sheet['ip'] = ip_df
 
     if sheet:
-        files.write_xlsx(filepath, sheet)
-        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if args.show else None
+        files.write_xlsx(filepath, sheet, freeze_column=3)
+        files.open_excel_application(filepath, args.show, sheet['summary'])
 
 
 def is_valid_ip(ip: str):
@@ -167,7 +165,7 @@ def is_valid_ip(ip: str):
     return re.match(pattern, ip) is not None
 
 
-def asn(ip):
+def asn(ip, logger):
     max_retries = 2
     retry_delay = 1  # seconds
 
