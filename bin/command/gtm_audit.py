@@ -1,33 +1,23 @@
 from __future__ import annotations
 
-import json
-import platform
-import re
-import subprocess
-import sys
-import time
 from pathlib import Path
 
 import pandas as pd
 from akamai_api.gtm import GtmWrapper
 from akamai_api.identity_access import IdentityAccessManagement
 from rich import print_json
-from utils import _logging as lg
 from utils import files
 
 
-logger = lg.setup_logger()
-
-
-def audit(args):
+def audit(args, logger):
 
     # display full account name
-    iam = IdentityAccessManagement(args.account_switch_key)
+    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
     account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = account.replace(' ', '_')
-    logger.warning(f'Found account {account}')
-    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
-    filepath = f'output/{account}_gtm.xlsx' if args.output is None else f'output/{args.output}'
+    account = iam.show_account_summary(account)
+    account_folder = f'output/{account}'
+    Path(account_folder).mkdir(parents=True, exist_ok=True)
+    filepath = f'{account_folder}/gtm.xlsx' if args.output is None else f'output/{args.output}'
 
     gtm = GtmWrapper(account_switch_key=args.account_switch_key)
 
@@ -79,7 +69,5 @@ def audit(args):
 
     if sheet:
         files.write_xlsx(filepath, sheet)
-        if platform.system() == 'Darwin' and args.no_show is False:
-            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
-        else:
-            logger.info('--no-show argument is supported only on Mac OS')
+        show = not args.no_show
+        files.open_excel_application(filepath, show=show, df=flat_df)

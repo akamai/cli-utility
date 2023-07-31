@@ -2,14 +2,14 @@
 # https://techdocs.akamai.com/gtm/reference/api
 from __future__ import annotations
 
-from akamai_api.edge_auth import AkamaiSession
-from utils import _logging as lg
+import logging
 
-logger = lg.setup_logger()
+from akamai_api.edge_auth import AkamaiSession
 
 
 class GtmWrapper(AkamaiSession):
-    def __init__(self, account_switch_key: str, contract_id: str | None = None, group_id: int | None = None):
+    def __init__(self, account_switch_key: str, contract_id: str | None = None, group_id: int | None = None,
+                 logger: logging.Logger = None):
         super().__init__()
         self._base_url = f'{self.base_url}/config-gtm/v1'
         self.headers = {'Accept': 'application/json',
@@ -19,6 +19,7 @@ class GtmWrapper(AkamaiSession):
         self.account_switch_key = account_switch_key
         self.contract_id = contract_id
         self.group_id = group_id
+        self.logger = logger
 
     def list_domains(self) -> tuple:
         resp = self.session.get(f'{self._base_url}/domains', params=self.params, headers=self.headers)
