@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 from akamai_api.identity_access import IdentityAccessManagement
 from tabulate import tabulate
-from utils._logging import setup_logger
-logger = setup_logger()
 
 
 def homepage_url(account_id: str) -> str:
@@ -20,7 +18,7 @@ def homepage_url(account_id: str) -> str:
         return ''
 
 
-def cleanup_arguments(value: str):
+def cleanup_arguments(value: str, logger=None):
     if value == '*':
         logger.error(f'not allow:             {value:<20}')
         return value
@@ -29,7 +27,7 @@ def cleanup_arguments(value: str):
         return value
 
 
-def lookup_account(args):
+def lookup_account(args, logger=None):
     iam = IdentityAccessManagement(args.account_switch_key, args.section)
     searches = sorted(args.account)
 

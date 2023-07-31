@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 import requests
-from utils import _logging as lg
-
-logger = lg.setup_logger()
 
 
-def dnslookup(hostname: str | None = None):
+def dnslookup(hostname: str | None = None, logger: logging.Logger = None):
     if isinstance(hostname, (float, int)):
         return 'Wildcard'  # or any desired value for float or int types
     else:

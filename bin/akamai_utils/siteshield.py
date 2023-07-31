@@ -1,27 +1,28 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 
 import pandas as pd
 from akamai_api.siteshield import SiteShield
 from utils import _logging as lg
 
-logger = lg.setup_logger()
-
 
 class SiteShieldWrapper(SiteShield):
     def __init__(self, account_switch_key: str | None = None,
-                 section: str | None = None):
+                 section: str | None = None,
+                logger: logging.Logger = None):
         super().__init__()
         self.account_switch_key = account_switch_key
+        self.logger = logger
 
     def list_maps(self):
         ss_map = super().list_maps()
         df = pd.DataFrame(ss_map)
-        logger.debug(df.columns)
+        self.logger.debug(df.columns)
         columns = ['mapAlias', 'id', 'mcmMapRuleId', 'ruleName', 'sureRouteName', 'type', 'service', 'shared']
         df = df.sort_values(by='mapAlias').reset_index(drop=True)
-        logger.debug(f'\n{df[columns]}')
+        self.logger.debug(f'\n{df[columns]}')
         return df[columns]
 
     def get_map(self, map_alias: str, map_id: int, rule: str) -> dict:

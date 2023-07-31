@@ -2,6 +2,7 @@
 # https://techdocs.akamai.com/property-mgr/reference/api-summary
 from __future__ import annotations
 
+import logging
 import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
@@ -15,25 +16,24 @@ from utils import _logging as lg
 from utils import files
 
 
-logger = lg.setup_logger()
-
-
 class Papi(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None):
+    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None,
+                logger: logging.Logger = None):
         super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
         # https://techdocs.akamai.com/property-mgr/reference/api
         self.MODULE = f'{self.base_url}/papi/v1'
         self.headers = {'PAPI-Use-Prefixes': 'false',
                         'Accept': 'application/json',
                         'Content-Type': 'application/json'}
-        self.contract_id = self.contract_id
-        self.group_id = self.group_id
+        self.contract_id = None
+        self.group_id = None
         self.account_switch_key = account_switch_key if account_switch_key else None
         self.account_id = None
         self.property_id = None
         self.property_name = None
         self.asset_id = None
         self.cookies = self.cookies
+        self.logger = logger
 
     # BUILD/CATALOG
     def get_build_detail(self):
@@ -43,7 +43,7 @@ class Papi(AkamaiSession):
 
     def get_products(self) -> list:
         response = self.session.get(f'{self.MODULE}/products', params=self.params, headers=self.headers)
-        logger.warning(f'Collecting contracts {urlparse(response.url).path:<30} {response.status_code}')
+        self.logger.warning(f'Collecting contracts {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
             return response.json()['products']['items']
         else:
@@ -51,7 +51,7 @@ class Papi(AkamaiSession):
 
     def get_account_id(self) -> list:
         response = self.session.get(f'{self.MODULE}/contracts', params=self.params, headers=self.headers)
-        logger.debug(f'Retrieving account id {urlparse(response.url).path:<30} {response.status_code}')
+        self.logger.debug(f'Retrieving account id {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
             self.account_id = response.json()['accountId']
             return self.account_id
@@ -60,7 +60,7 @@ class Papi(AkamaiSession):
 
     def get_contracts(self) -> list:
         response = self.session.get(f'{self.MODULE}/contracts', params=self.params, headers=self.headers)
-        logger.debug(f'Collecting contracts {urlparse(response.url).path:<30} {response.status_code}')
+        self.logger.debug(f'Collecting contracts {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
             return response.json()['contracts']['items']
         else:
@@ -70,7 +70,7 @@ class Papi(AkamaiSession):
         url = self.form_url(f'{self.MODULE}/edgehostnames?contractId={contract_id}&groupId={group_id}')
 
         response = self.session.get(url, headers=self.headers)
-        logger.info(f'Collecting edgehostnames for contract/group {urlparse(response.url).path:<30} {response.status_code} {response.url}')
+        self.logger.info(f'Collecting edgehostnames for contract/group {urlparse(response.url).path:<30} {response.status_code} {response.url}')
         if response.status_code == 200:
             return response.json()['edgeHostnames']['items']
         else:
@@ -89,8 +89,8 @@ class Papi(AkamaiSession):
         search_query = {'bulkSearchQuery': {'syntax': 'JSONPATH', 'match': '$.name'}}
 
         resp = self.session.post(url, json=search_query, headers=self.headers)
-        logger.info(resp.status_code)
-        logger.info(print_json(data=resp.json()))
+        self.logger.info(resp.status_code)
+        self.logger.info(print_json(data=resp.json()))
 
     def bulk_activate_properties(self, emails: list,
                                  contract_id: str,
@@ -125,10 +125,10 @@ class Papi(AkamaiSession):
             return 200, response.json()['groups']['items']
         elif response.status_code == 401:
             # accountSwitchKey is invalid
-            logger.error(response.json()['title'])
+            self.logger.error(response.json()['title'])
             return response.status_code, response.json()['title']
         else:
-            logger.error(f'{response.status_code}\n{response.text}')
+            self.logger.error(f'{response.status_code}\n{response.text}')
             return response.status_code, response.json()
 
     # SEARCH
@@ -144,10 +144,10 @@ class Papi(AkamaiSession):
                 property_items = resp.json()['versions']['items']
                 # print_json(data=property_items)
             except:
-                logger.info(print_json(resp.json()))
-            logger.debug(f'{property_name} {resp.status_code} {resp.url} {property_items}')
+                self.logger.info(print_json(resp.json()))
+            self.logger.debug(f'{property_name} {resp.status_code} {resp.url} {property_items}')
             if len(property_items) == 0:
-                sys.exit(logger.error(f'{property_name} not found'))
+                sys.exit(self.logger.error(f'{property_name} not found'))
             else:
                 self.account_id = property_items[0]['accountId']
                 self.contract_id = property_items[0]['contractId']
@@ -155,11 +155,13 @@ class Papi(AkamaiSession):
                 self.group_id = int(property_items[0]['groupId'])
                 self.property_id = int(property_items[0]['propertyId'])
                 return 200, property_items
-        # elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
-        #     lg.countdown(540, msg='Oopsie! You just hit rate limit.')
-        #     sys.exit(logger.error(resp.json()['detail']))
+
+        elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
+            self.logger.error(resp.json()['detail'])
+            lg.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)
+            sys.exit()
         else:
-            logger.info(f'{property_name:<40} {resp.status_code}')
+            self.logger.info(f'{property_name:<40} {resp.status_code}')
             print_json(data=resp.json())
             return resp.status_code, resp.json()
 
@@ -169,7 +171,7 @@ class Papi(AkamaiSession):
         response = self.session.post(url, json=payload, headers=self.headers)
         if response.status_code == 200:
             if hostname == 'Others':
-                logger.critical(f'{hostname=}')
+                self.logger.critical(f'{hostname=}')
                 files.write_json('output/error_others.json', response.json())
                 return 'ERROR_Others'
             try:
@@ -185,7 +187,7 @@ class Papi(AkamaiSession):
     def get_propertyname_per_group(self, group_id: int, contract_id: str) -> list:
         url = self.form_url(f'{self.MODULE}/properties?contractId={contract_id}&groupId={group_id}')
         response = self.session.get(url, headers=self.headers)
-        logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
+        self.logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
         if response.status_code == 200:
             return response.json()['properties']['items']
         else:
@@ -194,7 +196,7 @@ class Papi(AkamaiSession):
     def get_property_version_latest(self, property_id: int) -> dict:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}')
         response = self.session.get(url, headers=self.headers)
-        logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
+        self.logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
         if response.status_code == 200:
             return response.json()['properties']['items'][0]
         else:
@@ -227,7 +229,7 @@ class Papi(AkamaiSession):
         '''
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}')
         response = self.session.get(url)
-        logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
+        self.logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
             return response.json()
         else:
@@ -260,13 +262,14 @@ class Papi(AkamaiSession):
         '''
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}')
         response = self.session.get(url)
-        logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
+        self.logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
+            propertyName = response.json()['propertyName']
             assetId = response.json()['assetId'][4:]
             gid = response.json()['groupId'][4:]
             acc_url = f'https://control.akamai.com/apps/property-manager/#/property-version/{assetId}/{version}/edit?gid={gid}'
-            logger.info(acc_url)
-            return response.json()['versions']['items']
+            self.logger.debug(f'{propertyName:<46} {acc_url}')
+            return response.json()
         else:
             return response.json()
 
@@ -312,7 +315,7 @@ class Papi(AkamaiSession):
             t = response.text
             u = response.url
             z = response.content
-            logger.error(f'{s} [{msg}] {u}')
+            self.logger.error(f'{s} [{msg}] {u}')
             # logger.debug(print_json(data=self.headers))
             # print_json(data=self.cookies)
             sys.exit()
@@ -320,9 +323,9 @@ class Papi(AkamaiSession):
     def get_properties_ruletree_digest(self, property_id: int, version: int) -> list:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
         response = self.session.get(url)
-        logger.debug(f'Collecting ruletree digest {urlparse(response.url).path:<30} {response.status_code}')
+        self.logger.debug(f'Collecting ruletree digest {urlparse(response.url).path:<30} {response.status_code}')
         if property_id == 303315:
-            logger.critical(f'{property_id=}')
+            self.logger.critical(f'{property_id=}')
             files.write_json('output/response_complete_ruletree_digest.json', response.json())
         if response.status_code == 200:
             return response.json()['ruleFormat']
@@ -332,7 +335,7 @@ class Papi(AkamaiSession):
     def get_property_hostnames(self, property_id: int) -> list:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/hostnames')
         response = self.session.get(url, headers=self.headers)
-        logger.debug(f'Collecting hostname for a property {urlparse(response.url).path:<30} {response.status_code} {response.url}')
+        self.logger.debug(f'Collecting hostname for a property {urlparse(response.url).path:<30} {response.status_code} {response.url}')
         if response.status_code == 200:
             return response.json()['hostnames']['items']
         else:
@@ -341,8 +344,8 @@ class Papi(AkamaiSession):
     def get_property_version_hostnames(self, property_id: int, version: int) -> list:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/hostnames?includeCertStatus=true')
         resp = self.session.get(url, headers=self.headers)
-        logger.debug(resp.url)
-        logger.debug(f'Collecting hostname for a property {urlparse(resp.url).path:<30} {resp.status_code} {resp.url}')
+        self.logger.debug(resp.url)
+        self.logger.debug(f'Collecting hostname for a property {urlparse(resp.url).path:<30} {resp.status_code} {resp.url}')
         if resp.status_code == 200:
             self.property_name = resp.json()['propertyName']
             # print_json(data=resp.json())
@@ -371,7 +374,7 @@ class Papi(AkamaiSession):
                 stg_version = max(dd['propertyVersion'])
             if prd_version == 0:
                 prd_version = max(dd['propertyVersion'])
-        logger.info(f'Found {items[0]["propertyName"]:<40} staging:production v{stg_version}:v{prd_version}')
+        self.logger.info(f'Found {items[0]["propertyName"]:<40} staging:production v{stg_version}:v{prd_version}')
         return stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):
@@ -380,7 +383,7 @@ class Papi(AkamaiSession):
         self.headers['Accept'] = 'application/vnd.akamai.papirules.latest+json'
 
         ruletree_response = self.session.get(url, headers=self.headers)
-        logger.debug(f'{urlparse(resp.url).path:<30} {resp.status_code}')
+        self.logger.debug(f'{urlparse(resp.url).path:<30} {resp.status_code}')
         if resp.status_code == 200:
 
             self.property_name = ruletree_response.json()['propertyName']
@@ -391,41 +394,44 @@ class Papi(AkamaiSession):
     # RULETREE
     def property_ruletree(self, property_id: int, version: int, remove_tags: list | None = None):
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
+        self.contract_id = self.get_property_version_full_detail(property_id, version, 'contractId')
+        self.group_id = self.get_property_version_full_detail(property_id, version, 'groupId')
         params = {'contractId': self.contract_id,
                   'groupId': self.group_id,
                   'validateRules': 'true',
                   'validateMode': 'full',
                  }
         resp = self.session.get(url, headers=self.headers, params=params)
-        logger.debug(f'{resp.status_code} {resp.url} {params} {self.headers}')
+
         if resp.status_code == 200:
             # tags we are not interested to compare
             self.property_name = resp.json()['propertyName']
             ignore_keys = ['etag', 'errors', 'warnings', 'ruleFormat', 'comments',
-                        'accountId', 'contractId', 'groupId',
-                        'propertyId', 'propertyName', 'propertyVersion']
+                           'accountId', 'contractId', 'groupId',
+                           'propertyId', 'propertyName', 'propertyVersion']
             if remove_tags is not None:
                 addl_keys = [tag for tag in remove_tags]
                 if addl_keys is not None:
                     ignore_keys = ignore_keys + addl_keys
-            logger.debug(f'{ignore_keys}')
+            self.logger.debug(f'{ignore_keys}')
             mod_resp = remap(resp.json(), lambda p, k, v: k not in ignore_keys)
-            logger.debug(params)
-            logger.debug(resp.status_code)
-            logger.debug(mod_resp)
+            self.logger.debug(params)
+            self.logger.debug(resp.status_code)
+            self.logger.debug(mod_resp)
             return 200, mod_resp
         else:
+            self.logger.info(f'{resp.status_code} {self.contract_id} {self.group_id} {resp.url}')
             return resp.status_code, resp.json()
 
     def get_ruleformat_schema(self, product_id: str, format_version: str | None = 'latest'):
         url = self.form_url(f'{self.MODULE}/schemas/products/{product_id}/{format_version}')
-        logger.debug(url)
+        self.logger.debug(url)
         resp = self.session.get(url, headers=self.headers)
         return resp.status_code, resp.json()
 
     def list_ruleformat(self):
         url = self.form_url(f'{self.MODULE}/rule-formats')
-        logger.debug(url)
+        self.logger.debug(url)
         resp = self.session.get(url, headers=self.headers)
         if resp.status_code == 200:
             return resp.status_code, resp.json()['ruleFormats']['items']
@@ -452,15 +458,15 @@ class Papi(AkamaiSession):
         payload['propertyVersion'] = version
         payload['note'] = note[0]
         payload['notifyEmails'] = emails
-        logger.debug(payload)
-        logger.debug(self.headers)
+        self.logger.debug(payload)
+        self.logger.debug(self.headers)
 
         resp = self.session.post(url, json=payload, headers=self.headers)
-        logger.debug(resp.url)
+        self.logger.debug(resp.url)
         if resp.status_code == 201:
             return resp.status_code, resp.json()['activationLink']
         elif resp.status_code == 422:  # pending activation or deactivation.
-            logger.critical(resp.json()['detail'])
+            self.logger.critical(resp.json()['detail'])
             return resp.status_code, resp.json()['detail']
         elif resp.status_code == 429:  # Hit rate limit
             return resp.status_code, resp.json()['title']
@@ -479,7 +485,7 @@ class Papi(AkamaiSession):
     def list_custom_behaviors(self):
         url = self.form_url(f'{self.MODULE}/custom-behaviors')
         resp = self.session.get(url, headers=self.headers)
-        logger.debug(resp.status_code)
+        self.logger.debug(resp.status_code)
         if resp.status_code == 200:
             return resp.status_code, resp.json()['customBehaviors']['items']
         else:

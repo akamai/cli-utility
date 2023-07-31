@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import sys
@@ -10,10 +11,9 @@ from pathlib import Path
 import requests
 from akamai.edgegrid import EdgeGridAuth
 from akamai.edgegrid import EdgeRc
-from utils import _logging as lg
 
 
-logger = lg.setup_logger()
+logger = logging.getLogger(__name__)
 
 
 class AkamaiSession:

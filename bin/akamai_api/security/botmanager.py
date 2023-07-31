@@ -2,6 +2,7 @@
 # https://techdocs.akamai.com/bot-manager/reference/api-summary
 from __future__ import annotations
 
+import logging
 import sys
 
 from akamai_api.edge_auth import AkamaiSession
@@ -11,11 +12,9 @@ from utils import _logging as lg
 from utils import files
 
 
-logger = lg.setup_logger()
-
-
 class BotManager(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None):
+    def __init__(self, account_switch_key: str | None = None, section: str | None = None,
+                logger: logging.Logger = None):
         super().__init__(account_switch_key=account_switch_key, section=section)
         self.MODULE = f'{self.base_url}/appsec/v1'
         self.headers = {'Accept': 'application/json',
@@ -24,6 +23,7 @@ class BotManager(AkamaiSession):
         self.group_id = self.group_id
         self.config_id = None
         self.account_switch_key = account_switch_key
+        self.logger = logger
 
     def get_all_akamai_bot_catagories(self):
         url = self.form_url(f'{self.MODULE}/akamai-bot-categories')

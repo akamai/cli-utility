@@ -1,3 +1,4 @@
+# https://medium.com/@rahulkumar_33287/logger-error-versus-logger-exception-4113b39beb4b
 from __future__ import annotations
 
 import json
@@ -16,7 +17,16 @@ import coloredlogs
 from utils.cli_formatter import CLIFormatter
 
 
-def setup_logger():
+custom_level_styles = {
+    'debug': {'color': 'blue'},
+    'info': {'color': 'white'},
+    'warning': {'color': 'yellow'},
+    'error': {'color': 'red'},
+    'critical': {'color': 'magenta'},
+}
+
+
+def setup_logger(args):
     # Create folders and copy config json when running via Akamai CLI
     Path('logs').mkdir(parents=True, exist_ok=True)
     Path('config').mkdir(parents=True, exist_ok=True)
@@ -33,8 +43,27 @@ def setup_logger():
     dictConfig(log_cfg)
     logging.Formatter.converter = time.gmtime
 
-    logger = logging.getLogger(__name__)
-    coloredlogs.install(logger=logger, fmt='%(levelname)-7s: %(message)s')
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Set up colored console logs using coloredlogs library
+    coloredlogs.install(
+        logger=logger,
+        level=args.log_level.upper(),
+        level_styles=custom_level_styles,
+        # fmt='%(asctime)s %(levelname)-8s: %(message)s',
+        fmt='%(levelname)-8s: %(message)s',
+        field_styles={
+            'asctime': {'color': 'black'},
+            'levelname': {'color': 'black', 'bold': True},
+        },
+    )
+
+    # Use a RotatingFileHandler instead of FileHandler
+    log_handler = logging.handlers.RotatingFileHandler('logs/utility.log', maxBytes=1024*1024, backupCount=5)
+    log_handler.setLevel(logging.DEBUG)
+    logger.addHandler(log_handler)
+
     return logger
 
 
@@ -69,31 +98,10 @@ def get_cli_root_directory():
         return os.getcwd()
 
 
-def _elapse_time(start_time: time, msg: str) -> None:
-    end_time = time.perf_counter()
-    elapse_time = str(strftime('%H:%M:%S', gmtime(end_time - start_time)))
-    setup_logger().info(f'{msg}: {elapse_time}')
-
-
-# https://medium.com/@rahulkumar_33287/logger-error-versus-logger-exception-4113b39beb4b
-def log_df(logger, level, df, headers: str) -> None:
-    if level == 'debug':
-        pass
-    elif level == 'error':
-        sys.exit(logger.error(f'{headers}\n{df}'))
-    elif level == 'warning':
-        logger.warning(f'{headers}\n{df}')
-    elif level == 'critical':
-        logger.critical(f'{headers}\n{df}')
-    else:
-        logger.info(f'{headers}\n{df}')
-
-
-def countdown(time_sec: int, msg: str):
-    print()
+def countdown(time_sec: int, msg: str, logger=None):
     time_min = int(time_sec / 60)
     msg = f'{msg} {time_min} minutes count down'
-    setup_logger().critical(msg)
+    logger.critical(msg)
     while time_sec:
         mins, secs = divmod(time_sec, 60)
         timeformat = f'{mins:02d}:{secs:02d}'

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
-from utils import _logging as lg
 
-logger = lg.setup_logger()
+
+logger = logging.getLogger(__name__)
 
 
 def explode(df, column_1: str, column_2: str, new_column: str) -> pd.DataFrame:

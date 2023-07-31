@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 
 import numpy as np
@@ -11,14 +12,15 @@ from rich import print_json
 from utils import _logging as lg
 from utils import dataframe
 
-logger = lg.setup_logger()
-
 
 class AppsecWrapper(Appsec):
     def __init__(self, account_switch_key: str | None = None,
                  section: str | None = None,
-                 cookies: str | None = None):
+                 cookies: str | None = None,
+                 logger: logging.Logger = None):
+
         super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
+        self.logger = logger
 
     def get_config_detail(self, config_id: int):
         return super().get_config_detail(config_id)
@@ -44,22 +46,24 @@ class AppsecWrapper(Appsec):
 
 class NetworkListWrapper(NetworkList):
     def __init__(self, account_switch_key: str | None = None,
-                 section: str | None = None):
+                 section: str | None = None,
+                 logger: logging.Logger = None):
         super().__init__()
         self.account_switch_key = account_switch_key
+        self.logger = logger
 
     def get_all_network_list(self):
         return super().get_all_network_list()
 
     def get_network_list(self, ids):
-        logger.debug(ids)
+        self.logger.debug(ids)
         if isinstance(ids, str):
             status, result = super().get_network_list(ids)
             if status == 200:
                 try:
                     return sorted(result['list'])
                 except:
-                    logger.error(f' {ids:<40} has no IPs')
+                    self.logger.error(f'{ids:<40} has no IPs')
                     return ['None']
         elif isinstance(ids, list):
             all_ips = []
@@ -69,16 +73,18 @@ class NetworkListWrapper(NetworkList):
                     try:
                         all_ips.extend(result['list'])
                     except:
-                        logger.error(f' {id:<40} has no IPs')
+                        self.logger.error(f'{id:<40} has no IPs')
                         return ['None']
             return sorted(all_ips)
 
 
 class BotManagerWrapper(BotManager):
     def __init__(self, account_switch_key: str | None = None,
-                 section: str | None = None):
+                 section: str | None = None,
+                 logger: logging.Logger = None):
         super().__init__()
         self.account_switch_key = account_switch_key
+        self.logger = logger
 
     def get_all_akamai_bot_catagories(self):
         status, response = super().get_all_akamai_bot_catagories()
@@ -147,10 +153,10 @@ class BotManagerWrapper(BotManager):
             try:
                 columns = data[0].keys()
             except:
-                logger.critical(f'{feature:<40} no data')
+                self.logger.critical(f'{feature:<40} no data')
                 return pd.DataFrame()
 
-            logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
+            self.logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
             if 'description' in df.columns:
                 del df['description']
@@ -163,11 +169,11 @@ class BotManagerWrapper(BotManager):
             # extract conditions column
             all_keys = dataframe.extract_keys(df['conditions'].sum())
             columns_to_explode = list(all_keys)
-            logger.debug(columns_to_explode)
+            self.logger.debug(columns_to_explode)
 
             for key in all_keys:
                 df[key] = df['conditions'].apply(lambda x: [d.get(key) for d in x])
-            logger.debug(f'\n{df[columns_to_explode]}')
+            self.logger.debug(f'\n{df[columns_to_explode]}')
 
             exploded_data = exploded_data = dataframe.explode_cell(df, 'conditions', columns_to_explode)
             exploded_df = pd.DataFrame(exploded_data)
@@ -199,10 +205,10 @@ class BotManagerWrapper(BotManager):
             try:
                 columns = data[0].keys()
             except:
-                logger.critical(f'{feature:<40} no data')
+                self.logger.critical(f'{feature:<40} no data')
                 return pd.DataFrame()
 
-            logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
+            self.logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
             df['rule_name'] = df['name']
             del df['name']
@@ -232,9 +238,9 @@ class BotManagerWrapper(BotManager):
             try:
                 columns = data[0].keys()
             except:
-                logger.critical(f'{feature:<40} no data')
+                self.logger.critical(f'{feature:<40} no data')
                 return pd.DataFrame()
-            logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
+            self.logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
             original_keys = df.columns.tolist()
             if 'conditions' not in original_keys:
@@ -250,7 +256,7 @@ class BotManagerWrapper(BotManager):
                 if all_keys is None:
                     return pd.DataFrame()
                 else:
-                    logger.debug(columns_to_explode)
+                    self.logger.debug(columns_to_explode)
                     for key in all_keys:
                         df[key] = df['conditions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
@@ -270,17 +276,17 @@ class BotManagerWrapper(BotManager):
             try:
                 columns = data[0].keys()
             except:
-                logger.critical(f'{feature:<40} no data')
+                self.logger.critical(f'{feature:<40} no data')
                 return []
 
-            logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
+            self.logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
 
             if 'additionalMatchOptions' not in df.columns.tolist():
                 return df
             else:
                 original_keys = df.columns.tolist()
-                logger.debug(original_keys)
+                self.logger.debug(original_keys)
                 original_keys.remove('additionalMatchOptions')
                 original_keys.remove('type')
 
@@ -288,7 +294,7 @@ class BotManagerWrapper(BotManager):
                 df['additionalMatchOptions_count'] = df['additionalMatchOptions'].apply(lambda x: len(x) if isinstance(x, list) else 0)
                 all_keys = dataframe.extract_keys(df['additionalMatchOptions'].dropna().sum())
                 columns_to_explode = list(all_keys)
-                logger.debug(columns_to_explode)
+                self.logger.debug(columns_to_explode)
 
                 for key in all_keys:
                     df[key] = df['additionalMatchOptions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
@@ -313,16 +319,16 @@ class BotManagerWrapper(BotManager):
             try:
                 columns = data[0].keys()
             except:
-                logger.critical(f'{feature:<40} no data')
+                self.logger.critical(f'{feature:<40} no data')
                 return pd.DataFrame()
 
-            logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
+            self.logger.debug(f'{feature:<40} {len(columns):<5} {columns}')
             df = pd.json_normalize(data)
             df['policyId'] = df['securityPolicy.policyId']
             del df['securityPolicy.policyId']
 
             original_keys = df.columns.tolist()
-            logger.debug(original_keys)
+            self.logger.debug(original_keys)
 
             if 'bypassNetworkLists' not in original_keys:
                 return df
@@ -337,12 +343,12 @@ class BotManagerWrapper(BotManager):
                 # extract conditions column
                 all_keys = dataframe.extract_keys(df['bypassNetworkLists'].dropna().sum())
                 columns_to_explode = list(all_keys)
-                logger.debug(all_keys)
+                self.logger.debug(all_keys)
 
                 for key in all_keys:
                     df[key] = df['bypassNetworkLists'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
-                logger.debug(f'\n{df[columns_to_explode]}')
+                self.logger.debug(f'\n{df[columns_to_explode]}')
 
                 exploded_data = dataframe.explode_cell(df, 'bypassNetworkLists', columns_to_explode)
                 exploded_df = pd.DataFrame(exploded_data)
@@ -351,7 +357,7 @@ class BotManagerWrapper(BotManager):
                                                             if row['listType'] == 'NL' else '', axis=1)
                 exploded_df['IPs'] = exploded_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
                                                             if row['listType'] == 'NL' else '', axis=1)
-                logger.debug(f'\n{exploded_df}')
+                self.logger.debug(f'\n{exploded_df}')
                 exploded_df = exploded_df.rename(columns={'id': 'bypassNetworkListsId'})
 
                 original_keys.remove('policyId')
@@ -405,7 +411,7 @@ class BotManagerWrapper(BotManager):
 
         df = pd.json_normalize(data)
         original_keys = df.columns.tolist()
-        logger.debug(original_keys)
+        self.logger.debug(original_keys)
         if 'conditionalActions' not in original_keys:
             return df, pd.DataFrame(), pd.DataFrame()
         else:
@@ -423,7 +429,7 @@ class BotManagerWrapper(BotManager):
                 for key in all_keys:
                     df[key] = df['conditionalActions'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
-                logger.debug(f'\n{df[columns_to_explode]}')
+                self.logger.debug(f'\n{df[columns_to_explode]}')
 
                 exploded_data = dataframe.explode_cell(df, 'conditionalActions', columns_to_explode)
                 exploded_df = pd.DataFrame(exploded_data)
@@ -436,13 +442,13 @@ class BotManagerWrapper(BotManager):
                     col_2 = ['conditionalActions_count', 'conditionalActions'] + ['actionId', 'actionName', 'defaultAction', 'conditionalActionRules', 'description']
                     if 'description' not in all_keys:
                         col_2.remove('description')
-                        logger.debug(col_2)
+                        self.logger.debug(col_2)
                     columns = col_1 + col_2 + ['conditionalActionRules_count']
 
                     exploded_df['conditionalActionRules_count'] = exploded_df['conditionalActionRules'].apply(lambda x: len(x) if isinstance(x, list) else 0)
                     all_keys = dataframe.extract_keys(exploded_df['conditionalActionRules'].dropna().sum())
                     columns_to_explode = list(all_keys)
-                    logger.debug(columns_to_explode)
+                    self.logger.debug(columns_to_explode)
                     for key in all_keys:
                         exploded_df[key] = exploded_df['conditionalActionRules'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
 
@@ -467,7 +473,7 @@ class BotManagerWrapper(BotManager):
                                                             if row['type'] == 'networkListCondition' else '', axis=1)
                     conditions_df['IPs'] = conditions_df.apply(lambda row: dataframe.split_elements_newline(row['IPs'])
                                                             if row['type'] == 'networkListCondition' else '', axis=1)
-                    logger.debug(conditions_df[cols])
+                    self.logger.debug(conditions_df[cols])
                     return exploded_df[columns], new_df, conditions_df[cols]
 
     def process_rulesets(self, data):
@@ -508,7 +514,7 @@ class BotManagerWrapper(BotManager):
         df['attackGroups_count'] = df['attackGroups'].apply(lambda x: len(x) if isinstance(x, list) else 0)
         all_keys = dataframe.extract_keys(df['attackGroups'].dropna().sum())
         # col = ['attackGroups', 'attackGroups_count']
-        # logger.info(df[col])
+        # self.logger.info(df[col])
 
         if all_keys:
             for key in all_keys:

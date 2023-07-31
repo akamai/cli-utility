@@ -5,6 +5,7 @@
 # https://github.com/python/cpython/blob/90f1d777177e28b6c7b8d9ba751550e373d61b0a/Lib/ssl.py#L1436
 from __future__ import annotations
 
+import logging
 import socket
 import ssl
 import time
@@ -13,7 +14,7 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 from utils import _logging as lg
 
-logger = lg.setup_logger()
+logger = logging.getLogger(__name__)
 
 
 def cert_decode_pem(pem_data):

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import concurrent.futures
 import copy
 import json
+import logging
 import re
+import time
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
@@ -12,17 +16,15 @@ from pandarallel import pandarallel
 from rich import print_json
 from rich.console import Console
 from rich.syntax import Syntax
-from utils import _logging as lg
 from utils import dataframe
 from utils import files
 
-logger = lg.setup_logger()
-
 
 class PapiWrapper(Papi):
-    def __init__(self, account_switch_key: str | None = None):
+    def __init__(self, account_switch_key: str | None = None,  logger: logging.Logger = None):
         super().__init__()
         self.account_switch_key = account_switch_key
+        self.logger = logger
 
     def get_contracts(self):
         contracts = super().get_contracts()
@@ -30,7 +32,7 @@ class PapiWrapper(Papi):
         df.sort_values(by=['contractId'], inplace=True)
         df.reset_index(inplace=True, drop=True)
         sorted_contracts = sorted([contract['contractId'] for contract in contracts])
-        logger.info(f'{sorted_contracts=}')
+        self.logger.info(f'{sorted_contracts=}')
         return sorted_contracts
 
     def get_edgehostnames(self, contract_id: str, group_id: int):
@@ -142,7 +144,7 @@ class PapiWrapper(Papi):
             df.reset_index(inplace=True, drop=True)
             df.drop(['groupname'], axis=1, inplace=True)
             groups = df['groupId'].unique()
-            logger.debug(groups)
+            self.logger.debug(groups)
         else:
             groups = []
             df = pd.DataFrame()
@@ -154,7 +156,7 @@ class PapiWrapper(Papi):
             df = pd.DataFrame(groups)
             df['groupId'] = df['groupId'].astype(int)
             df = df[df['groupId'] == group_id]
-            logger.debug(f'Group Detail\n{df}')
+            self.logger.debug(f'Group Detail\n{df}')
             try:
                 group_name = df['groupName'].values[0]
             except:
@@ -169,7 +171,7 @@ class PapiWrapper(Papi):
             df.sort_values(by=['groupId'], inplace=True)
             # df['groupId'] = df['groupId'].astype(int)
             df = df[df['groupId'] == str(group_id)]
-            logger.debug(f'Group Detail\n{df}')
+            self.logger.debug(f'Group Detail\n{df}')
             try:
                 contract_id = df['contractIds'].values.tolist()[0]
             except:
@@ -219,7 +221,7 @@ class PapiWrapper(Papi):
         return len(properties)
 
     def get_propertyname_per_group(self, group_id: int, contract_id: str) -> list:
-        logger.debug(f'{group_id=} {contract_id=}')
+        self.logger.debug(f'{group_id=} {contract_id=}')
         properties_json = super().get_propertyname_per_group(group_id, contract_id)
         property_df = pd.DataFrame(properties_json)
         properties = []
@@ -228,9 +230,12 @@ class PapiWrapper(Papi):
         return properties
 
     def get_properties_detail_per_group(self, group_id: int, contract_id: str) -> pd.DataFrame:
-        logger.debug(f'{group_id=} {contract_id=}')
+        self.logger.debug(f'{group_id=} {contract_id=}')
         properties_json = super().get_propertyname_per_group(group_id, contract_id)
         property_df = pd.DataFrame(properties_json)
+        if not property_df.empty:
+            property_df = property_df.sort_values(by='propertyName')
+            self.logger.debug(property_df)
         if 'note' in property_df.columns:
             del property_df['note']
         return property_df
@@ -246,28 +251,28 @@ class PapiWrapper(Papi):
                 if len(contracts) > 1:
                     count = 0
                     for i, contract_id in enumerate(contracts, 1):
-                        logger.debug(f'{group_name} {group_id} {contract_id}')
+                        self.logger.debug(f'{group_name} {group_id} {contract_id}')
                         properties = super().get_propertyname_per_group(group_id, contract_id)
                         count += len(properties)
 
                         if not bool(properties):
-                            logger.debug(f'{group_name} {group_id} {contracts[0]} {properties} no property')
+                            self.logger.debug(f'{group_name} {group_id} {contracts[0]} {properties} no property')
                         else:
-                            logger.debug(f'Collecting properties for {group_name:<50} {group_id:<10} {contract_id:<10}')
+                            self.logger.debug(f'Collecting properties for {group_name:<50} {group_id:<10} {contract_id:<10}')
                             property_df = pd.DataFrame(properties)
                             df_list.append(property_df)
                     property_count[group_id] = count
                 elif len(contracts) == 1:
-                    logger.debug(f'Collecting properties for {group_name:<50} {group_id:<10} {contracts[0]:<10}')
+                    self.logger.debug(f'Collecting properties for {group_name:<50} {group_id:<10} {contracts[0]:<10}')
                     properties = self.get_propertyname_per_group(group_id, contracts[0])
                     property_count[group_id] = len(properties)
                     if not bool(properties):
-                        logger.debug(f'{group_name} {group_id} {contracts[0]} {properties} no property')
+                        self.logger.debug(f'{group_name} {group_id} {contracts[0]} {properties} no property')
                     else:
                         property_df = pd.DataFrame(properties)
                         df_list.append(property_df)
         else:
-            logger.debug(f'Collecting properties for {group_id=} {contract_id=}')
+            self.logger.debug(f'Collecting properties for {group_id=} {contract_id=}')
             properties = self.get_propertyname_per_group(group_id, contract_id)
             property_count[group_id] = len(properties)
             property_df = pd.DataFrame(properties)
@@ -312,11 +317,21 @@ class PapiWrapper(Papi):
             if pd.notnull(row['productionVersion']) else row['latestVersion'],
             'ruleFormat'), axis=1)
         '''
-        logger.debug(f'{property_id} {version} {dict_key}')
-        detail = super().get_property_version_detail(property_id, version)
+        self.logger.debug(f'{property_id} {version} {dict_key}')
+        detail = super().get_property_version_detail(property_id, int(version))
+        if dict_key == 'updatedDate':
+            try:
+                propertyName = detail['propertyName']
+            except:
+                print_json(data=detail)
+            assetId = detail['assetId'][4:]
+            gid = detail['groupId'][4:]
+            acc_url = f'https://control.akamai.com/apps/property-manager/#/property-version/{assetId}/{version}/edit?gid={gid}'
+            self.logger.info(f'{propertyName:<46} {acc_url}')
         try:
-            return detail[0][dict_key]
+            return detail['versions']['items'][0][dict_key]
         except:
+            print_json(data=detail)
             return property_id
 
     def find_name_and_xml(self, json_data, target_data, grandparent=None, parent=None):
@@ -374,12 +389,12 @@ class PapiWrapper(Papi):
             xml_1 = properties[first][0][rule]
         except KeyError:
             xml_1 = 0
-            logger.info(f' {rule:<30} not found in {first}')
+            self.logger.info(f' {rule:<30} not found in {first}')
         try:
             xml_2 = properties[second][0][rule]
         except KeyError:
             xml_2 = 0
-            logger.info(f' {rule:<30} not found in {second}')
+            self.logger.info(f' {rule:<30} not found in {second}')
         return xml_1 == xml_2
 
     # WHOLE ACCOUNT
@@ -387,7 +402,7 @@ class PapiWrapper(Papi):
         status_code, all_groups = self.get_all_groups()
         if status_code == 200:
             df = self.create_groups_dataframe(all_groups)
-            logger.debug(df)
+            self.logger.debug(df)
         else:
             return None, None
 
@@ -435,7 +450,7 @@ class PapiWrapper(Papi):
         else:
             columns = ['index_1', 'updated_path', 'groupName', 'groupId', 'contractId', 'propertyCount'] + levels
 
-        allgroups_df['updated_path'] = allgroups_df.apply(lambda row: self.update_path(allgroups_df, row, column_name='path'), axis=1)
+        allgroups_df['updated_path'] = allgroups_df.parallel_apply(lambda row: self.update_path(allgroups_df, row, column_name='path'), axis=1)
         allgroups_df['index_1'] = allgroups_df.index
         allgroups_df = allgroups_df[columns].copy()
         first_non_empty = allgroups_df.replace('', np.nan).ffill(axis=1).iloc[:, -1]
@@ -443,8 +458,8 @@ class PapiWrapper(Papi):
         allgroups_df['excel_sheet'] = np.where(first_non_empty == '', allgroups_df['L0'], first_non_empty)
 
         pattern = r'[A-Z0-9]-[A-Z0-9]+'
-        allgroups_df['excel_sheet'] = allgroups_df['excel_sheet'].apply(lambda x: re.sub(pattern, '', x))
-        allgroups_df['excel_sheet'] = allgroups_df['excel_sheet'].apply(lambda x: files.prepare_excel_sheetname(x))
+        allgroups_df['excel_sheet'] = allgroups_df['excel_sheet'].parallel_apply(lambda x: re.sub(pattern, '', x))
+        allgroups_df['excel_sheet'] = allgroups_df['excel_sheet'].parallel_apply(lambda x: files.prepare_excel_sheetname(x))
         allgroups_df = allgroups_df.sort_values(by='excel_sheet')
         allgroups_df = allgroups_df.reset_index(drop=True)
         columns = columns + ['excel_sheet']
@@ -471,47 +486,95 @@ class PapiWrapper(Papi):
         allgroups_df = allgroups_df[columns].copy()
         return allgroups_df, columns
 
-    def property_summary(self, df: pd.DataFrame) -> list:
+    def property_summary_x(self, df: pd.DataFrame) -> list:
         account_properties = []
         for index, row in df.iterrows():
-            msg = f"{index:<5} {row['groupId']:<12} {row['groupName']:<50}"
+            msg = f"{index:<5} {row['groupId']:<12} {row['group_structure']:<130}"
             if row['propertyCount'] == 0:
-                logger.info(f'{msg} no property to collect')
+                self.logger.info(f'{msg} no property to collect')
             else:
-                logger.info(f"{msg} {row['propertyCount']:>5}")
+                self.logger.warning(f"{msg} {row['propertyCount']:>5} properties")
                 properties = self.get_properties_detail_per_group(row['groupId'], row['contractId'])
+
                 if not properties.empty:
                     properties['propertyId'] = properties['propertyId'].astype('Int64')
                     properties['groupName'] = row['groupName']  # add group name
 
-                    logger.debug(' Collecting hostname')
+                    self.logger.debug(' Collecting hostname')
                     properties['hostname'] = properties[['propertyId']].parallel_apply(lambda x: self.get_property_hostnames(*x), axis=1)
                     properties['hostname_count'] = properties['hostname'].str.len()
                     # show one hostname per list and remove list syntax
                     # properties['hostname'] = properties[['hostname']].parallel_apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
-                    logger.debug(properties.head(5)['hostname'])
-                    properties['hostname'] = properties[['hostname']].parallel_apply(lambda x: dataframe.split_elements_newline(x[0])
-                                                        if len(x[0]) > 0 else '', axis=1)
+                    self.logger.debug(properties.head(5)['hostname'])
 
-                    logger.debug(' Collecting updatedDate')
-                    properties['updatedDate'] = properties.apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
-
-                    logger.debug(' Collecting productId')
+                    self.logger.debug(' Collecting productId')
                     properties['productId'] = properties.parallel_apply(
                         lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
                                                                     if pd.notnull(row['productionVersion']) else row['latestVersion'],
                                                                     'productId'), axis=1)
-                    logger.debug(' Collecting ruleFormat')
+                    self.logger.debug(' Collecting ruleFormat')
                     properties['ruleFormat'] = properties.parallel_apply(
                         lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
                                                                     if pd.notnull(row['productionVersion']) else row['latestVersion'],
                                                                     'ruleFormat'), axis=1)
 
-                    logger.debug(' Collecting property url')
-                    properties['propertyURL'] = properties.apply(lambda row: self.property_url(row['assetId'], row['groupId']), axis=1)
-                    properties['url'] = properties.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
+                    self.logger.debug(' Collecting property url')
+                    properties['propertyURL'] = properties.parallel_apply(lambda row: self.property_url(row['assetId'], row['groupId']), axis=1)
+                    properties['url'] = properties.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
+
+                    self.logger.debug(' Collecting updatedDate')
+                    # pandarallel.initialize(progress_bar=True, nb_workers=1, verbose=0)
+                    properties['updatedDate'] = properties.parallel_apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
 
                     account_properties.append(properties)
+        return account_properties
+
+    def property_summary(self, df: pd.DataFrame) -> list:
+        account_properties = []
+
+        def process_row(row):
+            msg = f"{row.name:<5} {row['groupId']:<12} {row['group_structure']}"
+            if row['propertyCount'] == 0:
+                self.logger.info(f'{msg} no property to collect')
+            else:
+                total = f"{row['propertyCount']:<5} properties"
+                self.logger.warning(f'{total:<20} {msg}')
+                properties = self.get_properties_detail_per_group(row['groupId'], row['contractId'])
+
+                if not properties.empty:
+                    properties['propertyId'] = properties['propertyId'].astype('Int64')
+                    properties['groupName'] = row['groupName']
+
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                        # 'collecting hostname'
+                        properties['hostname'] = list(executor.map(self.get_property_hostnames, properties['propertyId']))
+                        properties['hostname_count'] = properties['hostname'].str.len()
+                        time.sleep(3)
+
+                        # 'collecting productId'
+                        properties['productId'] = list(executor.map(self.get_property_version_detail, properties['propertyId'],
+                                                                    properties['productionVersion'].fillna(properties['latestVersion']),
+                                                                    ['productId'] * len(properties)))
+
+                        # 'collecting ruleFormat'
+                        properties['ruleFormat'] = list(executor.map(self.get_property_version_detail, properties['propertyId'],
+                                                                    properties['productionVersion'].fillna(properties['latestVersion']),
+                                                                    ['ruleFormat'] * len(properties)))
+                        time.sleep(3)
+
+                        # 'collecting property url'
+                        properties['propertyURL'] = list(executor.map(self.property_url, properties['assetId'], properties['groupId']))
+                        properties['url'] = list(executor.map(files.make_xlsx_hyperlink_to_external_link,
+                                                              properties['propertyURL'], properties['propertyName']))
+
+                        # 'collecting updatedDate'
+                        properties['updatedDate'] = list(executor.map(self.get_property_version_detail, properties['propertyId'],
+                                                                    properties['latestVersion'],
+                                                                    ['updatedDate'] * len(properties)))
+                        time.sleep(3)
+
+                    account_properties.append(properties)
+        df.apply(process_row, axis=1)
         return account_properties
 
     # RULETREE
@@ -531,7 +594,7 @@ class PapiWrapper(Papi):
         if status == 200:
             return ruletree
         else:
-            logger.error(f'{property_id=} {version}')
+            self.logger.error(f'{property_id=} {version} {status}')
             return 'XXX'
 
     def get_property_behavior(self, data: dict) -> list:
@@ -551,7 +614,7 @@ class PapiWrapper(Papi):
 
         ruletree_json = self.get_property_ruletree(property_id, version)
         title = f'{self.property_name}_v{version}'
-        logger.debug(f'{self.property_name} {property_id=}')
+        self.logger.debug(f'{self.property_name} {property_id=}')
         files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree_json)
 
         with open(f'output/ruletree/{title}_ruletree.json') as f:
@@ -562,10 +625,10 @@ class PapiWrapper(Papi):
         self.find_name_and_openxml(ruletree_json, target_data)
         xml_data = {}
         for index, item in enumerate(target_data):
-            logger.debug(item)
+            self.logger.debug(item)
             xml_data[item['name']] = f"{item['openXml']}{item['closeXml']}"
             if displayxml:
-                logger.warning(f"{index:>3}: {item['name']}")
+                self.logger.warning(f"{index:>3}: {item['name']}")
                 print()
                 xml_str = f"{item['openXml']}{item['closeXml']}"
                 syntax = Syntax(xml_str, 'xml', theme='solarized-dark', line_numbers=showlineno)
@@ -580,7 +643,7 @@ class PapiWrapper(Papi):
                                            showlineno: bool | None = False) -> dict:
         ruletree_json = self.get_property_ruletree(property_id, version)
         title = f'{self.property_name}_v{version}'
-        logger.debug(f'{self.property_name} {property_id=}')
+        self.logger.debug(f'{self.property_name} {property_id=}')
         Path('output/ruletree').mkdir(parents=True, exist_ok=True)
         files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree_json)
 
@@ -598,7 +661,7 @@ class PapiWrapper(Papi):
         for index, item in enumerate(target_data):
             xml_data[item['name']] = item['xml']
             if displayxml:
-                logger.warning(f"{index:>3}: {item['name']}")
+                self.logger.warning(f"{index:>3}: {item['name']}")
                 print()
                 syntax = Syntax(item['xml'], 'xml', theme='solarized-dark', line_numbers=showlineno)
                 console = Console()
@@ -688,23 +751,32 @@ class PapiWrapper(Papi):
 
     def collect_property_criteria(self, property_name: str, json: dict) -> pd.DataFrame:
         criteria = self.get_property_path_n_criteria(json)
-        flat = pd.json_normalize(criteria)
-
         dx = pd.DataFrame()
-        dx = pd.DataFrame(flat)
-        dx = dx.melt(var_name='path', value_name='json')
-        dx = dx.dropna(subset=['json'])
-        dx['property'] = property_name
+        if len(criteria) > 0:
+            flat = pd.json_normalize(criteria)
+            dx = pd.DataFrame(flat)
+            dx = dx.melt(var_name='path', value_name='json')
+            dx = dx.dropna(subset=['json'])
+            dx['property'] = property_name
 
         criteria = pd.DataFrame()
-        criteria = dx.explode('json').reset_index(drop=True)
-        criteria['type'] = 'criteria'
-        criteria['index'] = criteria.groupby(['property', 'path']).cumcount() + 1
-        criteria['name'] = criteria.apply(lambda row: f"{row['json']['name']}", axis=1)
-        criteria['json_or_xml'] = criteria.apply(lambda row: self.extract_criteria_json(row), axis=1)
-        criteria['path'] = criteria.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
-        columns = ['property', 'path', 'type', 'name', 'json_or_xml']
-        return criteria[columns]
+        if not dx.empty:
+            criteria = dx.explode('json').reset_index(drop=True)
+            criteria['type'] = 'criteria'
+            criteria['index'] = criteria.groupby(['property', 'path']).cumcount() + 1
+            try:
+                criteria['name'] = criteria.apply(lambda row: f"{row['json']['name']}", axis=1)
+            except:
+                print_json(data=json)
+                self.logger.warning(criteria)
+                self.logger.error(flat)
+
+        if not criteria.empty:
+            criteria['json_or_xml'] = criteria.apply(lambda row: self.extract_criteria_json(row), axis=1)
+            criteria['path'] = criteria.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
+            columns = ['property', 'path', 'type', 'name', 'json_or_xml']
+            return criteria[columns]
+        return criteria
 
     def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
         status, response = super().get_ruleformat_schema(product_id, format_version)
@@ -718,7 +790,7 @@ class PapiWrapper(Papi):
         rule_dict = rule_dict['definitions']['catalog']['behaviors']
         matching = [key for key in rule_dict if behavior.lower() in key.lower()]
         if not matching:
-            logger.critical(f'{behavior} not in catalog')
+            self.logger.critical(f'{behavior} not in catalog')
             return {}
         data = {key: rule_dict[key] for key in matching}
         return data
@@ -726,16 +798,16 @@ class PapiWrapper(Papi):
     def get_behavior_option(self, behavior_dict: dict, behavior: str) -> dict:
         matching = [key for key in behavior_dict if behavior.lower() in key.lower()]
         if not matching:
-            logger.critical(f'{behavior} not in catalog')
+            self.logger.critical(f'{behavior} not in catalog')
             return {}
         matched_key = matching[0]
         if 'options' not in behavior_dict[matched_key]['properties']:
-            logger.warning(f'{behavior} has no options')
+            self.logger.warning(f'{behavior} has no options')
             return {}
         else:
             value = behavior_dict[matched_key]['properties']['options']['properties']
             if not value:
-                logger.error(f'{behavior} has no options')
+                self.logger.error(f'{behavior} has no options')
                 print()
                 return value
             else:
@@ -743,7 +815,7 @@ class PapiWrapper(Papi):
 
     def check_behavior(self, behaviors: list, df: pd.DataFrame, cpcode):
         for behavior in behaviors:
-            logger.debug(behavior)
+            self.logger.debug(behavior)
             if behavior == 'origin':
                 df[behavior] = df.parallel_apply(lambda row: self.origin_value(row['propertyName'], row['ruletree']['rules']), axis=1)
                 df[f'{behavior}_count'] = df[behavior].str.len()
@@ -759,7 +831,7 @@ class PapiWrapper(Papi):
                     df[behavior] = df.parallel_apply(lambda row: self.custom_behavior_value(row['propertyName'], row['ruletree']['rules']), axis=1)
                     df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
                 except:
-                    logger.error(behavior)
+                    self.logger.error(behavior)
             elif behavior == 'cpcode':
                 df[behavior] = df.parallel_apply(lambda row: self.cpcode_value(row['propertyName'], row['ruletree']['rules']), axis=1)
                 df['cpcode_count'] = df[behavior].str.len()
@@ -789,8 +861,7 @@ class PapiWrapper(Papi):
                     parent_count += child_count
         return parent_count
 
-    @staticmethod
-    def cpcode_value(property_name: str, rules: dict):
+    def cpcode_value(self, property_name: str, rules: dict):
         values = []
 
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
@@ -799,7 +870,7 @@ class PapiWrapper(Papi):
                     try:
                         values.append(behavior['options']['value']['id'])
                     except:
-                        logger.error(f'{property_name} cpCode not found')
+                        self.logger.error(f'{property_name} cpCode not found')
                 elif behavior['name'] == 'failAction':  # Site Failover
                     try:
                         values.append(behavior['options']['cpCode']['id'])
@@ -819,12 +890,11 @@ class PapiWrapper(Papi):
 
             if 'children' in rules and isinstance(rules['children'], list):
                 for child_rule in rules['children']:
-                    child_values = PapiWrapper.cpcode_value(property_name, child_rule)
+                    child_values = self.cpcode_value(property_name, child_rule)
                     values.extend(child_values)
         return list(set(values))
 
-    @staticmethod
-    def custom_behavior_value(property_name: str, rules: dict):
+    def custom_behavior_value(self, property_name: str, rules: dict):
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -832,15 +902,14 @@ class PapiWrapper(Papi):
                     try:
                         values.append(behavior['options']['behaviorId'])
                     except:
-                        logger.error(f'{property_name:<40} behaviorId not found')
+                        self.logger.error(f'{property_name:<40} behaviorId not found')
             if 'children' in rules and isinstance(rules['children'], list):
                 for child_rule in rules['children']:
-                    child_values = PapiWrapper.custom_behavior_value(property_name, child_rule)
+                    child_values = self.custom_behavior_value(property_name, child_rule)
                     values.extend(child_values)
         return list(set(values))
 
-    @staticmethod
-    def origin_value(property_name: str, rules: dict):
+    def origin_value(self, property_name: str, rules: dict):
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -856,12 +925,11 @@ class PapiWrapper(Papi):
 
             if 'children' in rules and isinstance(rules['children'], list):
                 for child_rule in rules['children']:
-                    child_values = PapiWrapper.origin_value(property_name, child_rule)
+                    child_values = self.origin_value(property_name, child_rule)
                     values.extend(child_values)
         return sorted(list(set(values)))
 
-    @staticmethod
-    def siteshield_value(property_name: str, rules: dict):
+    def siteshield_value(self, property_name: str, rules: dict):
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -869,15 +937,14 @@ class PapiWrapper(Papi):
                     try:
                         values.append(behavior['options']['ssmap']['value'])
                     except:
-                        logger.error(f'{property_name:<40} siteShield not found')
+                        self.logger.error(f'{property_name:<40} siteShield not found')
             if 'children' in rules and isinstance(rules['children'], list):
                 for child_rule in rules['children']:
-                    child_values = PapiWrapper.siteshield_value(property_name, child_rule)
+                    child_values = self.siteshield_value(property_name, child_rule)
                     values.extend(child_values)
         return sorted(list(set(values)))
 
-    @staticmethod
-    def sureroute_value(property_name: str, rules: dict):
+    def sureroute_value(self, property_name: str, rules: dict):
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -885,10 +952,10 @@ class PapiWrapper(Papi):
                     try:
                         values.append(behavior['options']['ssmap']['srmap'])
                     except:
-                        logger.error(f'{property_name} sureRoute map not found')
+                        self.logger.error(f'{property_name} sureRoute map not found')
             if 'children' in rules and isinstance(rules['children'], list):
                 for child_rule in rules['children']:
-                    child_values = PapiWrapper.sureroute_value(property_name, child_rule)
+                    child_values = self.sureroute_value(property_name, child_rule)
                     values.extend(child_values)
         return sorted(list(set(values)))
 
@@ -900,7 +967,7 @@ class PapiWrapper(Papi):
                 activation_id = int(response.split('?')[0].split('/')[-1])
                 return int(activation_id)
             except:
-                logger.warning(activation_id)
+                self.logger.warning(activation_id)
                 return 0
         return status
 
@@ -908,11 +975,11 @@ class PapiWrapper(Papi):
 
         if activation_id > 0 and version > 0:
             status, response = super().activation_status(property_id, activation_id)
-            logger.debug(f'{activation_id=} {version=} {property_id=} {status}')
+            self.logger.debug(f'{activation_id=} {version=} {property_id=} {status}')
             df = pd.DataFrame(response)
-            logger.debug(f'BEFORE\n{df}')
+            self.logger.debug(f'BEFORE\n{df}')
             df = df[df['propertyVersion'] == version].copy()
-            logger.debug(f'FILTERED\n{df}')
+            self.logger.debug(f'FILTERED\n{df}')
             return df.status.values[0]
         else:
             return ' '

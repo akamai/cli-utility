@@ -2,6 +2,7 @@
 # https://techdocs.akamai.com/application-security/reference/api
 from __future__ import annotations
 
+import logging
 import sys
 
 from akamai_api.edge_auth import AkamaiSession
@@ -11,11 +12,10 @@ from utils import _logging as lg
 from utils import files
 
 
-logger = lg.setup_logger()
-
-
 class Appsec(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None):
+    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None,
+                logger: logging.Logger = None):
+
         super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
         self.MODULE = f'{self.base_url}/appsec/v1'
         self.headers = {'PAPI-Use-Prefixes': 'false',
@@ -26,10 +26,12 @@ class Appsec(AkamaiSession):
         self.config_id = None
         self.account_switch_key = account_switch_key
         self.cookies = self.cookies
+        self.logger = logger
 
     def list_waf_configs(self):
         url = self.form_url(f'{self.MODULE}/configs?includeHostnames=true&includeContractGroup=true')
         response = self.session.get(url, headers=self.headers)
+        # print_json(data=response.json())
         return response.status_code, response.json()['configurations']
 
     def get_config_detail(self, config_id: int):
@@ -48,7 +50,7 @@ class Appsec(AkamaiSession):
             addl_keys = [tag for tag in remove_tags]
             if addl_keys is not None:
                 ignore_keys = ignore_keys + addl_keys
-        logger.debug(f'{ignore_keys}')
+        self.logger.debug(f'{ignore_keys}')
 
         if resp.status_code == 200:
             mod_resp = remap(resp.json(), lambda p, k, v: k not in ignore_keys)
@@ -94,7 +96,7 @@ class Appsec(AkamaiSession):
             t = response.text
             u = response.url
             z = response.content
-            logger.error(f'{s} [{msg}] {u}')
+            self.logger.error(f'{s} [{msg}] {u}')
             # logger.debug(print_json(data=self.headers))
             # print_json(data=self.cookies)
             sys.exit()

@@ -4,9 +4,6 @@ import argparse
 import sys
 
 import rich_argparse as rap
-from utils import _logging as lg
-
-logger = lg.setup_logger()
 
 
 class OnelineArgumentFormatter(rap.ArgumentDefaultsRichHelpFormatter):
@@ -146,6 +143,12 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                   'required_arguments': [{'name': 'property', 'help': 'property name', 'nargs': '+'}],
                   'optional_arguments': [{'name': 'version', 'help': 'version'},
                                          {'name': 'no-show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'}]},
+                  {'name': 'netstorage',
+                  'help': 'get detail of net storage on property',
+                  'optional_arguments': [{'name': 'group-id', 'help': 'provide at least one groupId without prefix grp_ ', 'nargs': '+'},
+                                         {'name': 'property', 'help': 'provide at least one property name ', 'nargs': '+'},
+                                         {'name': 'output', 'help': 'output filename.extension ie akamai.xlsx'},
+                                         {'name': 'show', 'help': 'automatically launch Microsoft Excel after (Mac OS Only)', 'action': 'store_true'}]},
                   {'name': 'origin-cert',
                   'help': 'check certificate for all origin servers on property',
                   'optional_arguments': [{'name': 'group-id', 'help': 'provide at least one groupId without prefix grp_ ', 'nargs': '+'},
@@ -354,3 +357,8 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
             optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)
             optional.add_argument('-p', '--print-width', action='store_true', help=argparse.SUPPRESS)
             optional.add_argument('-v', '--verbose', action='store_true', help=argparse.SUPPRESS)
+            optional.add_argument('--log-level',
+                                  choices=['debug', 'info', 'warning', 'error', 'critical'],
+                                  default='warning',
+                                  help='Set the log level',
+                                 )
