@@ -5,19 +5,24 @@ from datetime import datetime
 
 import pytz
 from dateutil.relativedelta import relativedelta
-from utils._logging import setup_logger
 
 
-logger = setup_logger()
-
-
-def get_start_end():
+def get_start_end(interval: str, last: int, logger=None):
     end_date = date.today()
     end_datetime = datetime(year=end_date.year,
                                month=end_date.month,
                                day=end_date.day,
                                tzinfo=pytz.utc)
-    start = end_datetime + relativedelta(days=-90)
+
+    if interval == 'MONTH':
+        start = end_datetime + relativedelta(months=-last)
+    if interval == 'WEEK':
+        start = end_datetime + relativedelta(weeks=-last)
+    if interval == 'DAY':
+        start = end_datetime + relativedelta(days=-last)
+    if interval == 'HOUR':
+        start = end_datetime + relativedelta(hours=-last)
+
     end = end_datetime.isoformat().replace('+00:00', 'Z')
     start = start.isoformat().replace('+00:00', 'Z')
     print()

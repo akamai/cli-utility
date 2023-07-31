@@ -2,14 +2,15 @@
 # https://techdocs.akamai.com/cp-codes/reference/get-cpcode
 from __future__ import annotations
 
+import logging
+
 from akamai_api.edge_auth import AkamaiSession
 from utils import _logging as lg
 
-logger = lg.setup_logger()
-
 
 class CpCode(AkamaiSession):
-    def __init__(self, account_switch_key: str, contract_id: str | None = None, group_id: int | None = None):
+    def __init__(self, account_switch_key: str, contract_id: str | None = None, group_id: int | None = None,
+                 logger: logging.Logger = None):
         super().__init__(account_switch_key=account_switch_key)
         self._base_url = f'{self.base_url}/cprg/v1/'
         self.headers = {'Accept': 'application/json',
@@ -19,6 +20,7 @@ class CpCode(AkamaiSession):
         self.account_switch_key = account_switch_key
         self.contract_id = contract_id
         self.group_id = group_id
+        self.logger = logger
 
     def list_cpcode(self,
                     contract_id: str | None = None,

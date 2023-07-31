@@ -19,15 +19,11 @@ from rich import print_json
 from rich.console import Console
 from rich.table import Table
 from tabulate import tabulate
-from utils import _logging as lg
 from utils import files
 
 
-logger = lg.setup_logger()
-
-
-def all_reports(args):
-    rpt = Reporting(account_switch_key=args.account_switch_key)
+def all_reports(args, logger):
+    rpt = Reporting(account_switch_key=args.account_switch_key, logger=logger)
     data = rpt.list_report()
     df = pd.json_normalize(data)
 
@@ -64,11 +60,11 @@ def all_reports(args):
         subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' else None
 
 
-def offload_by_hostname(args):
+def offload_by_hostname(args, logger):
 
-    rpt = Reporting(account_switch_key=args.account_switch_key)
-    papi = Papi(account_switch_key=args.account_switch_key)
-    start, end = reporting.get_start_end()
+    rpt = Reporting(account_switch_key=args.account_switch_key, logger=logger)
+    papi = Papi(account_switch_key=args.account_switch_key, logger=logger)
+    start, end = reporting.get_start_end(args.interval, int(args.last), logger=logger)
     data = rpt.hits_by_hostname(start, end)
 
     df = pd.DataFrame(data)
@@ -94,10 +90,10 @@ def offload_by_hostname(args):
     subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' else None
 
 
-def offload_by_url(args):
+def offload_by_url(args, logger):
 
-    rpt = Reporting(account_switch_key=args.account_switch_key)
-    start, end = reporting.get_start_end()
+    rpt = Reporting(account_switch_key=args.account_switch_key, logger=logger)
+    start, end = reporting.get_start_end(args.interval, int(args.last), logger=logger)
     cpcode_list = args.cpcode
     logger.info(f'Report CpCodes are {" ".join(cpcode_list)}')
     status, data = rpt.hits_by_url(start, end, cpcode_list)
@@ -138,9 +134,9 @@ def offload_by_url(args):
     console.print(table)
 
 
-def traffic_by_response_class(args):
-    rpt = Reporting(args.output, account_switch_key=args.account_switch_key)
-    iam = IdentityAccessManagement(args.account_switch_key)
+def traffic_by_response_class(args, logger):
+    rpt = Reporting(args.output, account_switch_key=args.account_switch_key, logger=logger)
+    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
     account = iam.search_account_name(value=args.account_switch_key)[0]
     account = account.replace(' ', '_')
     print()
@@ -152,7 +148,7 @@ def traffic_by_response_class(args):
     if args.file and args.cpcode:
         sys.exit(logger.error('Please use either --file or --cpcode, not both'))
 
-    start, end = reporting.get_start_end()
+    start, end = reporting.get_start_end(args.interval, int(args.last), logger=logger)
     # use parallel_apply
     concurrency = int(args.concurrency)
     pandarallel.initialize(progress_bar=True, nb_workers=concurrency, verbose=0)
@@ -164,42 +160,23 @@ def traffic_by_response_class(args):
     elif args.file:
         sample = int(args.sample) if args.sample else None
         df = pd.read_csv(args.file, header=1, names=['cpcode'], dtype={'cpcode': str}, nrows=sample)
-
         df = df.drop_duplicates().copy()
         original_cpcode = df['cpcode'].unique()
         df = df.sort_values(by='cpcode')
         df = df.reset_index(drop=True)
+        logger.warning(f'\n{df}')
         df['api'] = df['cpcode'].parallel_apply(lambda x: rpt.traffic_by_response_class(start, end, args.interval, x))
-
-        # user mapply
-        '''
-        mapply.init(
-            n_workers=-concurrency,
-            chunk_size=1,
-            max_chunks_per_worker=2,
-            progressbar=True
-        )
-        df['api'] = df['cpcode'].mapply(lambda x:rpt.traffic_by_response_class(start, end, x))
-        '''
-        # use swifter
-        '''
-        processed_chunks = []
-        chunks = [df.iloc[i:i + concurrency] for i in range(0, len(df), concurrency)]
-        for i, chunk in enumerate(chunks):
-            chunk_copy = chunk.copy()
-            chunk_copy['api'] = chunk_copy.swifter.apply(lambda row: rpt.traffic_by_response_class(start, end, row['cpcode']), axis=1)
-            # chunk_copy['api'] = chunk_copy.swifter.progress_bar(False).apply(lambda row: rpt.traffic_by_response_class(start, end, row['cpcode']), axis=1)
-            processed_chunks.append(chunk_copy)
-            logger.info(f'{i:>3} {len(processed_chunks):>4}')
-
-        all_df = pd.concat(processed_chunks)
-        '''
     else:
-        df = rpt.traffic_by_response_class(start, end)
+        cpcodes = rpt.traffic_by_response_class(start, end, args.interval)['metadata']['objectIds']
+        original_cpcode = list(set(cpcodes))
+        logger.info(f'Found {len(cpcodes):,} cpcodes')
+        df = pd.DataFrame({'cpcode': cpcodes})
+        if args.sample:
+            df = df.head(int(args.sample))
+        df['api'] = df['cpcode'].parallel_apply(lambda x: rpt.traffic_by_response_class(start, end, args.interval, x))
 
     sheet = {}
     all_df = df.copy()
-    logger.debug(all_df.shape)
     all_df = all_df.reset_index(drop=True)
 
     # layout 1
@@ -218,11 +195,12 @@ def traffic_by_response_class(args):
     pivot_df = filtered_df.pivot_table(index='cpcode', columns='response_class', values=metrics, fill_value=0)
     pivot_df.columns = [f'{metric}_{col}' for metric, col in pivot_df.columns]
     pivot_df.reset_index(inplace=True)
-    logger.warning('Completed - Response class ')
-    cpc = cp.CpCodeWrapper(account_switch_key=args.account_switch_key)
+
     print()
     logger.warning('Collecting cpcode name')
+    logger.debug(f'\n{pivot_df}')
     pandarallel.initialize(progress_bar=False, verbose=0)
+    cpc = cp.CpCodeWrapper(account_switch_key=args.account_switch_key)
     pivot_df['cpcode_name'] = pivot_df['cpcode'].parallel_apply(lambda x: cpc.get_cpcode_name(x))
 
     '''
@@ -257,4 +235,4 @@ def traffic_by_response_class(args):
 
     filepath = f'{account_folder}/response_class.xlsx'
     files.write_xlsx(filepath, sheet, freeze_column=2) if not pivot_df.empty else None
-    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' else None
+    files.open_excel_application(filepath, show=True, df=pivot_df)

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from akamai_api.cpcode import CpCode
-from utils import _logging as lg
-
-logger = lg.setup_logger()
 
 
 class CpCodeWrapper(CpCode):
     def __init__(self, account_switch_key: str | None = None,
                  section: str | None = None):
+
         super().__init__(account_switch_key=account_switch_key)
         self.account_switch_key = account_switch_key
 

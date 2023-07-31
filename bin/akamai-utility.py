@@ -60,13 +60,13 @@ if __name__ == '__main__':
     if args.command == 'report':
         if args.subcommand == 'list':
             report.all_reports(args, logger)
-        elif args.subcommand == 'url-offload':
+        elif args.subcommand == 'offload-url':
             report.offload_by_url(args, logger)
+        elif args.subcommand == 'offload-hostname':
+            report.offload_by_hostname(args, logger)
         elif args.subcommand == 'response-class':
             report.traffic_by_response_class(args, logger)
             # report.traffic_by_response_class_async(args)
-        else:
-            report.offload_by_hostname(args, logger)
 
     if args.command == 'ruleformat':
         ruleformat.get_ruleformat_schema(args, logger)
