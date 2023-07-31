@@ -19,12 +19,11 @@ from utils import _logging as lg
 from utils import files
 
 
-logger = lg.setup_logger()
 cwd = Path().absolute()
 
 
-def list_ruleformat() -> list:
-    papi = Papi()
+def list_ruleformat(logger) -> list:
+    papi = Papi(logger=logger)
     _, formats = papi.list_ruleformat()
     if 'latest' in formats:
         formats = formats[-1:] + formats[:-1]
@@ -33,7 +32,7 @@ def list_ruleformat() -> list:
     return formats
 
 
-def get_all_ruleformat_schema(args, papi, formats):
+def get_all_ruleformat_schema(args, papi, formats, logger):
     for format in formats:
         status_code, rule_dict = papi.get_ruleformat_schema(args.product_id, format)
         if status_code == 200:
@@ -49,14 +48,14 @@ def get_all_ruleformat_schema(args, papi, formats):
         logger.info(f'Rule formats downloaded in directory: {cwd}/{directory}')
 
 
-def get_ruleformat_schema(args):
-    papi = Papi()
+def get_ruleformat_schema(args, logger):
+    papi = Papi(logger=logger)
     if args.version is None:
         answer = input('Would you like to see all versions? (y/N)\t')
         if answer.upper() == 'Y':
-            formats = list_ruleformat()
+            formats = list_ruleformat(logger=logger)
             if args.xlsx:
-                get_all_ruleformat_schema(args, papi, formats)
+                get_all_ruleformat_schema(args, papi, formats, logger=logger)
             sys.exit(1)
         else:
             logger.info('add --version to get specific version only')
@@ -64,7 +63,7 @@ def get_ruleformat_schema(args):
 
     status_code, rule_dict = papi.get_ruleformat_schema(args.product_id, args.version)
     if status_code == 200:
-        papi_wrapper = PapiWrapper()
+        papi_wrapper = PapiWrapper(logger=logger)
 
         # behavior sanitation
         behaviors_in_catalog = list(rule_dict['definitions']['catalog']['behaviors'].keys())
