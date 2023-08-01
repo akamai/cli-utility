@@ -38,7 +38,6 @@ def delivery_config_json(papi, config: str, version: int | None = None, exclude:
     status, _ = papi.search_property_by_name(config)
     if status == 200:
         json_tree_status, json_response = papi.property_ruletree(papi.property_id, version, exclude)
-        logger.warning(config)
         _ = papi.get_property_version_detail(papi.property_id, version)
     if json_tree_status == 200:
         return collect_json(config, version, json_response, logger=logger)
@@ -328,8 +327,8 @@ def compare_delivery_behaviors(args, logger):
     df = df.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
     df = df.reset_index(drop=True)
 
-    if not df['custom_behaviorId'].notnull().any():
-        del df['custom_behaviorId']
+    if df['custom_behaviorId'].notna().all():
+        del df['custom_behaviorId']  # drop if no value in custom_behaviorId for all rows
 
     df['character_count'] = df['json_or_xml'].str.len()
     if df.query('character_count > 32767').empty:
@@ -464,4 +463,4 @@ def compare_delivery_behaviors(args, logger):
 
         files.write_xlsx(filepath, sheet, show_index=False, adjust_column_width=True, freeze_column=4)
         show = not args.no_show
-        files.open_excel_application(filepath, show=show, df=sheet['original_mod'])
+        files.open_excel_application(filepath, show=show, df=sheet['flat_json'])
