@@ -304,7 +304,7 @@ class PapiWrapper(Papi):
     def get_property_version_hostnames(self, property_id: int, version: int) -> dict:
         return super().get_property_version_hostnames(property_id, version)
 
-    def get_property_version_full_detail(self, property_id: int, version: int, dict_key: str):
+    def get_property_version_full_detail(self, property_id: int, version: int, dict_key: str | None = None):
         data = super().get_property_version_full_detail(property_id, version)
         return data[dict_key]
 
@@ -529,7 +529,7 @@ class PapiWrapper(Papi):
                     account_properties.append(properties)
         return account_properties
 
-    def property_summary(self, df: pd.DataFrame) -> list:
+    def property_summary(self, df: pd.DataFrame, concurrency: int | None = 1) -> list:
         account_properties = []
 
         def process_row(row):
@@ -545,7 +545,7 @@ class PapiWrapper(Papi):
                     properties['propertyId'] = properties['propertyId'].astype('Int64')
                     properties['groupName'] = row['groupName']
 
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
                         # 'collecting hostname'
                         properties['hostname'] = list(executor.map(self.get_property_hostnames, properties['propertyId']))
                         properties['hostname_count'] = properties['hostname'].str.len()
@@ -594,7 +594,7 @@ class PapiWrapper(Papi):
         if status == 200:
             return ruletree
         else:
-            self.logger.error(f'{property_id=} {version} {status}')
+            self.logger.error(f'{property_id=} {version=}')
             return 'XXX'
 
     def get_property_behavior(self, data: dict) -> list:

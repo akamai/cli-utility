@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import copy
 import json
 import os
@@ -11,6 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from subprocess import Popen
 from subprocess import STDOUT
+from time import gmtime
+from time import perf_counter
+from time import strftime
 
 import numpy as np
 import pandas as pd
@@ -31,29 +35,30 @@ from utils import ssl
 from yaspin import yaspin
 from yaspin.spinners import Spinners
 
-logger = lg.setup_logger()
+
 pd.set_option('display.max_colwidth', None)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.expand_frame_repr', False)
 pd.set_option('display.max_rows', None)
 
 
-def main(args):
+def main(args, logger):
     '''
     python bin/akamai-utility.py -a 1-1IY5Z delivery-config --show --group-id 14803 163889 162428 90428 14805 82695
-    2173 properties 90 minutes
-     800 properties 30 minutes
     '''
     if args.group_id and args.property:
         sys.exit(logger.error('Please use either --group-id or --property, not both'))
+
+    concurrency = int(args.concurrency) if args.concurrency else None
     # display full account name
-    iam = IdentityAccessManagement(args.account_switch_key)
+    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
     account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = account.replace(' ', '_')
-    logger.warning(f'Found account {account}')
-    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
-    filepath = f'output/{account}.xlsx' if args.output is None else f'output/{args.output}'
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    account = iam.show_account_summary(account)
+    account_folder = f'output/delivery-config/{account}'
+    Path(account_folder).mkdir(parents=True, exist_ok=True)
+    filepath = f'{account_folder}/account_detail.xlsx' if args.output is None else f'output/{args.output}'
+
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     cpc = cp.CpCodeWrapper(account_switch_key=args.account_switch_key)
     if args.behavior:
         original_behaviors = [x.lower() for x in args.behavior]
@@ -155,7 +160,8 @@ def main(args):
 
         if not group_df.empty:
             print()
-            print(tabulate(group_df, headers=columns, showindex=True, tablefmt='github'))
+            columns.remove('groupName')
+            print(tabulate(group_df[columns], headers=columns, showindex=True, tablefmt='github'))
 
         # warning for large account
         if not args.group_id:
@@ -169,6 +175,10 @@ def main(args):
             logger.warning(f'--group-id {all_groups}')
 
         if args.summary is True:
+            sheet = {}
+            sheet['account_summary'] = group_df
+            files.write_xlsx(filepath, sheet, freeze_column=1) if not group_df.empty else None
+            files.open_excel_application(filepath, args.show, group_df)
             return None
 
         # collect properties detail for all groups
@@ -181,11 +191,12 @@ def main(args):
             if total == 0:
                 logger.info('no property to collect.')
             else:
-                logger.warning('collecting properties ...')
-                account_properties = papi.property_summary(group_df)
+                logger.critical('collecting properties ...')
+                prop0 = perf_counter()
+                account_properties = papi.property_summary(group_df, concurrency)
                 if len(account_properties) > 0:
                     df = pd.concat(account_properties, axis=0)
-                    df['ruletree'] = df.apply(
+                    df['ruletree'] = df.parallel_apply(
                         lambda row: papi.get_property_ruletree(int(row['propertyId']),
                                                                 int(row['productionVersion'])
                                                                 if pd.notnull(row['productionVersion'])
@@ -193,13 +204,18 @@ def main(args):
                     df = df.rename(columns={'url': 'propertyName(hyperlink)'})  # show column with hyperlink instead
                     df = df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
                     df = df.sort_values(by=['groupName', 'propertyName'])
+                    prop1 = perf_counter()
+                    msg = 'collecting properties'
+                    logger.critical(f'{msg:<40} finished  {prop1 - prop0:.2f} seconds')
 
                     columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
                                'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
-                               'productId', 'ruleFormat', 'hostname_count', 'hostname']
+                               'productId', 'ruleFormat', 'hostname_count', 'hostname', 'ruletree']
 
                     if args.behavior:
-                        original_behaviors
+                        print()
+                        logger.critical('collecting behavior ...')
+                        t0 = perf_counter()
                         df = papi.check_behavior(original_behaviors, df, cpc)
                         columns.extend(sorted(original_behaviors))
                         if 'cpcode' in original_behaviors:
@@ -208,22 +224,37 @@ def main(args):
                         if 'origin' in original_behaviors:
                             columns.remove('origin')
                             columns.extend(['origin_count', 'origin'])
+                        msg = 'collecting behaviors'
+                        t1 = perf_counter()
+                        logger.critical(f'{msg:<40} finished  {t1 - t0:.2f} seconds')
 
                     columns.extend(['propertyName(hyperlink)'])
                     df['propertyId'] = df['propertyId'].astype(str)  # for excel format
                     df = df[columns].copy()
                     df = df.reset_index(drop=True)
+                    df['hostname'] = df[['hostname']].parallel_apply(lambda x: dataframe.split_elements_newline(x[0])
+                                                        if len(x[0]) > 0 else '', axis=1)
+
+                    columns.remove('ruletree')
                     properties_df = df[columns]
                     sheet['properties'] = properties_df
 
         # add hyperlink to groupName column
+        print()
+        t0 = perf_counter()
+        logger.critical('collecting hyperlink ...')
         if args.group_id is not None:
             sheet['group_filtered'] = add_group_url(group_df, papi)
         if not allgroups_df.empty:
             sheet['account_summary'] = add_group_url(allgroups_df, papi)
+        msg = 'collecting hyperlink'
+        t1 = perf_counter()
+        logger.critical(f'{msg:<40} finished  {t1 - t0:.2f} seconds')
 
     logger.debug(properties_df.columns.values.tolist()) if not properties_df.empty else None
+    print()
     if 'custombehavior' in properties_df.columns.values.tolist():
+        logger.info('checking custom behavior ...')
         status, response = papi.list_custom_behaviors()
         if status == 200:
             custom_behavior_df = pd.DataFrame(response)
@@ -234,18 +265,116 @@ def main(args):
                 sheet['custom_behavior'] = custom_behavior_df
 
     files.write_xlsx(filepath, sheet, freeze_column=1) if not properties_df.empty else None
-    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not properties_df.empty else None
-    return properties_df
+    files.open_excel_application(filepath, args.show, properties_df)
+    columns.append('ruletree')
+    properties_with_ruletree_df = df[columns]
+    return properties_with_ruletree_df
 
 
-def origin_certificate(args):
+def netstorage(args, logger):
 
-    properties_df = main(args)
+    properties_df = main(args, logger)
+    if properties_df.empty:
+        sys.exit()
+    if args.property:
+        print()
+        pandarallel.initialize(progress_bar=False, verbose=0)
+        print()
+
+    properties = properties_df[['propertyName', 'propertyId', 'productionVersion', 'latestVersion', 'ruletree']].copy()
+    properties['rules'] = properties['ruletree'].parallel_apply(lambda x: x['rules'])
+    property_name = properties['propertyName'].values
+    logger.debug(property_name)
+    rules = properties['rules'].values
+
+    print()
+    logger.critical('Collect net storage detail ...')
+    prop = {key: value for key, value in zip(property_name, rules)}
+
+    '''
+    for property_name, rule in prop.items():
+        all_behaviors.append(papi.collect_property_behavior(property_name, rule))
+    '''
+    def collect_behavior(property_name, rule):
+        papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+        return papi.collect_property_behavior(property_name, rule)
+
+    # thread processing
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        t0 = perf_counter()
+        futures = []
+        all_behaviors = []
+        total_size = len(prop)
+        logger.critical(f'collecting behavior {total_size}')
+        progress_interval = total_size // 4  # 25% progress
+        for i, (property_name, rule) in enumerate(prop.items()):
+            future = executor.submit(collect_behavior, property_name, rule)
+            futures.append((i, future))
+            if (i + 1) % progress_interval == 0:
+                progress = (i + 1) / total_size * 100
+                logger.info(f'Progress: {progress:.2f}%')
+
+        for i, future in futures:
+            result = future.result()
+            all_behaviors.append(result)
+        t1 = perf_counter()
+        logger.critical(f'collecting {len(all_behaviors)} behaviors: {t1 - t0:.2f} seconds')
+
+    behavior = pd.concat(all_behaviors)
+    behavior = behavior.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
+    if 'custom_behaviorId' in behavior.columns:
+        del behavior['custom_behaviorId']
+
+    t0 = perf_counter()
+    print()
+    logger.critical('Collecting net storage detail')
+
+    netstorage = behavior.query("name == 'origin'").copy()
+    logger.critical(netstorage.shape)
+    netstorage = netstorage.reset_index(drop=True)
+    netstorage = netstorage[netstorage['json_or_xml'].apply(
+        lambda x: isinstance(x, dict) and x.get('originType') == 'NET_STORAGE')]
+
+    if netstorage.empty:
+        logger.warning('no net storage found')
+    else:
+        expanded = pd.json_normalize(netstorage['json_or_xml']).rename(columns=lambda x: x.replace('.', '_'))
+        netstorage = netstorage.reset_index(drop=True)
+        expanded = expanded.reset_index(drop=True)
+        ns_df = pd.concat([netstorage.drop(columns='json_or_xml'), expanded], axis=1)
+
+    if netstorage.empty:
+        logger.warning('no net storage found')
+    else:
+        columns = ['property', 'path', 'downloadDomainName', 'cpCode', 'g2oToken']
+        ns_df = ns_df.rename(columns={'netStorage_downloadDomainName': 'downloadDomainName',
+                                      'netStorage_cpCode': 'cpCode',
+                                      'netStorage_g2oToken': 'g2oToken'
+                                      })
+        sheet = {}
+        sheet['net_storage'] = ns_df[columns]
+        t1 = perf_counter()
+        msg = 'collecting net storage'
+        logger.critical(f'{msg:<40} finised  {t1 - t0:.2f} seconds')
+
+        # display full account name
+        iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
+        account = iam.search_account_name(value=args.account_switch_key)[0]
+        account = iam.show_account_summary(account)
+        account_folder = f'output/delivery-config/{account}'
+        filepath = f'{account_folder}/net_storage.xlsx' if args.output is None else f'output/{args.output}'
+        files.write_xlsx(filepath, sheet, freeze_column=6)
+        files.open_excel_application(filepath, args.show, ns_df)
+
+
+def origin_certificate(args, logger):
+
+    properties_df = main(args, logger)
     if properties_df.empty:
         sys.exit()
 
     properties = properties_df[['propertyName', 'propertyId', 'productionVersion', 'latestVersion']].copy()
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
 
     if args.property:
         print()
@@ -348,15 +477,22 @@ def origin_certificate(args):
         combined_df['rule_path'] = combined_df.apply(lambda row: dataframe.split_elements_newline_withcomma(row['rule_path'])
                                                         if row['rule_path'] else '', axis=1)
         sheet['origin'] = combined_df[columns]
-        filepath = 'output/origin.xlsx'
+
+        # display full account name
+        iam = IdentityAccessManagement(args.account_switch_key)
+        account = iam.search_account_name(value=args.account_switch_key)[0]
+        account = iam.show_account_summary(account)
+        account_folder = f'output/delivery-config/{account}'
+        filepath = f'{account_folder}/origin_ceritificate.xlsx'
         files.write_xlsx(filepath, sheet, freeze_column=6) if not combined_df.empty else None
-        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' and args.show is True and not combined_df.empty else None
+        files.open_excel_application(filepath, args.show, combined_df)
+
         print()
         logger.info('Decode PEM at https://certlogik.com/decoder/')
 
 
-def activate_from_excel(args):
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+def activate_from_excel(args, logger):
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     df = load_config_from_xlsx(papi, args.file, args.sheet, args.filter)
 
     network = args.network[0]
@@ -381,7 +517,7 @@ def activate_from_excel(args):
             lg.countdown(60, msg='Checking again ... ')
 
 
-def activation_status(args):
+def activation_status(args, logger):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
 
     # iterate over files in directory
@@ -441,7 +577,7 @@ def activation_status(args):
     logger.info(f'\n{df[columns]}')
 
 
-def get_property_ruletree(args):
+def get_property_ruletree(args, logger):
     '''
     python bin/akamai-utility.py -a 1-5BYUG1 delivery-config ruletree --property AAA BBB
     '''
@@ -451,7 +587,7 @@ def get_property_ruletree(args):
 
     Path('output/ruletree').mkdir(parents=True, exist_ok=True)
 
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     for property in args.property:
         status, resp = papi.search_property_by_name(property)
         # print_json(data=resp)
@@ -556,7 +692,7 @@ def get_property_ruletree(args):
         logger.warning('To display max depth, add --show-depth')
 
 
-def hostnames_certificate(args):
+def hostnames_certificate(args, logger):
     '''
     python bin/akamai-utility.py -a 1-5BYUG1 delivery-config hostname --property --version 27
     '''
@@ -565,22 +701,21 @@ def hostnames_certificate(args):
         sys.exit(logger.error('If --version is specified, only one property is supported'))
 
     # display full account name
-    iam = IdentityAccessManagement(args.account_switch_key)
+    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
     account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = account.replace(' ', '_')
-    print()
-    logger.warning(f'Found account {account}')
-    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
-    filepath = f'output/{account}_hostname_certificate.xlsx' if args.output is None else f'output/{args.output}'
+    account = iam.show_account_summary(account)
+    account_folder = f'output/delivery-config/{account}'
+    Path(account_folder).mkdir(parents=True, exist_ok=True)
+    filepath = f'{account_folder}/hostname_certificate.xlsx' if args.output is None else f'output/{args.output}'
 
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     all_properties = []
     sheet = {}
     print()
     for property in sorted(args.property):
         status, resp = papi.search_property_by_name(property)
         if status != 200:
-            logger.info(f'property {property:<50} not found')
+            logger.critical(f'property {property:<50} not found')
             break
         else:
             stg, prd = papi.property_version(resp)
@@ -622,26 +757,15 @@ def hostnames_certificate(args):
     all_properties_df = pd.concat(all_properties)
     sheet['all_properties'] = all_properties_df
 
-    '''
-    sheetname = f'{property}_v{version}'
-    if len(sheetname) >= 31:
-        sheet[f'{papi.property_id}_v{version}'] = df
-    else:
-        sheet[sheetname] = df
-    '''
-
     files.write_xlsx(filepath, sheet, freeze_column=4, adjust_column_width=True)
-    if platform.system() == 'Darwin' and args.no_show is False:
-        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
-    else:
-        logger.info('--no-show argument is supported only on Mac OS')
+    files.open_excel_application(filepath, not args.no_show, all_properties_df)
 
 
-def get_property_all_behaviors(args):
+def get_property_all_behaviors(args, logger):
     '''
     python bin/akamai-utility.py -a AANA-2NUHEA delivery-config behavior --property XXXXX --remove-tags uuid variables templateUuid templateLink xml
     '''
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     status, resp = papi.search_property_by_name(args.property)
     if status == 200:
         version = int(args.version) if args.version else None
@@ -665,7 +789,7 @@ def get_property_all_behaviors(args):
             logger.info('>> akamai util diff behavior --property A B --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost')
 
 
-def get_property_advanced_behavior(args):
+def get_property_advanced_behavior(args, logger):
     '''
     python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property xxx yyy --advBehavior
     '''
@@ -673,17 +797,13 @@ def get_property_advanced_behavior(args):
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, we can lookup one property'))
 
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
-    papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
-    iam = IdentityAccessManagement(args.account_switch_key)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
     account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = account.replace(' ', '_')
-    print()
-    logger.warning(f'Found account {account}')
-    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
-    filepath = f'output/{account}_metadata.xlsx'
-    account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
-    logger.warning(f'Akamai Control Center Homepage: {account_url}')
+    account = iam.show_account_summary(account)
+    account_folder = f'output/delivery-config/{account}'
+    Path(account_folder).mkdir(parents=True, exist_ok=True)
+    filepath = f'{account_folder}/metadata.xlsx'
 
     sheet = {}
     options = []
@@ -692,7 +812,7 @@ def get_property_advanced_behavior(args):
         print()
         status, resp = papi.search_property_by_name(property)
         if status != 200:
-            logger.warning(f'property {property:<50} not found')
+            logger.critical(f'property {property:<50} not found')
             break
         else:
             stg, prd = papi.property_version(resp)
@@ -705,9 +825,11 @@ def get_property_advanced_behavior(args):
         if status != 200:
             sys.exit(logger.error(f'{json["title"]}. please provide correct version'))
 
+        papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
         behaviors = papi_rules.collect_property_behavior(property_name, json['rules'])
-        db = pd.DataFrame(behaviors)
-        db = db[db['name'] == 'advanced'].copy()
+        if len(behaviors) > 0:
+            db = pd.DataFrame(behaviors)
+            db = db[db['name'] == 'advanced'].copy()
         if db.empty:
             logger.info('advanced behavior not found')
         else:
@@ -718,8 +840,9 @@ def get_property_advanced_behavior(args):
             options.append(db)
 
         criteria = papi_rules.collect_property_criteria(property_name, json['rules'])
-        dc = pd.DataFrame(criteria)
-        dc = dc[dc['name'] == 'matchAdvanced'].copy()
+        if len(criteria) > 0:
+            dc = pd.DataFrame(criteria)
+            dc = dc[dc['name'] == 'matchAdvanced'].copy()
         if dc.empty:
             logger.info('advanced match not found')
         else:
@@ -742,25 +865,23 @@ def get_property_advanced_behavior(args):
                 do = do[columns]
                 options.append(do)
 
-    df = pd.concat(options).reset_index(drop=True)
-    if args.hidexml is True:
-        for property, type, path, xml_string in df[['property', 'type', 'path', 'xml']].values:
-            print()
-            logger.warning(f'{type:<20} {property:<70} {path}')
-            syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=args.lineno)
-            console = Console()
-            console.print(syntax)
-    sheet['advancedXML'] = df
+    if len(options) > 0:
+        df = pd.concat(options).reset_index(drop=True)
+        if args.hidexml is True:
+            for property, type, path, xml_string in df[['property', 'type', 'path', 'xml']].values:
+                print()
+                logger.warning(f'{type:<20} {property:<70} {path}')
+                syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=args.lineno)
+                console = Console()
+                console.print(syntax)
+        sheet['advancedXML'] = df
     if sheet:
         print()
         files.write_xlsx(filepath, sheet, show_index=False)
-        if args.no_show is False and platform.system() == 'Darwin':
-            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
-        else:
-            logger.info('--show argument is supported only on Mac OS')
+        files.open_excel_application(filepath, show=not args.no_show, df=df)
 
 
-def get_property_advanced_override(args):
+def get_property_advanced_override(args, logger):
     '''
     python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property xxx yyy --advOverride
     '''
@@ -820,8 +941,8 @@ def get_property_advanced_override(args):
             logger.info('--show argument is supported only on Mac OS')
 
 
-def get_custom_behavior(args):
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+def get_custom_behavior(args, logger):
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     status, response = papi.list_custom_behaviors()
     if status == 200:
         if len(response) == 0:
@@ -859,7 +980,7 @@ def get_custom_behavior(args):
 
 
 # BEGIN helper method
-def load_config_from_xlsx(papi, filepath: str, sheet_name: str | None = None, filter: str | None = None):
+def load_config_from_xlsx(papi, filepath: str, sheet_name: str | None = None, filter: str | None = None, logger=None):
     '''
     excel must have header rows
     '''
@@ -883,9 +1004,10 @@ def load_config_from_xlsx(papi, filepath: str, sheet_name: str | None = None, fi
 
 
 def add_group_url(df: pd.DataFrame, papi) -> pd.DataFrame:
+    pandarallel.initialize(progress_bar=False, nb_workers=5, verbose=0)
     df['accountId'] = papi.account_switch_key
-    df['groupURL'] = df.apply(lambda row: papi.group_url(row['groupId']), axis=1)
-    df['groupName_url'] = df.apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['propertyCount']) if row['propertyCount'] else '', axis=1)
+    df['groupURL'] = df.parallel_apply(lambda row: papi.group_url(row['groupId']), axis=1)
+    df['groupName_url'] = df.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['propertyCount']) if row['propertyCount'] else '', axis=1)
     del df['groupURL']
     del df['propertyCount']
     df = df.rename(columns={'groupName_url': 'propertyCount'})  # show column with hyperlink instead

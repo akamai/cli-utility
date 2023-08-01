@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
+import platform
 import re
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pandas as pd
 from lxml import etree
 from UliPlot.XLSX import auto_adjust_xlsx_column_width
-from utils._logging import setup_logger
 
-logger = setup_logger()
+
+logger = logging.getLogger(__name__)
 
 
 def get_line_count(filename):
@@ -103,7 +106,7 @@ def make_xlsx_hyperlink_to_another_sheet(filepath: str, url: str, cell: str) -> 
 
 def make_xlsx_hyperlink_to_external_link(url: str, alias: str) -> str:
     if alias:
-        return f'=HYPERLINK("{url}{alias}", "{alias}")'
+        return f'=HYPERLINK("{url}", "{alias}")'
     else:
         return f'{url}'
 
@@ -129,10 +132,13 @@ def write_xlsx(filepath: str, dict_value: dict,
                         auto_adjust_xlsx_column_width(df, writer, sheet_name=sheetname, margin=0,
                                                     index=show_index)
                     workbook = writer.book
-                    cell_format = workbook.add_format()
-                    cell_format.set_bold()
-                    cell_format.set_font_color('blue')
-                    cell_format.set_text_wrap()
+                    cell_format = workbook.add_format({'bold': True,
+                                                       'text_wrap': True,
+                                                       'valign': 'top',
+                                                       'align': 'left',
+                                                       'fg_color': 'blue',
+                                                       'border': 1,
+                                                      })
                     header_format = workbook.add_format({'bold': True,
                                                          'text_wrap': True,
                                                          'valign': 'top',
@@ -211,6 +217,12 @@ def write_xlsx(filepath: str, dict_value: dict,
 
     filepath = str(Path(f'{filepath}').absolute())
     logger.info(f'{filepath=}')
+
+
+def open_excel_application(filepath: str, show: bool | None = True, df: pd.DataFrame | None = None) -> None:
+    if platform.system() == 'Darwin' and show is True:
+        if not df.empty:
+            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
 
 
 def prepare_excel_sheetname(original_string: str) -> str:

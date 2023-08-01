@@ -147,7 +147,8 @@ class Papi(AkamaiSession):
                 self.logger.info(print_json(resp.json()))
             self.logger.debug(f'{property_name} {resp.status_code} {resp.url} {property_items}')
             if len(property_items) == 0:
-                sys.exit(self.logger.error(f'{property_name} not found'))
+                self.logger.debug(f'Not found {property_name}')
+                return 400, property_name
             else:
                 self.account_id = property_items[0]['accountId']
                 self.contract_id = property_items[0]['contractId']
@@ -394,16 +395,24 @@ class Papi(AkamaiSession):
     # RULETREE
     def property_ruletree(self, property_id: int, version: int, remove_tags: list | None = None):
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
-        # self.contract_id = self.get_property_version_full_detail(property_id, version, 'contractId')
-        # self.group_id = self.get_property_version_full_detail(property_id, version, 'groupId')
-        self.contract_id = self.get_property_version_full_detail(property_id, version)['contractId'][4:]
-        self.group_id = self.get_property_version_full_detail(property_id, version)['groupId'][4:]
+
+        try:
+            self.contract_id = self.get_property_version_full_detail(property_id, version, 'contractId')
+        except:
+            self.contract_id = self.get_property_version_full_detail(property_id, version)['contractId'][4:]
+        try:
+            self.group_id = self.get_property_version_full_detail(property_id, version, 'groupId')
+        except:
+            self.group_id = self.get_property_version_full_detail(property_id, version)['groupId'][4:]
+
+        self.logger.debug(f'{self.contract_id=} {self.group_id=}')
+
         params = {'contractId': self.contract_id,
                   'groupId': self.group_id,
                   'validateRules': 'true',
                   'validateMode': 'full',
                  }
-        self.logger.debug(f'{self.contract_id=} {self.group_id=}')
+
         resp = self.session.get(url, headers=self.headers, params=params)
 
         if resp.status_code == 200:
@@ -423,7 +432,7 @@ class Papi(AkamaiSession):
             self.logger.debug(mod_resp)
             return 200, mod_resp
         else:
-            self.logger.info(f'{resp.status_code} {self.contract_id} {self.group_id} {resp.url}')
+            self.logger.error(f'{resp.status_code} {self.contract_id=} {self.group_id=} {resp.url}')
             return resp.status_code, resp.json()
 
     def get_ruleformat_schema(self, product_id: str, format_version: str | None = 'latest'):
