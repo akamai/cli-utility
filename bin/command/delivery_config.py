@@ -419,7 +419,7 @@ def origin_certificate(args, logger):
         logger.warning(map_alias)
 
     if not siteshield.empty:
-        ss_api = ss.SiteShieldWrapper(args.account_switch_key)
+        ss_api = ss.SiteShieldWrapper(args.account_switch_key, logger=logger)
         df = ss_api.list_maps()
         df = df[df['ruleName'].isin(map_alias)].copy()
         logger.debug(f'\n{df}')
@@ -479,7 +479,7 @@ def origin_certificate(args, logger):
         sheet['origin'] = combined_df[columns]
 
         # display full account name
-        iam = IdentityAccessManagement(args.account_switch_key)
+        iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
         account = iam.search_account_name(value=args.account_switch_key)[0]
         account = iam.show_account_summary(account)
         account_folder = f'output/delivery-config/{account}'
