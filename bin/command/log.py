@@ -8,18 +8,15 @@ import subprocess
 import sys
 import warnings
 
+import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 from akamai_utils import ghost_index as gh
 from tabulate import tabulate
-from utils import _logging as lg
 from utils import files
 
 
-logger = lg.setup_logger()
-
-
-def main(args):
+def main(args, logger):
     warnings.filterwarnings('ignore')
 
     if args.column and args.value_contains is None:
@@ -31,7 +28,7 @@ def main(args):
     sheet = {}
 
     if args.only == 'R':
-        r_df = r_line(args.input, args.column, args.value_contains)
+        r_df = r_line(args.input, args.column, args.value_contains, logger=logger)
         if not r_df.empty:
             if r_df.shape[0] > 1:
                 sheet['R'] = r_df
@@ -39,7 +36,7 @@ def main(args):
                 logger.warning('No r/R line found')
 
     if args.only == 'F':
-        f_df, _ = f_line(args.input, args.column, args.value_contains)
+        f_df, _ = f_line(args.input, args.column, args.value_contains, logger=logger)
         if not f_df.empty:
             if f_df.shape[0] > 1:
                 sheet['F'] = f_df
@@ -61,43 +58,57 @@ def main(args):
                 logger.info('https://docs.akamai.com/esp/user/edgesuite/log-format.xml')
 
 
-def r_line(filename, column: str | None = None, search_keyword: list | None = None) -> pd.DataFrame:
+def r_line(filename, column: str | None = None, search_keyword: list | None = None, logger=None) -> pd.DataFrame:
     """
     Convert r/R lines from QGREP log to excel
     """
 
     try:
-        r_columns, r_dict = gh.build_ghost_log_index('bin/config/ghost_r.txt')
+        r_columns, r_dict = gh.build_ghost_log_index('bin/config/ghost_r.txt', logger=logger)
     except:
-        r_columns, r_dict = gh.build_ghost_log_index('config/ghost_r.txt')
+        r_columns, r_dict = gh.build_ghost_log_index('config/ghost_r.txt', logger=logger)
 
     r_dict[-1] = 'GMT'
     logger.warning('checking r line')
 
     # https://pandas.pydata.org/docs/reference/api/pandas.errors.ParserWarning.html
+
     df = pd.read_csv(filename, header=None, sep=' ', names=r_columns,
                      index_col=False,
                      engine='python',
                      )
+    '''
+
+    # Read the compressed CSV file using Dask
+    ddf = dd.read_csv(filename, sep=' ', compression='gzip', assume_missing=False, header=None,  names=r_columns,
+                     dtype={'TCP_statistics_uniqueID': 'object',
+                            'customfield': 'object',
+                            'incomingSSLhandshakebytes': 'object',
+                            'record': 'object'})
+    # Compute the result and convert to Pandas DataFrame if needed
+    df = ddf.compute()
+    logger.info(f'\n{df.dtypes}')
+    temp_columns = ['ghostIP', 'record', 'starttime', 'ssloverhead', 'objectstatus1']
+    sys.exit(logger.info(f'\n{df.head(5)[temp_columns]}'))
+    '''
 
     df['GMT'] = pd.to_datetime(df['starttime'], unit='s', utc=True)
     df['GMT'] = pd.to_datetime(df.GMT).dt.tz_localize(None)
     # Set pd.options.mode.chained_assignment to 'warn'
     pd.options.mode.chained_assignment = 'warn'
-    logger.debug(df.dtypes)
-    # Assuming df is your DataFrame and 'useragent' is the column
     df['useragent'] = df['useragent'].astype(str)
+    df['useragent'] = df['useragent'].apply(lambda x: codecs.decode(x, 'utf-8') if isinstance(x, bytes) else x)
 
     pd.options.mode.chained_assignment = None
     df = df.loc[df['record'] == 'r'].copy()
 
     # find search filter in all columns, not column specific
     if column is None and search_keyword:
-        mask = np.column_stack([df[col].astype(str).str.contains(f'{search_keyword[0]}', na=False) for col in df])
-        df = df.loc[mask.any(axis=1)]
-        logger.warning(df.shape)
+        mask = np.column_stack([df[col].astype(str).str.contains(f'{search_keyword}', na=False) for col in df])
+        sdf = df.loc[mask.any(axis=1)]
+        logger.warning(sdf.shape)
 
-    # seach based on column and value
+    # search based on column and value
     if column:
         if search_keyword is None:
             sys.exit(logger.error('At least one value is required for --value-contains'))
@@ -106,27 +117,18 @@ def r_line(filename, column: str | None = None, search_keyword: list | None = No
             df[column] = df[column].astype(str)
             df = df[df[column].str.contains('|'.join(search_keyword))].copy()
 
-    # drop columns that have the same value
-    nunique = df.nunique()
-    cols_to_drop = nunique[nunique == 1].index
-    # df = df.drop(cols_to_drop, axis=1)
-
-    # Only check Object Status 1
-    # df = df[df['Object_Status_1'].str.contains('uZ') ]
-    # df = df[df['Object_Status_17].str.contains('uZ') == False ]
-
     df = df.sort_values(by=['arl', 'starttime', 'ghostIP']).copy()
     df = df.reset_index(drop=True)
+    logger.warning(df.shape)
+    logger.info(df.record.unique())
 
     show_columns = list(df.columns)
-    show_columns = show_columns[-1:] + show_columns[:-1]
-
+    show_columns = show_columns[-1:] + show_columns[:-1]  # move last column to the first column
     show_index = [str(k) for k, v in r_dict.items() if v in show_columns]
     show_index = show_index[-1:] + show_index[:-1]
     logger.debug(f'{len(show_index)} {show_index}')
     df = df[show_columns]
-
-    temp_columns = ['GMT', 'ghostIP', 'useragent',  'clientIP']
+    temp_columns = ['GMT', 'ghostIP', 'useragent', 'clientIP']
     tdf = df.head(5)[temp_columns].copy()
     logger.debug(f'\n{tdf}')
 
@@ -167,15 +169,15 @@ def r_line(filename, column: str | None = None, search_keyword: list | None = No
     return df
 
 
-def f_line(filename: str, search_keyword: list | None = None) -> tuple:
+def f_line(filename: str, search_keyword: list | None = None, logger=None) -> tuple:
     """
     Convert f/F lines from QGREP log to excel
     """
 
     try:
-        f_columns, f_dict = gh.build_ghost_log_index('bin/config/ghost_f.txt')
+        f_columns, f_dict = gh.build_ghost_log_index('bin/config/ghost_f.txt', logger)
     except:
-        f_columns, f_dict = gh.build_ghost_log_index('config/ghost_f.txt')
+        f_columns, f_dict = gh.build_ghost_log_index('config/ghost_f.txt', logger)
 
     try:
         logger.warning('checking f line')

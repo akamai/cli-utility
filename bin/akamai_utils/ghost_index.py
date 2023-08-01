@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import numpy
-from utils import _logging as lg
-
-logger = lg.setup_logger()
 
 
-def build_ghost_log_index(file_location: str):
+def build_ghost_log_index(file_location: str, logger=None):
     with open(file_location) as f:
         columns = [line.rstrip() for line in f]
     keys = [i for i, _ in enumerate(columns)]
