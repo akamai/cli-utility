@@ -28,7 +28,7 @@ def cleanup_arguments(value: str, logger=None):
 
 
 def lookup_account(args, logger=None):
-    iam = IdentityAccessManagement(args.account_switch_key, args.section)
+    iam = IdentityAccessManagement(args.account_switch_key, args.section, logger=logger)
     searches = sorted(args.account)
 
     # cleanup keywords
