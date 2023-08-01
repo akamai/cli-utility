@@ -378,5 +378,5 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
             optional.add_argument('--log-level',
                                   choices=['debug', 'info', 'warning', 'error', 'critical'],
                                   default='info',
-                                  help='Set the log level. To noisy, increase to warning',
+                                  help='Set the log level. Too noisy, increase to warning',
                                  )
