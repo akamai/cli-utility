@@ -23,10 +23,7 @@ from utils import files
 from utils.parser import AkamaiParser as Parser
 
 
-logger = lg.setup_logger()
-
-
-def collect_json(config_name: str, version: int, response_json):
+def collect_json(config_name: str, version: int, response_json, logger=None):
     Path('output/diff/json').mkdir(parents=True, exist_ok=True)
     config_name = config_name.replace(' ', '_')
     dt_string = datetime.now().strftime('%Y%m%d_%H%M%s')
@@ -37,32 +34,35 @@ def collect_json(config_name: str, version: int, response_json):
 
 
 # get delivery config json
-def delivery_config_json(papi, config: str, version: int | None = None, exclude: list | None = None):
+def delivery_config_json(papi, config: str, version: int | None = None, exclude: list | None = None, logger=None):
     status, _ = papi.search_property_by_name(config)
     if status == 200:
         json_tree_status, json_response = papi.property_ruletree(papi.property_id, version, exclude)
         logger.warning(config)
         _ = papi.get_property_version_detail(papi.property_id, version)
     if json_tree_status == 200:
-        return collect_json(config, version, json_response)
+        return collect_json(config, version, json_response, logger=logger)
     else:
         logger.debug(f'{papi.property_id=} {config=} {status=} {version} {json_tree_status}')
         sys.exit(logger.error(f"{config=} {json_response['title']}: {version}"))
 
 
 # get security config json
-def security_config_json(appsec, waf_config_name: str, config_id: int, version: int | None = None, exclude: list | None = None):
+def security_config_json(appsec, waf_config_name: str, config_id: int,
+                         version: int | None = None,
+                         exclude: list | None = None,
+                         logger=None):
     status, sec_response = appsec.get_config_version_detail(config_id, version)
     logger.debug(f'{waf_config_name} {config_id=} {status=} {version}')
     if status == 200:
         _, sec_response = appsec.get_config_version_detail(config_id, version, exclude)
-        return collect_json(f'{config_id}_{waf_config_name}', version, sec_response)
+        return collect_json(f'{config_id}_{waf_config_name}', version, sec_response, logger=logger)
     else:
         print_json(data=sec_response)
         sys.exit(logger.error(sec_response['detail']))
 
 
-def compare_versions(v1: str, v2: str, outputfile: str, args):
+def compare_versions(v1: str, v2: str, outputfile: str, args, logger=None):
     print('\n\n')
     cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
     subprocess.run(cmd_text, shell=True)
@@ -79,13 +79,13 @@ def compare_versions(v1: str, v2: str, outputfile: str, args):
     return location
 
 
-def compare_config(args):
+def compare_config(args, logger=None):
 
     config1, config2, left, right, cookies = args.config1, args.config2, args.left, args.right, args.acc_cookies
     logger.debug(f'{config1=} {config2=} {cookies=}')
 
-    papi = Papi(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies)
-    appsec = a.AppsecWrapper(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies)
+    papi = Papi(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies, logger=logger)
+    appsec = a.AppsecWrapper(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies, logger=logger)
     print()
     account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
     logger.warning(f'Akamai Control Center Homepage: {account_url}')
@@ -128,22 +128,23 @@ def compare_config(args):
                 sys.exit(logger.error('Same version, nothing to compare'))
             else:
                 print()
-                v1 = delivery_config_json(papi, config1, left, args.remove_tag)
-                v2 = delivery_config_json(papi, config1, right, args.remove_tag)
+                v1 = delivery_config_json(papi, config1, left, args.remove_tag, logger=logger)
+                v2 = delivery_config_json(papi, config1, right, args.remove_tag, logger=logger)
 
         if config2:
             if not all([left, right]):
                 sys.exit(logger.error('Missing --left and --right argument and integer value of version'))
             # this value will override config1.v2 when --config2 is provided
             print()
-            v1 = delivery_config_json(papi, config1, left, args.remove_tag)
-            v2 = delivery_config_json(papi, config2, right, args.remove_tag)
+            v1 = delivery_config_json(papi, config1, left, args.remove_tag, logger=logger)
+            v2 = delivery_config_json(papi, config2, right, args.remove_tag, logger=logger)
 
     # compare security config
     if args.security is True:
         # input is config_id, not config name
         status_code, response = appsec.get_config_detail(config1)
         if status_code == 200:
+
             waf_config_name = response['name']
             waf_config_name = waf_config_name.replace(' ', '_')
             print()
@@ -200,15 +201,16 @@ def compare_config(args):
                 try:
                     prd_version = response['productionVersion']
                 except:
-                    prd_version = 0
+                    logger.critical('no production version, use latest version instead')
+                    prd_version = response['latestVersion']
 
                 left = stg_version
                 right = prd_version
                 if left == right:
                     sys.exit(logger.error(f'Same version {left}, nothing to compare'))
 
-            v1 = security_config_json(appsec, waf_config_name, config1, left, args.remove_tag)
-            v2 = security_config_json(appsec, waf_config_name, config1, right, args.remove_tag)
+            v1 = security_config_json(appsec, waf_config_name, config1, left, args.remove_tag, logger=logger)
+            v2 = security_config_json(appsec, waf_config_name, config1, right, args.remove_tag, logger=logger)
 
         if config2:
             if not all([left, right]):
@@ -220,7 +222,7 @@ def compare_config(args):
     if args.json is True:
         print()
         logger.warning('Comparing JSON configuration')
-        json_index_html = compare_versions(v1, v2, 'index_json', args)
+        json_index_html = compare_versions(v1, v2, 'index_json', args, logger=logger)
         if not args.no_show:
             webbrowser.open(f'file://{os.path.abspath(json_index_html)}')
         else:
@@ -231,9 +233,9 @@ def compare_config(args):
         logger.warning('Comparing XML Metadata')
         if args.security is False:
             logger.debug(f'{papi.property_id} {papi.asset_id} {papi.group_id}')
-            v1_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, left, args.remove_tags)
-            v2_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, right, args.remove_tags)
-            xml_index_html = compare_versions(v1_xml, v2_xml, 'index_delivery', args)
+            v1_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, left, args.remove_tag)
+            v2_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, right, args.remove_tag)
+            xml_index_html = compare_versions(v1_xml, v2_xml, 'index_delivery', args, logger=logger)
             if not args.no_show:
                 webbrowser.open(f'file://{os.path.abspath(xml_index_html)}')
             else:
@@ -245,7 +247,7 @@ def compare_config(args):
 
             v1 = v1_xml['portalWaf']
             v2 = v2_xml['portalWaf']
-            xml_portalWaf_index_html = compare_versions(v1, v2, 'index_xml_portalWaf', args)
+            xml_portalWaf_index_html = compare_versions(v1, v2, 'index_xml_portalWaf', args, logger=logger)
             if not args.no_show:
                 webbrowser.open(f'file://{os.path.abspath(xml_portalWaf_index_html)}')
             else:
@@ -253,14 +255,14 @@ def compare_config(args):
 
             v1 = v1_xml['wafAfter']
             v2 = v2_xml['wafAfter']
-            xml_wafAfter_index_html = compare_versions(v1, v2, 'index_xml_wafAfter', args)
+            xml_wafAfter_index_html = compare_versions(v1, v2, 'index_xml_wafAfter', args, logger=logger)
             if not args.no_show:
                 webbrowser.open(f'file://{os.path.abspath(xml_wafAfter_index_html)}')
             else:
                 logger.info(f'{title}{os.path.abspath(xml_wafAfter_index_html)}')
 
 
-def compare_delivery_behaviors(args):
+def compare_delivery_behaviors(args, logger):
     '''
     python bin/akamai-utility.py -a 1-1S6D diff behavior --property AAA BBB CCC \
         --remove-tags advanced uuid variables templateUuid templateLink xml \
@@ -270,8 +272,8 @@ def compare_delivery_behaviors(args):
         sys.exit(logger.error('Please use either --rulecontains or --rulenotcontains, not both'))
 
     properties, left, right = args.property, args.left, args.right
-    papi = Papi(account_switch_key=args.account_switch_key, section=args.section)
-    papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    papi = Papi(account_switch_key=args.account_switch_key, section=args.section, logger=logger)
+    papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     print()
     account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
     logger.warning(f'Akamai Control Center Homepage: {account_url}')
@@ -349,7 +351,8 @@ def compare_delivery_behaviors(args):
         '''
 
         path_n_behavior = []
-        if 'path' in args.criteria:
+
+        if args.criteria and 'path' in args.criteria:
             path = dc.query("name == 'path'").copy()
             path = path.reset_index(drop=True)
             if not path.empty:
@@ -368,7 +371,7 @@ def compare_delivery_behaviors(args):
                 path_df['values'] = path_df[['values']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
                 path_n_behavior.append(path_df)
 
-        if 'origin' in args.behavior:
+        if args.behavior and 'origin' in args.behavior:
             origin = db.query("name == 'origin'").copy()
             origin = origin.reset_index(drop=True)
             logger.debug(f'\n{origin}')
@@ -381,6 +384,7 @@ def compare_delivery_behaviors(args):
                 origin = origin_df.query("originType == 'CUSTOMER'").copy()
                 origin['type'] = 'origin_behavior'
                 origin = origin.reset_index(drop=True)
+                logger.debug(f'{origin.columns=}')
 
             if not origin.empty:
                 columns = ['property', 'path', 'type', 'hostname']
@@ -398,11 +402,13 @@ def compare_delivery_behaviors(args):
 
             # excluded_rules = ['Non Russia', 'Kasada', 'CiC Dev', 'Custom Bot', 'Sport and User Services Alternate', 'Pre-Prod']
             if excluded_rules:
+                logger.critical(f'{excluded_rules=}')
                 excluded = original[original['rulename'].str.contains('|'.join(excluded_rules))].copy()
                 included = original[~original['rulename'].str.contains('|'.join(excluded_rules))].copy()
 
             # included_rules = ['API']
             if included_rules:
+                logger.critical(f'{included_rules=}')
                 included = original[original['rulename'].str.contains('|'.join(included_rules))].copy()
                 excluded = original[~original['rulename'].str.contains('|'.join(included_rules))].copy()
 
@@ -452,11 +458,10 @@ def compare_delivery_behaviors(args):
             original = original.reset_index(drop=True)
             original_pivot.columns.name = None
             sheet['original_mod'] = original_pivot[columns]
+
             original = original.rename(columns={'path_match': 'values'})
             sheet['original_rules'] = original
 
         files.write_xlsx(filepath, sheet, show_index=False, adjust_column_width=True, freeze_column=4)
-        if args.no_show is False and platform.system() == 'Darwin':
-            subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
-        else:
-            logger.info('--show argument is supported only on Mac OS')
+        show = not args.no_show
+        files.open_excel_application(filepath, show=show, df=sheet['original_mod'])

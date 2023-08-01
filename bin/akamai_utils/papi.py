@@ -21,7 +21,7 @@ from utils import files
 
 
 class PapiWrapper(Papi):
-    def __init__(self, account_switch_key: str | None = None,  logger: logging.Logger = None):
+    def __init__(self, account_switch_key: str | None = None, logger: logging.Logger = None):
         super().__init__()
         self.account_switch_key = account_switch_key
         self.logger = logger
