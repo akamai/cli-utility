@@ -772,6 +772,8 @@ def get_property_all_behaviors(args, logger):
         if version is None:
             stg, prd = papi.property_version(resp)
             version = prd
+    else:
+        sys.exit(logger.error(resp))
 
     tree_status, json_response = papi.property_ruletree(papi.property_id, version, args.remove_tag)
     if tree_status == 200:

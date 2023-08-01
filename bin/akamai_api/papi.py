@@ -148,7 +148,7 @@ class Papi(AkamaiSession):
             self.logger.debug(f'{property_name} {resp.status_code} {resp.url} {property_items}')
             if len(property_items) == 0:
                 self.logger.debug(f'Not found {property_name}')
-                return 400, property_name
+                return 400, f'Not found {property_name}'
             else:
                 self.account_id = property_items[0]['accountId']
                 self.contract_id = property_items[0]['contractId']

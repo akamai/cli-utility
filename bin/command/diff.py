@@ -286,7 +286,7 @@ def compare_delivery_behaviors(args, logger):
     for i, property in enumerate(properties):
         status, resp = papi.search_property_by_name(property)
         if status != 200:
-            logger.info(f'{status} {resp}')
+            logger.error(f'{resp}')
         else:
             if not (left and right):
                 _, version = papi.property_version(resp)
