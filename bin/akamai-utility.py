@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from time import perf_counter
 
@@ -15,11 +16,10 @@ from command import security as sec
 from command.parser import AkamaiParser as Parser
 from utils import _logging as lg
 
-
 if __name__ == '__main__':
-    args = Parser.get_args()
-    logger = lg.setup_logger(args)
+    args = Parser.get_args(args=None if sys.argv[1:] else ['--help'])
     start_time = perf_counter()
+    logger = lg.setup_logger(args)
 
     if args.command == 'delivery':
         Path('output').mkdir(parents=True, exist_ok=True)
