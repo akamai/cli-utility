@@ -12,8 +12,8 @@ from command import log
 from command import report
 from command import ruleformat
 from command import security as sec
+from command.parser import AkamaiParser as Parser
 from utils import _logging as lg
-from utils.parser import AkamaiParser as Parser
 
 
 if __name__ == '__main__':
@@ -21,7 +21,7 @@ if __name__ == '__main__':
     logger = lg.setup_logger(args)
     start_time = perf_counter()
 
-    if args.command == 'delivery-config':
+    if args.command == 'delivery':
         Path('output').mkdir(parents=True, exist_ok=True)
         if args.subcommand == 'behavior':
             dc.get_property_all_behaviors(args, logger=logger)
@@ -42,6 +42,12 @@ if __name__ == '__main__':
         else:
             dc.main(args, logger=logger)
 
+    if args.command == 'security':
+        if args.subcommand == 'hostname':
+            sec.audit_hostname(args, logger)
+        else:
+            sec.list_config(args, logger)
+
     if args.command == 'diff':
         if args.subcommand == 'behavior':
             diff.compare_delivery_behaviors(args, logger)
@@ -53,9 +59,6 @@ if __name__ == '__main__':
 
     if args.command == 'gtm':
         gtm.audit(args, logger)
-
-    if args.command == 'log':
-        log.main(args, logger)
 
     if args.command == 'report':
         if args.subcommand == 'list':
@@ -71,14 +74,11 @@ if __name__ == '__main__':
     if args.command == 'ruleformat':
         ruleformat.get_ruleformat_schema(args, logger)
 
+    if args.command == 'log':
+        log.main(args, logger)
+
     if args.command == 'search':
         admin.lookup_account(args, logger)
-
-    if args.command == 'security':
-        if args.subcommand == 'hostname':
-            sec.audit_hostname(args, logger)
-        else:
-            sec.list_config(args, logger)
 
     end_time = lg.log_cli_timing(start_time)
     logger.info(end_time)

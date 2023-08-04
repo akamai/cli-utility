@@ -3,58 +3,52 @@ from __future__ import annotations
 import argparse
 import sys
 
+import command.cli as cli
 import rich_argparse as rap
 
 
-class OnelineArgumentFormatter(rap.ArgumentDefaultsRichHelpFormatter):
+class OnelineArgumentFormatter(rap.ArgumentDefaultsRichHelpFormatter, rap.RichHelpFormatter):
     def __init__(self, prog, max_help_position=30, **kwargs):
         super().__init__(prog, **kwargs)
         self._max_help_position = max_help_position
 
-    def print_usage(self, file=None):
-        if file is None:
-            file = sys.stdout
-        self._print_message(self.usage, file, False)
 
-    def _format_usage(self, usage, actions, groups, prefix):
-        # Do not include the default usage line
-        return 'Usage:'
-
-
-class CustomHelpFormatter(rap.RichHelpFormatter):
+class CustomHelpFormatter(rap.ArgumentDefaultsRichHelpFormatter, rap.RichHelpFormatter):
     def __init__(self, prog, indent_increment=2, max_help_position=30, width=None):
         super().__init__(prog, indent_increment, max_help_position, width)
 
 
-class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
+class AkamaiParser(argparse.ArgumentParser):
     def __init__(self, prog):
-        super().__init__(prog,
-                         max_help_position=30)
+        super().__init__(prog, max_help_position=30)
+        self.usage = 'akamai utility [options] [command] [subcommand] [arguments] -h'
 
-    def format_usage(self):
-        # Check if the current command is a subcommand
-        is_subcommand = self._is_subcommand()
-
-        # Return the default usage for subcommands
-        if is_subcommand:
-            return ''
-
-        # Return the original usage for the main command
-        return super().format_usage()
-
-    def _is_subcommand(self):
-        # Check if the current command is a subcommand by examining the presence of subparsers
-        return hasattr(self, '_subparsers') and self._subparsers is not None
+    @classmethod
+    def all_command(cls, subparsers):
+        actions = {}
+        for main_cmd_info in cli.main_commands:
+            command, main_cmd_help = next(iter(main_cmd_info.items()))
+            try:
+                sc = cli.sub_commands[command]
+            except:
+                sc = None
+            actions[command] = cls.create_main_command(subparsers,
+                                                       name=command,
+                                                       help=main_cmd_help,
+                                                       required_arguments=main_cmd_info.get('required_arguments', []),
+                                                       optional_arguments=main_cmd_info.get('optional_arguments', []),
+                                                       subcommands=sc,
+                                                       options=None)
 
     @classmethod
     def get_args(cls):
-        parser = argparse.ArgumentParser(prog='Akamai CLI utility',
-                                         formatter_class=AkamaiParser,
+        parser = argparse.ArgumentParser(prog='akamai util',
+                                         formatter_class=CustomHelpFormatter,
                                          conflict_handler='resolve', add_help=True,
-                                         usage='Various akamai utilities to facilitate day to day work')
+                                         description='Akamai CLI utility provides various utilities to facilitate day to day work')
 
         parser.add_argument('-a', '--accountkey',
-                            metavar='accountkey', type=str, dest='account_switch_key',
+                            metavar='', type=str, dest='account_switch_key',
                             help='account switch key (Akamai Internal Only)')
         parser.add_argument('-e', '--edgerc',
                             metavar='', type=str, dest='section',
@@ -64,7 +58,21 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             help='section of the credentials file [$AKAMAI_EDGERC_SECTION]')
 
         subparsers = parser.add_subparsers(title='Available commands', metavar='', dest='command')
+        cls.all_command(subparsers)
 
+        optional = parser.add_argument_group('Optional Arguments')
+        optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)
+        optional.add_argument('-p', '--print-width', action='store_true', help=argparse.SUPPRESS)
+        optional.add_argument('-v', '--verbose', action='store_true', help=argparse.SUPPRESS)
+        optional.add_argument('-l', '--loglevel',
+                                  choices=['debug', 'info', 'warning', 'error', 'critical'],
+                                  default='info',
+                                  help='Set the log level. Too noisy, increase to warning',
+                                 )
+
+        return parser.parse_args()
+
+        '''
         # This is how available commands are displayed on terminal.
         # If you want diff to show before admin,
         # move actions['diff] before line actions['admin]
@@ -288,6 +296,7 @@ class AkamaiParser(CustomHelpFormatter, argparse.ArgumentParser):
                             options=None)
 
         return parser.parse_args()
+        '''
 
     @classmethod
     def create_main_command(cls, subparsers, name, help,

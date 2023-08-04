@@ -14,13 +14,13 @@ import pandas as pd
 from akamai_api.papi import Papi
 from akamai_utils import appsec as a
 from akamai_utils import papi as p
+from command.parser import AkamaiParser as Parser
 from rich import print_json
 from tabulate import tabulate
 from utils import _logging as lg
 from utils import dataframe
 from utils import diff_html as compare
 from utils import files
-from utils.parser import AkamaiParser as Parser
 
 
 def collect_json(config_name: str, version: int, response_json, logger=None):

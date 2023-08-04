@@ -133,6 +133,7 @@ def main(args, logger):
         properties_df = properties_df[columns].copy()
         properties_df = properties_df.reset_index(drop=True)
         sheet['properties'] = properties_df
+        df = properties_df.copy()
 
     else:
         # build group structure as displayed on control.akamai.com
@@ -267,7 +268,10 @@ def main(args, logger):
     files.write_xlsx(filepath, sheet, freeze_column=1) if not properties_df.empty else None
     files.open_excel_application(filepath, args.show, properties_df)
     columns.append('ruletree')
-    properties_with_ruletree_df = df[columns]
+    try:
+        properties_with_ruletree_df = df[columns]
+    except:
+        properties_with_ruletree_df = properties_df
     return properties_with_ruletree_df
 
 

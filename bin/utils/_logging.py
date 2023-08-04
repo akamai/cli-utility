@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import shutil
-import sys
 import time
 from logging.config import dictConfig
 from pathlib import Path
@@ -49,21 +48,14 @@ def setup_logger(args):
     # Set up colored console logs using coloredlogs library
     coloredlogs.install(
         logger=logger,
-        level=args.log_level.upper(),
+        level=args.loglevel.upper(),
         level_styles=custom_level_styles,
-        # fmt='%(asctime)s %(levelname)-8s: %(message)s',
         fmt='%(levelname)-8s: %(message)s',
         field_styles={
             'asctime': {'color': 'black'},
             'levelname': {'color': 'black', 'bold': True},
         },
     )
-
-    # Use a RotatingFileHandler instead of FileHandler
-    log_handler = logging.handlers.RotatingFileHandler('logs/utility.log', maxBytes=1024*1024, backupCount=5)
-    log_handler.setLevel(logging.DEBUG)
-    logger.addHandler(log_handler)
-
     return logger
 
 
