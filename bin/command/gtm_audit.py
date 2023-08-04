@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -19,9 +20,13 @@ def audit(args, logger):
     Path(account_folder).mkdir(parents=True, exist_ok=True)
     filepath = f'{account_folder}/gtm.xlsx' if args.output is None else f'output/{args.output}'
 
-    gtm = GtmWrapper(account_switch_key=args.account_switch_key)
+    gtm = GtmWrapper(account_switch_key=args.account_switch_key, logger=logger)
 
-    _, resp = gtm.list_domains()
+    status, resp = gtm.list_domains()
+    if status != 200:
+        print_json(data=resp)
+        sys.exit()
+
     master_df = pd.DataFrame()
     combine_df = []
     sheet = {}
@@ -69,5 +74,4 @@ def audit(args, logger):
 
     if sheet:
         files.write_xlsx(filepath, sheet)
-        show = not args.no_show
-        files.open_excel_application(filepath, show=show, df=flat_df)
+        files.open_excel_application(filepath, not args.no_show, flat_df)
