@@ -18,15 +18,11 @@ from utils import files
 from yaspin import yaspin
 
 
-def list_config(args, logger):
-    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-    account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = iam.show_account_summary(account)
-    account_folder = f'output/security/{account}'
-    Path(account_folder).mkdir(parents=True, exist_ok=True)
-    appsec = sec.AppsecWrapper(account_switch_key=args.account_switch_key, logger=logger)
-    network = sec.NetworkListWrapper(account_switch_key=args.account_switch_key, logger=logger)
-    bot = sec.BotManagerWrapper(account_switch_key=args.account_switch_key, logger=logger)
+def list_config(args, account_folder, logger):
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
+    appsec = sec.AppsecWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
+    network = sec.NetworkListWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
+    bot = sec.BotManagerWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
 
     _, resp = appsec.list_waf_configs()
     df = pd.DataFrame(resp)
@@ -84,11 +80,15 @@ def list_config(args, logger):
         logger.critical('Please provide at least one configName using --config')
     else:
         for _, row in good_df.iterrows():
-
             if row['productionVersion'] == 0:
                 status, policy = appsec.get_config_version_detail(row['configId'], row['latestVersion'])
             else:
                 status, policy = appsec.get_config_version_detail(row['configId'], row['productionVersion'])
+
+            if status != 200:
+                logger.error(f"{row['configId']}  {status} {row['productionVersion']} {row['latestVersion']}")
+                break
+
             policy_name = policy['configName'].replace(' ', '')
             policy_name = policy_name.replace('/', '')
             filepath = f'{account_folder}/{policy_name}.xlsx' if args.output is None else f'output/{args.output}'
@@ -221,14 +221,11 @@ def list_config(args, logger):
                 subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
 
 
-def audit_hostname(args, logger):
-    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-    account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = iam.show_account_summary(account)
-    account_folder = f'output/security/{account}'
+def audit_hostname(args, account_folder, logger):
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
     Path(account_folder).mkdir(parents=True, exist_ok=True)
 
-    appsec = sec.AppsecWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    appsec = sec.AppsecWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     _, resp = appsec.list_waf_configs()
     df = pd.DataFrame(resp)
     df = df.rename(columns={'id': 'configId', 'name': 'configName'})

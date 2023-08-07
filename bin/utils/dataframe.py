@@ -83,8 +83,11 @@ def explode_columns(row):
 
 def extract_dictionary_columns(row):
     extracted_values = {}
-    for key, value in row.items():
-        extracted_values[key] = value
+    try:
+        for key, value in row.items():
+            extracted_values[key] = value
+    except:
+        logger.error(row)
 
     return pd.Series(extracted_values)
 

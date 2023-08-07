@@ -47,28 +47,33 @@ class AkamaiParser(argparse.ArgumentParser):
 
     @classmethod
     def get_args(cls, args):
-        parser = argparse.ArgumentParser(prog='akamai util',
+        parser = argparse.ArgumentParser(prog='akamai utility/util',
                                          formatter_class=CustomHelpFormatter,
-                                         conflict_handler='resolve', add_help=True,
-                                         description='Akamai CLI utility provides various utilities to facilitate day to day work')
+                                         conflict_handler='resolve', add_help=False,
+                                         description='Akamai CLI utility provides various utilities to facilitate day to day work',
+                                         epilog='Use %(prog)s {command} [-h]/[--help] to get help on individual command')
 
         parser._optionals.title = 'Global options'
+
         parser.add_argument('-a', '--accountkey',
                             metavar='', type=str, dest='account_switch_key',
                             help='account switch key (Akamai Internal Only)')
         parser.add_argument('-e', '--edgerc',
-                            metavar='', type=str, dest='section',
+                            metavar='', type=str, dest='edgerc',
                             help='location of the credentials file [$AKAMAI_EDGERC]')
         parser.add_argument('-s', '--section',
                             metavar='', type=str, dest='section',
                             help='section of the credentials file [$AKAMAI_EDGERC_SECTION]')
+        parser.add_argument('-v', '--version', action='version', version='%(prog)s v1.0.0',
+                            help='show akamai cli utility version')
+        parser.add_argument('-h', '--help', action='help', help='show this help message and exit')
         parser.add_argument('-l', '--log-level',
                               choices=['debug', 'info', 'warning', 'error', 'critical'],
                               default='info',
                               help='Set the log level. Too noisy, increase to warning',
                              )
 
-        subparsers = parser.add_subparsers(title='Available commands', metavar='', dest='command')
+        subparsers = parser.add_subparsers(title='commands', metavar='', dest='command')
 
         optional = parser.add_argument_group('Optional Arguments')
         optional.add_argument('-c', '--syntax-css', action='store', default='vs', help=argparse.SUPPRESS)

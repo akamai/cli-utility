@@ -11,8 +11,9 @@ from utils import _logging as lg
 class SiteShieldWrapper(SiteShield):
     def __init__(self, account_switch_key: str | None = None,
                  section: str | None = None,
-                logger: logging.Logger = None):
-        super().__init__()
+                 edgerc: str | None = None,
+                 logger: logging.Logger = None):
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.account_switch_key = account_switch_key
         self.logger = logger
 

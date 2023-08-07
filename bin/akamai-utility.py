@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from time import perf_counter
 
+from akamai_api.identity_access import IdentityAccessManagement
+from akamai_utils import papi as p
 from command import admin
 from command import certificates_audit as ca
 from command import delivery_config as dc
@@ -21,32 +23,48 @@ if __name__ == '__main__':
     start_time = perf_counter()
     logger = lg.setup_logger(args)
 
+    # display full account name
+    if args.account_switch_key:
+        iam = IdentityAccessManagement(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+        account = iam.search_account_name(value=args.account_switch_key)[0]
+    else:
+        papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+        account_id = papi.get_account_id()
+        iam = IdentityAccessManagement(account_switch_key=account_id, logger=logger)
+        account = iam.search_account_name(value=account_id)[0]
+    account = iam.show_account_summary(account)
+
     if args.command == 'delivery':
-        Path('output').mkdir(parents=True, exist_ok=True)
+        account_folder = f'output/delivery/{account}'
+        Path(account_folder).mkdir(parents=True, exist_ok=True)
+
         if args.subcommand == 'behavior':
-            dc.get_property_all_behaviors(args, logger=logger)
+            dc.get_property_all_behaviors(args, account_folder, logger=logger)
         elif args.subcommand == 'custom-behavior':
             dc.get_custom_behavior(args, logger=logger)
         elif args.subcommand == 'metadata':
-            dc.get_property_advanced_behavior(args, logger)
+            dc.get_property_advanced_behavior(args, account_folder, logger)
         elif args.subcommand == 'activate':
             dc.activate_from_excel(args, logger=logger)
         elif args.subcommand == 'ruletree':
-            dc.get_property_ruletree(args, logger=logger)
+            Path(f'{account_folder}/ruletree').mkdir(parents=True, exist_ok=True)
+            dc.get_property_ruletree(args, account_folder, logger=logger)
         elif args.subcommand == 'hostname-cert':
-            dc.hostnames_certificate(args, logger=logger)
+            dc.hostnames_certificate(args, account_folder, logger=logger)
         elif args.subcommand == 'netstorage':
-            dc.netstorage(args, logger=logger)
+            dc.netstorage(args, account_folder, logger=logger)
         elif args.subcommand == 'origin-cert':
-            dc.origin_certificate(args, logger=logger)
+            dc.origin_certificate(args, account_folder, logger=logger)
         else:
-            dc.main(args, logger=logger)
+            dc.main(args, account_folder, logger)
 
     if args.command == 'security':
+        account_folder = f'output/security/{account}'
+        Path(account_folder).mkdir(parents=True, exist_ok=True)
         if args.subcommand == 'hostname':
-            sec.audit_hostname(args, logger)
+            sec.audit_hostname(args, account_folder, logger)
         else:
-            sec.list_config(args, logger)
+            sec.list_config(args, account_folder, logger)
 
     if args.command == 'diff':
         if args.subcommand == 'behavior':

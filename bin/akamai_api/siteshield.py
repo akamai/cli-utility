@@ -9,9 +9,12 @@ from utils import _logging as lg
 
 
 class SiteShield(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None,
+    def __init__(self, account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None,
+                 cookies: str | None = None,
                  logger: logging.Logger = None):
-        super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc, cookies=cookies)
         self.MODULE = f'{self.base_url}/siteshield/v1'
         self.headers = {'Accept': 'application/json'}
         self.account_switch_key = account_switch_key if account_switch_key else None

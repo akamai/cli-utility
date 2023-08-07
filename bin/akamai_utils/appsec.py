@@ -14,12 +14,15 @@ from utils import dataframe
 
 
 class AppsecWrapper(Appsec):
-    def __init__(self, account_switch_key: str | None = None,
+    def __init__(self,
+                 account_switch_key: str | None = None,
                  section: str | None = None,
+                 edgerc: str | None = None,
                  cookies: str | None = None,
                  logger: logging.Logger = None):
 
-        super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc, cookies=cookies)
+        self.account_switch_key = account_switch_key
         self.logger = logger
 
     def get_config_detail(self, config_id: int):
@@ -45,10 +48,12 @@ class AppsecWrapper(Appsec):
 
 
 class NetworkListWrapper(NetworkList):
-    def __init__(self, account_switch_key: str | None = None,
+    def __init__(self,
+                 account_switch_key: str | None = None,
                  section: str | None = None,
+                 edgerc: str | None = None,
                  logger: logging.Logger = None):
-        super().__init__()
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.account_switch_key = account_switch_key
         self.logger = logger
 
@@ -79,10 +84,12 @@ class NetworkListWrapper(NetworkList):
 
 
 class BotManagerWrapper(BotManager):
-    def __init__(self, account_switch_key: str | None = None,
+    def __init__(self,
+                 account_switch_key: str | None = None,
                  section: str | None = None,
+                 edgerc: str | None = None,
                  logger: logging.Logger = None):
-        super().__init__()
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.account_switch_key = account_switch_key
         self.logger = logger
 
@@ -483,8 +490,12 @@ class BotManagerWrapper(BotManager):
         df['ruleset_id'] = df['id']
         del df['id']
         original_keys = df.columns.tolist()
-        original_keys.remove('rules')
-        original_keys.remove('attackGroups')
+        if 'attackGroups' in df.columns.tolist():
+            original_keys.remove('attackGroups')
+        if 'rules' not in df.columns.tolist():
+            return None, None
+        else:
+            original_keys.remove('rules')
         df['rules_count'] = df['rules'].apply(lambda x: len(x) if isinstance(x, list) else 0)
         all_keys = dataframe.extract_keys(df['rules'].dropna().sum())
         if all_keys:
@@ -502,29 +513,33 @@ class BotManagerWrapper(BotManager):
         df = pd.json_normalize(data)
         df['ruleset_id'] = df['id']
         original_keys = df.columns.tolist()
-        original_keys.remove('attackGroups')
-        original_keys.remove('id')
-        del df['id']
+
+        if 'id' in df.columns.tolist():
+            original_keys.remove('id')
+            del df['id']
 
         '''
         attack_group_df = pd.json_normalize(df['attackGroups'].explode().reset_index(drop=True))
         attack_group_df['order'] = attack_group_df.index + 1
         '''
+        if 'attackGroups' in df.columns.tolist():
+            original_keys.remove('attackGroups')
+            df['attackGroups_count'] = df['attackGroups'].apply(lambda x: len(x) if isinstance(x, list) else 0)
 
-        df['attackGroups_count'] = df['attackGroups'].apply(lambda x: len(x) if isinstance(x, list) else 0)
         all_keys = dataframe.extract_keys(df['attackGroups'].dropna().sum())
         # col = ['attackGroups', 'attackGroups_count']
         # self.logger.info(df[col])
-
         if all_keys:
             for key in all_keys:
                 df[key] = df['attackGroups'].apply(lambda x: [d.get(key) for d in x] if isinstance(x, list) else [])
             group_columns = list(all_keys)
-            exploded_data = dataframe.explode_cell(df, 'attackGroups', group_columns)
-            attack_group_df = pd.DataFrame(exploded_data)
-            group_columns = ['group', 'groupName', 'threshold']
-            original_keys.remove('ruleset_id')
-            attack_group_df = attack_group_df[['ruleset_id'] + original_keys + group_columns]
+
+        exploded_data = dataframe.explode_cell(df, 'attackGroups', group_columns)
+        attack_group_df = pd.DataFrame(exploded_data)
+        group_columns = ['group', 'groupName', 'threshold']
+        original_keys.remove('ruleset_id')
+        attack_group_df = attack_group_df[['ruleset_id'] + original_keys + group_columns]
+
         return rules_df, attack_group_df
 
 

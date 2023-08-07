@@ -17,14 +17,15 @@ logger = logging.getLogger(__name__)
 
 
 class AkamaiSession:
-    def __init__(self, edgerc_file: str | None = None,
-                 section: str | None = None,
+    def __init__(self,
                  account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None,
                  cookies: str | None = None,
                  contract_id: int | None = None,
                  group_id: int | None = None):
 
-        self.edgerc_file = edgerc_file if edgerc_file else EdgeRc(f'{str(Path.home())}/.edgerc')
+        self.edgerc_file = edgerc if edgerc else EdgeRc(f'{str(Path.home())}/.edgerc')
         self.account_switch_key = account_switch_key if account_switch_key else None
         self.contract_id = contract_id if contract_id else None
         self.group_id = group_id if group_id else None
@@ -54,14 +55,13 @@ class AkamaiSession:
     def update_account_key(self, account_key: str) -> None:
         self.account_switch_key = account_key
 
-    def update_acc_cookie(self, cookies: str) -> dict:
+    def update_acc_cookie(self, cookies: str | None = None) -> dict:
         '''
         Required for pulsar API
         https://ac-aloha.akamai.com/home/ls/content/5296164953915392/polling-the-pulsar-api-for-pleasure-profit
 
         This is not required on .edgerc
         '''
-
         self.cookies = {}
         if cookies:
             match_xsrf = re.search(r'XSRF-TOKEN=([^;\s]+)', cookies)

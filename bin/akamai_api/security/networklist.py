@@ -13,9 +13,12 @@ from utils import files
 
 
 class NetworkList(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None,
+    def __init__(self,
+                 account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None,
                  logger: logging.Logger = None):
-        super().__init__(account_switch_key=account_switch_key, section=section)
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.MODULE = f'{self.base_url}/network-list/v2'
         self.headers = {'Accept': 'application/json',
                         'Content-Type': 'application/json'}

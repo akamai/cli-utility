@@ -12,8 +12,12 @@ from utils import _logging as lg
 
 
 class IdentityAccessManagement(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None, logger: logging.Logger = None):
-        super().__init__(account_switch_key=account_switch_key, section=section)
+    def __init__(self,
+                 account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None,
+                 logger: logging.Logger = None):
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.MODULE = f'{self.base_url}/identity-management/v3'
         self.headers = {'Accept': 'application/json'}
         self.contract_id = self.contract_id

@@ -42,7 +42,7 @@ pd.set_option('display.expand_frame_repr', False)
 pd.set_option('display.max_rows', None)
 
 
-def main(args, logger):
+def main(args, account_folder, logger):
     '''
     python bin/akamai-utility.py -a 1-1IY5Z delivery-config --show --group-id 14803 163889 162428 90428 14805 82695
     '''
@@ -50,16 +50,8 @@ def main(args, logger):
         sys.exit(logger.error('Please use either --group-id or --property, not both'))
 
     concurrency = int(args.concurrency) if args.concurrency else None
-    # display full account name
-    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-    account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = iam.show_account_summary(account)
-    account_folder = f'output/delivery-config/{account}'
-    Path(account_folder).mkdir(parents=True, exist_ok=True)
-    filepath = f'{account_folder}/account_detail.xlsx' if args.output is None else f'output/{args.output}'
-
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
-    cpc = cp.CpCodeWrapper(account_switch_key=args.account_switch_key)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+    cpc = cp.CpCodeWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc)
     if args.behavior:
         original_behaviors = [x.lower() for x in args.behavior]
     sheet = {}
@@ -158,7 +150,6 @@ def main(args, logger):
         else:
             group_df = allgroups_df[allgroups_df['propertyCount'] > 0].copy()
             group_df = group_df.reset_index(drop=True)
-
         if not group_df.empty:
             print()
             columns.remove('groupName')
@@ -178,6 +169,7 @@ def main(args, logger):
         if args.summary is True:
             sheet = {}
             sheet['account_summary'] = group_df
+            filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/account_detail.xls'
             files.write_xlsx(filepath, sheet, freeze_column=1) if not group_df.empty else None
             files.open_excel_application(filepath, args.show, group_df)
             return None
@@ -197,6 +189,11 @@ def main(args, logger):
                 account_properties = papi.property_summary(group_df, concurrency)
                 if len(account_properties) > 0:
                     df = pd.concat(account_properties, axis=0)
+                    '''
+                    account_id = super().get_account_id()
+                    self.logger.warning(account_id)
+                    self.logger.warning(f'{self.account_switch_key=}')
+                    '''
                     df['ruletree'] = df.parallel_apply(
                         lambda row: papi.get_property_ruletree(int(row['propertyId']),
                                                                 int(row['productionVersion'])
@@ -265,6 +262,7 @@ def main(args, logger):
                     columns.remove(x)
                 sheet['custom_behavior'] = custom_behavior_df
 
+    filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/account_detail.xlsx'
     files.write_xlsx(filepath, sheet, freeze_column=1) if not properties_df.empty else None
     files.open_excel_application(filepath, args.show, properties_df)
     columns.append('ruletree')
@@ -275,9 +273,9 @@ def main(args, logger):
     return properties_with_ruletree_df
 
 
-def netstorage(args, logger):
+def netstorage(args, account_folder, logger):
 
-    properties_df = main(args, logger)
+    properties_df = main(args, account_folder, logger)
     if properties_df.empty:
         sys.exit()
     if args.property:
@@ -361,24 +359,19 @@ def netstorage(args, logger):
         msg = 'collecting net storage'
         logger.critical(f'{msg:<40} finised  {t1 - t0:.2f} seconds')
 
-        # display full account name
-        iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-        account = iam.search_account_name(value=args.account_switch_key)[0]
-        account = iam.show_account_summary(account)
-        account_folder = f'output/delivery-config/{account}'
-        filepath = f'{account_folder}/net_storage.xlsx' if args.output is None else f'output/{args.output}'
+        filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/net_storage.xlsx'
         files.write_xlsx(filepath, sheet, freeze_column=6)
         files.open_excel_application(filepath, args.show, ns_df)
 
 
-def origin_certificate(args, logger):
+def origin_certificate(args, account_folder, logger):
 
-    properties_df = main(args, logger)
+    properties_df = main(args, account_folder, logger)
     if properties_df.empty:
         sys.exit()
 
     properties = properties_df[['propertyName', 'propertyId', 'productionVersion', 'latestVersion']].copy()
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
 
     if args.property:
         print()
@@ -403,7 +396,8 @@ def origin_certificate(args, logger):
     siteshield = siteshield.rename(columns={'name': 'behaviorName'})
     sheet = {}
     if not siteshield.empty:
-        expanded = siteshield.apply(lambda row: dataframe.extract_dictionary_columns(row['json_or_xml']['ssmap']), axis=1).rename(columns=lambda x: x.replace('.', '_'))
+        expanded = siteshield.apply(lambda row: dataframe.extract_dictionary_columns(
+            row['json_or_xml']['ssmap']), axis=1).rename(columns=lambda x: x.replace('.', '_'))
         siteshield = siteshield.reset_index(drop=True)
         expanded = expanded.reset_index(drop=True)
         siteshield_df = pd.concat([siteshield.drop(columns='json_or_xml'), expanded], axis=1)
@@ -417,16 +411,14 @@ def origin_certificate(args, logger):
         siteshield_df = siteshield_df.reset_index(drop=True)
         columns = ['property', 'siteShieldName', 'src', 'srmap', 'siteShieldValue', 'rule_path']
         columns = [value for value in columns if value in siteshield_df.columns]
+        siteshield_df = siteshield_df.dropna(subset=['siteShieldValue'])
         sheet['siteshield'] = siteshield_df[columns]
-        map_alias = list(set(siteshield_df.siteShieldValue.values))
-
-        logger.warning(map_alias)
+        map_alias = list(set(siteshield_df['siteShieldValue'].unique()))
 
     if not siteshield.empty:
-        ss_api = ss.SiteShieldWrapper(args.account_switch_key, logger=logger)
+        ss_api = ss.SiteShieldWrapper(args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
         df = ss_api.list_maps()
         df = df[df['ruleName'].isin(map_alias)].copy()
-        logger.debug(f'\n{df}')
         maps_alias = df['mapAlias'].values
         ids = df.id.values
         rules = df.ruleName.values
@@ -434,7 +426,6 @@ def origin_certificate(args, logger):
         for alias, map_id, rule in zip(maps_alias, ids, rules):
             ips = ss_api.get_map(alias, map_id, rule)
             sss.append(ips)
-
         sss_df = pd.DataFrame([{'siteshield_name': key,
                                 'map_id': value['map_id'],
                                 'map_alias': value['map_alias'],
@@ -464,9 +455,11 @@ def origin_certificate(args, logger):
         origin_df = origin[columns].copy()
 
         # Don't process if hostname uses a variable
+        '''
         ignore = origin_df[origin_df['hostname'].str.contains('{{')].copy()
         logger.debug(ignore.hostname.values) if not ignore.empty else None
         origin_df = origin_df[~origin_df['hostname'].str.contains('{{')].copy()
+        '''
         sheet['origin'] = origin_df
 
         combined_df = origin_df.groupby(['property', 'hostname', 'forwardHostHeader', 'originSni', 'originType']).agg({'path': list}).reset_index()
@@ -481,13 +474,7 @@ def origin_certificate(args, logger):
         combined_df['rule_path'] = combined_df.apply(lambda row: dataframe.split_elements_newline_withcomma(row['rule_path'])
                                                         if row['rule_path'] else '', axis=1)
         sheet['origin'] = combined_df[columns]
-
-        # display full account name
-        iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-        account = iam.search_account_name(value=args.account_switch_key)[0]
-        account = iam.show_account_summary(account)
-        account_folder = f'output/delivery-config/{account}'
-        filepath = f'{account_folder}/origin_ceritificate.xlsx'
+        filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/origin_ceritificate.xlsx'
         files.write_xlsx(filepath, sheet, freeze_column=6) if not combined_df.empty else None
         files.open_excel_application(filepath, args.show, combined_df)
 
@@ -581,7 +568,7 @@ def activation_status(args, logger):
     logger.info(f'\n{df[columns]}')
 
 
-def get_property_ruletree(args, logger):
+def get_property_ruletree(args, account_folder, logger):
     '''
     python bin/akamai-utility.py -a 1-5BYUG1 delivery-config ruletree --property AAA BBB
     '''
@@ -589,9 +576,9 @@ def get_property_ruletree(args, logger):
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, only one property is supported'))
 
-    Path('output/ruletree').mkdir(parents=True, exist_ok=True)
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
+    papi = p.PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
 
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     for property in args.property:
         status, resp = papi.search_property_by_name(property)
         # print_json(data=resp)
@@ -620,16 +607,16 @@ def get_property_ruletree(args, logger):
         config, version = full_ruletree['propertyName'], full_ruletree['propertyVersion']
         title = f'{config}_v{version}'
 
-        files.write_json(f'output/ruletree/{title}_limit.json', limit)
-        files.write_json(f'output/ruletree/{title}_ruletree.json', ruletree)
+        files.write_json(f'{account_folder}/ruletree/{title}_limit.json', limit)
+        files.write_json(f'{account_folder}/ruletree/{title}_ruletree.json', ruletree)
 
-        with open(f'output/ruletree/{title}_ruletree.json') as f:
+        with open(f'{account_folder}/ruletree/{title}_ruletree.json') as f:
             json_object = json.load(f)
         ruletree_json = json_object['rules']
 
         # write tree structure to TXT file
         # https://stackoverflow.com/questions/19330089/writing-string-representation-of-class-instance-to-file
-        TREE_FILE = f'output/ruletree/{title}_ruletree_summary.txt'
+        TREE_FILE = f'{account_folder}/ruletree/{title}_ruletree_summary.txt'
         message = 'Rules tree depth'
         logger.info(f'{message:<20} {TREE_FILE}')
         with open(TREE_FILE, 'w') as file:
@@ -696,22 +683,12 @@ def get_property_ruletree(args, logger):
         logger.warning('To display max depth, add --show-depth')
 
 
-def hostnames_certificate(args, logger):
+def hostnames_certificate(args, account_folder, logger):
     '''
     python bin/akamai-utility.py -a 1-5BYUG1 delivery-config hostname --property --version 27
     '''
-
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, only one property is supported'))
-
-    # display full account name
-    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-    account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = iam.show_account_summary(account)
-    account_folder = f'output/delivery-config/{account}'
-    Path(account_folder).mkdir(parents=True, exist_ok=True)
-    filepath = f'{account_folder}/hostname_certificate.xlsx' if args.output is None else f'output/{args.output}'
-
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     all_properties = []
     sheet = {}
@@ -760,7 +737,7 @@ def hostnames_certificate(args, logger):
 
     all_properties_df = pd.concat(all_properties)
     sheet['all_properties'] = all_properties_df
-
+    filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/hostname_certificate.xlsx'
     files.write_xlsx(filepath, sheet, freeze_column=4, adjust_column_width=True)
     files.open_excel_application(filepath, not args.no_show, all_properties_df)
 
@@ -795,7 +772,7 @@ def get_property_all_behaviors(args, logger):
             logger.info('>> akamai util diff behavior --property A B --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost')
 
 
-def get_property_advanced_behavior(args, logger):
+def get_property_advanced_behavior(args, account_folder, logger):
     '''
     python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property xxx yyy --advBehavior
     '''
@@ -804,13 +781,6 @@ def get_property_advanced_behavior(args, logger):
         sys.exit(logger.error('If --version is specified, we can lookup one property'))
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
-    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-    account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = iam.show_account_summary(account)
-    account_folder = f'output/delivery-config/{account}'
-    Path(account_folder).mkdir(parents=True, exist_ok=True)
-    filepath = f'{account_folder}/metadata.xlsx'
-
     sheet = {}
     options = []
     columns = ['property', 'type', 'xml', 'path']
@@ -883,6 +853,7 @@ def get_property_advanced_behavior(args, logger):
         sheet['advancedXML'] = df
     if sheet:
         print()
+        filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/metadata.xlsx'
         files.write_xlsx(filepath, sheet, show_index=False)
         files.open_excel_application(filepath, show=not args.no_show, df=df)
 
@@ -1011,7 +982,7 @@ def load_config_from_xlsx(papi, filepath: str, sheet_name: str | None = None, fi
 
 def add_group_url(df: pd.DataFrame, papi) -> pd.DataFrame:
     pandarallel.initialize(progress_bar=False, nb_workers=5, verbose=0)
-    df['accountId'] = papi.account_switch_key
+    df['accountId'] = papi.account_switch_key if papi.account_switch_key else papi.get_account_id()
     df['groupURL'] = df.parallel_apply(lambda row: papi.group_url(row['groupId']), axis=1)
     df['groupName_url'] = df.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['groupURL'], row['propertyCount']) if row['propertyCount'] else '', axis=1)
     del df['groupURL']

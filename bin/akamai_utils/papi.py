@@ -21,10 +21,16 @@ from utils import files
 
 
 class PapiWrapper(Papi):
-    def __init__(self, account_switch_key: str | None = None, logger: logging.Logger = None):
-        super().__init__()
+    def __init__(self, account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None,
+                 logger: logging.Logger = None):
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.account_switch_key = account_switch_key
         self.logger = logger
+
+    def get_account_id(self):
+        return super().get_account_id()
 
     def get_contracts(self):
         contracts = super().get_contracts()

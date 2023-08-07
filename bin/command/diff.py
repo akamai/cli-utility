@@ -86,8 +86,6 @@ def compare_config(args, logger=None):
     papi = Papi(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies, logger=logger)
     appsec = a.AppsecWrapper(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies, logger=logger)
     print()
-    account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
-    logger.warning(f'Akamai Control Center Homepage: {account_url}')
 
     if args.xml is True:
         Path('output/diff/xml').mkdir(parents=True, exist_ok=True)
@@ -274,8 +272,6 @@ def compare_delivery_behaviors(args, logger):
     papi = Papi(account_switch_key=args.account_switch_key, section=args.section, logger=logger)
     papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
     print()
-    account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={args.account_switch_key}&targetUrl='
-    logger.warning(f'Akamai Control Center Homepage: {account_url}')
 
     filename = args.output if args.output else f'{args.property[0]}_compare.xlsx'  # by default use the first property
     filepath = f'output/{filename}'

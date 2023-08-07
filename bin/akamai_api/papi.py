@@ -17,10 +17,14 @@ from utils import files
 
 
 class Papi(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None,
-                logger: logging.Logger = None):
-        super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
-        # https://techdocs.akamai.com/property-mgr/reference/api
+    def __init__(self,
+                 account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None,
+                 cookies: str | None = None,
+                 logger: logging.Logger = None):
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc, cookies=cookies)
+
         self.MODULE = f'{self.base_url}/papi/v1'
         self.headers = {'PAPI-Use-Prefixes': 'false',
                         'Accept': 'application/json',
@@ -62,6 +66,8 @@ class Papi(AkamaiSession):
         response = self.session.get(f'{self.MODULE}/contracts', params=self.params, headers=self.headers)
         self.logger.debug(f'Collecting contracts {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
+            print_json(data=response.json())
+
             return response.json()['contracts']['items']
         else:
             return response.json()

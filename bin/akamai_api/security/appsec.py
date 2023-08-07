@@ -13,10 +13,15 @@ from utils import files
 
 
 class Appsec(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None, cookies: str | None = None,
-                logger: logging.Logger = None):
+    def __init__(self,
+                 account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None,
+                 cookies: str | None = None,
+                 logger: logging.Logger = None):
 
-        super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
+        super().__init__(account_switch_key=account_switch_key, section=section,
+                         edgerc=edgerc, cookies=cookies)
         self.MODULE = f'{self.base_url}/appsec/v1'
         self.headers = {'PAPI-Use-Prefixes': 'false',
                         'Accept': 'application/json',
@@ -25,7 +30,7 @@ class Appsec(AkamaiSession):
         self.group_id = self.group_id
         self.config_id = None
         self.account_switch_key = account_switch_key
-        self.cookies = self.cookies
+        self.cookies = cookies
         self.logger = logger
 
     def list_waf_configs(self):

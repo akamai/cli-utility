@@ -4,10 +4,11 @@ from akamai_api.cpcode import CpCode
 
 
 class CpCodeWrapper(CpCode):
-    def __init__(self, account_switch_key: str | None = None,
-                 section: str | None = None):
-
-        super().__init__(account_switch_key=account_switch_key)
+    def __init__(self,
+                 account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None):
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.account_switch_key = account_switch_key
 
     def list_cpcode(self,

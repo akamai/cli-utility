@@ -17,7 +17,7 @@ from utils.cli_formatter import CLIFormatter
 
 
 custom_level_styles = {
-    'debug': {'color': 'blue'},
+    'debug': {'color': 'cyan'},
     'info': {'color': 'white'},
     'warning': {'color': 'yellow'},
     'error': {'color': 'red'},
