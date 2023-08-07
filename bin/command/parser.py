@@ -62,10 +62,10 @@ class AkamaiParser(argparse.ArgumentParser):
                             metavar='', type=str, dest='edgerc',
                             help='location of the credentials file [$AKAMAI_EDGERC]')
         parser.add_argument('-s', '--section',
-                            metavar='', type=str, dest='section',
+                            metavar='', type=str, dest='section', default='default',
                             help='section of the credentials file [$AKAMAI_EDGERC_SECTION]')
-        parser.add_argument('-v', '--version', action='version', version='%(prog)s v1.0.0',
-                            help='show akamai cli utility version')
+        # parser.add_argument('-v', '--version', action='version', version='%(prog)s v1.0.0',
+        #                     help='show akamai cli utility version')
         parser.add_argument('-h', '--help', action='help', help='show this help message and exit')
         parser.add_argument('-l', '--log-level',
                               choices=['debug', 'info', 'warning', 'error', 'critical'],

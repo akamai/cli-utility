@@ -23,16 +23,20 @@ if __name__ == '__main__':
     start_time = perf_counter()
     logger = lg.setup_logger(args)
 
-    # display full account name
-    if args.account_switch_key:
-        iam = IdentityAccessManagement(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
-        account = iam.search_account_name(value=args.account_switch_key)[0]
+    if args.command is None:
+        sys.exit(logger.error('no valid command found'))
     else:
-        papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
-        account_id = papi.get_account_id()
-        iam = IdentityAccessManagement(account_switch_key=account_id, logger=logger)
-        account = iam.search_account_name(value=account_id)[0]
-    account = iam.show_account_summary(account)
+        if args.command not in ['search', 'ruleformat', 'log']:
+            # display full account name
+            if args.account_switch_key:
+                iam = IdentityAccessManagement(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+                account = iam.search_account_name(value=args.account_switch_key)[0]
+            else:
+                papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+                account_id = papi.get_account_id()
+                iam = IdentityAccessManagement(account_switch_key=account_id, logger=logger)
+                account = iam.search_account_name(value=account_id)[0]
+            account = iam.show_account_summary(account)
 
     if args.command == 'delivery':
         account_folder = f'output/delivery/{account}'
@@ -98,5 +102,6 @@ if __name__ == '__main__':
     if args.command == 'search':
         admin.lookup_account(args, logger)
 
-    end_time = lg.log_cli_timing(start_time)
-    logger.info(end_time)
+    if args.command not in ['search', 'ruleformat', 'log']:
+        end_time = lg.log_cli_timing(start_time)
+        logger.info(end_time)

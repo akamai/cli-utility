@@ -22,8 +22,9 @@ from utils import files
 cwd = Path().absolute()
 
 
-def list_ruleformat(logger) -> list:
-    papi = Papi(logger=logger)
+def list_ruleformat(args, logger) -> list:
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
+    papi = Papi(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     _, formats = papi.list_ruleformat()
     if 'latest' in formats:
         formats = formats[-1:] + formats[:-1]
@@ -49,11 +50,12 @@ def get_all_ruleformat_schema(args, papi, formats, logger):
 
 
 def get_ruleformat_schema(args, logger):
-    papi = Papi(logger=logger)
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
+    papi = Papi(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     if args.version is None:
         answer = input('Would you like to see all versions? (y/N)\t')
         if answer.upper() == 'Y':
-            formats = list_ruleformat(logger=logger)
+            formats = list_ruleformat(args, logger=logger)
             if args.xlsx:
                 get_all_ruleformat_schema(args, papi, formats, logger=logger)
             sys.exit(1)
@@ -63,7 +65,7 @@ def get_ruleformat_schema(args, logger):
 
     status_code, rule_dict = papi.get_ruleformat_schema(args.product_id, args.version)
     if status_code == 200:
-        papi_wrapper = PapiWrapper(logger=logger)
+        papi_wrapper = PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
 
         # behavior sanitation
         behaviors_in_catalog = list(rule_dict['definitions']['catalog']['behaviors'].keys())

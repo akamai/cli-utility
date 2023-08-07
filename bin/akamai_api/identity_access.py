@@ -83,8 +83,8 @@ class IdentityAccessManagement(AkamaiSession):
             sys.exit(self.logger.error(resp.json()['detail']))
 
         if len(account_name) > 1:
-            print_json(data=resp.json())
-            sys.exit(self.logger.error('please use the right account switch key'))
+            # print_json(data=resp.json())
+            sys.exit(self.logger.error('please provide account switch key [-a/--accountkey]'))
         return account_name
 
     def search_account_name_without_colon(self, value: str | None = None) -> str:
