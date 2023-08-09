@@ -66,8 +66,7 @@ class Papi(AkamaiSession):
         response = self.session.get(f'{self.MODULE}/contracts', params=self.params, headers=self.headers)
         self.logger.debug(f'Collecting contracts {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
-            print_json(data=response.json())
-
+            # print_json(data=response.json())
             return response.json()['contracts']['items']
         else:
             return response.json()
@@ -381,7 +380,7 @@ class Papi(AkamaiSession):
                 stg_version = max(dd['propertyVersion'])
             if prd_version == 0:
                 prd_version = max(dd['propertyVersion'])
-        self.logger.info(f'Found {items[0]["propertyName"]:<40} staging:production v{stg_version}:v{prd_version}')
+        self.logger.info(f'{items[0]["propertyName"]:<40} staging:production    v{stg_version}:v{prd_version}')
         return stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):

@@ -44,12 +44,14 @@ pd.set_option('display.max_rows', None)
 
 def main(args, account_folder, logger):
     '''
-    python bin/akamai-utility.py -a 1-1IY5Z delivery-config --show --group-id 14803 163889 162428 90428 14805 82695
+    akamai util delivery --show --group-id 14803 163889 162428 90428 14805 82695
     '''
     if args.group_id and args.property:
         sys.exit(logger.error('Please use either --group-id or --property, not both'))
 
     concurrency = int(args.concurrency) if args.concurrency else None
+    if concurrency > 10:
+        sys.exit(logger.error('Please reduce concurrency.  10 is the maximum value allowed'))
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     cpc = cp.CpCodeWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc)
     if args.behavior:
@@ -131,9 +133,9 @@ def main(args, account_folder, logger):
         # build group structure as displayed on control.akamai.com
         logger.warning('Collecting properties summary for the account')
         if args.group_id is None:
-            logger.critical(' 200 properties take ~  7 minutes')
-            logger.critical(' 800 properties take ~ 30 minutes')
-            logger.critical('2200 properties take ~ 80 minutes')
+            logger.critical('  200 properties take ~  7 minutes')
+            logger.critical('  800 properties take ~ 30 minutes')
+            logger.critical('2,200 properties take ~ 80 minutes')
             logger.critical('please consider using --group-id to reduce total properties')
 
         with yaspin() as sp:
@@ -159,7 +161,9 @@ def main(args, account_folder, logger):
         if not args.group_id:
             print()
             if group_df.shape[0] > 0:
-                logger.warning(f'total groups {allgroups_df.shape[0]}, only {group_df.shape[0]} groups have properties.')
+                total_property_count = group_df['propertyCount'].sum()
+                logger.warning(f'Total {total_property_count:n} properties. '
+                               f'{group_df.shape[0]} groups have properties. (out of {allgroups_df.shape[0]} total groups)')
             total = allgroups_df['propertyCount'].sum()
             all_groups = group_df['groupId'].unique().tolist()
             modified_list = [word for word in all_groups]
@@ -169,7 +173,7 @@ def main(args, account_folder, logger):
         if args.summary is True:
             sheet = {}
             sheet['account_summary'] = group_df
-            filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/account_detail.xls'
+            filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/account_summary.xlsx'
             files.write_xlsx(filepath, sheet, freeze_column=1) if not group_df.empty else None
             files.open_excel_application(filepath, args.show, group_df)
             return None
@@ -283,32 +287,36 @@ def netstorage(args, account_folder, logger):
         pandarallel.initialize(progress_bar=False, verbose=0)
         print()
 
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+    if 'ruletree' not in properties_df.columns:
+        properties_df['ruletree'] = properties_df.apply(lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
+                                                            if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
+
     properties = properties_df[['propertyName', 'propertyId', 'productionVersion', 'latestVersion', 'ruletree']].copy()
     properties['rules'] = properties['ruletree'].parallel_apply(lambda x: x['rules'])
     property_name = properties['propertyName'].values
     logger.debug(property_name)
     rules = properties['rules'].values
-
-    print()
     logger.critical('Collect net storage detail ...')
     prop = {key: value for key, value in zip(property_name, rules)}
-
     '''
     for property_name, rule in prop.items():
         all_behaviors.append(papi.collect_property_behavior(property_name, rule))
     '''
     def collect_behavior(property_name, rule):
-        papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
         return papi.collect_property_behavior(property_name, rule)
 
     # thread processing
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    concurrency = int(args.concurrency) if args.concurrency else 1
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
         t0 = perf_counter()
         futures = []
         all_behaviors = []
         total_size = len(prop)
-        logger.critical(f'collecting behavior {total_size}')
+        logger.debug(f'collecting behavior {total_size}')
         progress_interval = total_size // 4  # 25% progress
+        if progress_interval < 1:
+            progress_interval = 1
         for i, (property_name, rule) in enumerate(prop.items()):
             future = executor.submit(collect_behavior, property_name, rule)
             futures.append((i, future))
@@ -320,7 +328,7 @@ def netstorage(args, account_folder, logger):
             result = future.result()
             all_behaviors.append(result)
         t1 = perf_counter()
-        logger.critical(f'collecting {len(all_behaviors)} behaviors: {t1 - t0:.2f} seconds')
+        logger.debug(f'collecting {len(all_behaviors)} behaviors: {t1 - t0:.2f} seconds')
 
     behavior = pd.concat(all_behaviors)
     behavior = behavior.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
@@ -329,10 +337,10 @@ def netstorage(args, account_folder, logger):
 
     t0 = perf_counter()
     print()
-    logger.critical('Collecting net storage detail')
+    logger.debug('Collecting net storage detail')
 
     netstorage = behavior.query("name == 'origin'").copy()
-    logger.critical(netstorage.shape)
+    logger.debug(netstorage.shape)
     netstorage = netstorage.reset_index(drop=True)
     netstorage = netstorage[netstorage['json_or_xml'].apply(
         lambda x: isinstance(x, dict) and x.get('originType') == 'NET_STORAGE')]
@@ -356,8 +364,8 @@ def netstorage(args, account_folder, logger):
         sheet = {}
         sheet['net_storage'] = ns_df[columns]
         t1 = perf_counter()
-        msg = 'collecting net storage'
-        logger.critical(f'{msg:<40} finised  {t1 - t0:.2f} seconds')
+        msg = 'collecting net storage detail'
+        logger.critical(f'{msg:<40} finished  {t1 - t0:.2f} seconds')
 
         filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/net_storage.xlsx'
         files.write_xlsx(filepath, sheet, freeze_column=6)
@@ -570,7 +578,7 @@ def activation_status(args, logger):
 
 def get_property_ruletree(args, account_folder, logger):
     '''
-    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config ruletree --property AAA BBB
+    akamai util delivery ruletree --property AAA BBB
     '''
 
     if args.version and len(args.property) > 1:
@@ -685,7 +693,8 @@ def get_property_ruletree(args, account_folder, logger):
 
 def hostnames_certificate(args, account_folder, logger):
     '''
-    python bin/akamai-utility.py -a 1-5BYUG1 delivery-config hostname --property --version 27
+    akamai util delivery hostname-cert --property A --version 27
+    akamai util delivery hostname-cert --property A B C D
     '''
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, only one property is supported'))
@@ -744,9 +753,10 @@ def hostnames_certificate(args, account_folder, logger):
 
 def get_property_all_behaviors(args, logger):
     '''
-    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config behavior --property XXXXX --remove-tags uuid variables templateUuid templateLink xml
+    akamai util delivery behavior --property XXXXX
+        --remove-tags uuid variables templateUuid templateLink xml
     '''
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     status, resp = papi.search_property_by_name(args.property)
     if status == 200:
         version = int(args.version) if args.version else None
@@ -765,22 +775,24 @@ def get_property_all_behaviors(args, logger):
         behaviors_cli = '[' + ' '.join(unique_behaviors) + ']'
 
         if len(unique_behaviors) > 0:
-            logger.info('Behaviors founded')
-            logger.warning(behaviors_cli)
+            logger.info(f'Behaviors founded: {behaviors_cli}')
             print()
-            logger.critical('You can use the list to compare behavior between 2 delivery configs')
-            logger.info('>> akamai util diff behavior --property A B --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost')
+            logger.critical('You can use the list to compare behavior amongs multiple delivery configs')
+            logger.info('>> akamai util diff behavior --property A B C D --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost')
 
 
 def get_property_advanced_behavior(args, account_folder, logger):
     '''
-    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property xxx yyy --advBehavior
+    akamai util delivery metadata --property xxx yyy
     '''
 
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, we can lookup one property'))
 
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    if args.property is None:
+        sys.exit(logger.error('at least one property is required'))
+
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     sheet = {}
     options = []
     columns = ['property', 'type', 'xml', 'path']
@@ -801,8 +813,7 @@ def get_property_advanced_behavior(args, account_folder, logger):
         if status != 200:
             sys.exit(logger.error(f'{json["title"]}. please provide correct version'))
 
-        papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
-        behaviors = papi_rules.collect_property_behavior(property_name, json['rules'])
+        behaviors = papi.collect_property_behavior(property_name, json['rules'])
         if len(behaviors) > 0:
             db = pd.DataFrame(behaviors)
             db = db[db['name'] == 'advanced'].copy()
@@ -815,12 +826,12 @@ def get_property_advanced_behavior(args, account_folder, logger):
             db = db[columns]
             options.append(db)
 
-        criteria = papi_rules.collect_property_criteria(property_name, json['rules'])
+        criteria = papi.collect_property_criteria(property_name, json['rules'])
         if len(criteria) > 0:
             dc = pd.DataFrame(criteria)
             dc = dc[dc['name'] == 'matchAdvanced'].copy()
         if dc.empty:
-            logger.info('advanced match not found')
+            logger.info('advanced match    not found')
         else:
             dc = dc.reset_index(drop=True)
             dc = dc.rename(columns={'json_or_xml': 'xml'})
@@ -846,7 +857,7 @@ def get_property_advanced_behavior(args, account_folder, logger):
         if args.hidexml is True:
             for property, type, path, xml_string in df[['property', 'type', 'path', 'xml']].values:
                 print()
-                logger.warning(f'{type:<20} {property:<70} {path}')
+                logger.warning(f'{type:<20} {property:<50} {path}')
                 syntax = Syntax(xml_string, 'xml', theme='solarized-dark', line_numbers=args.lineno)
                 console = Console()
                 console.print(syntax)
@@ -855,12 +866,12 @@ def get_property_advanced_behavior(args, account_folder, logger):
         print()
         filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/metadata.xlsx'
         files.write_xlsx(filepath, sheet, show_index=False)
-        files.open_excel_application(filepath, show=not args.no_show, df=df)
+        files.open_excel_application(filepath, not args.no_show, df)
 
 
 def get_property_advanced_override(args, logger):
     '''
-    python bin/akamai-utility.py -a AANA-2NUHEA delivery-config metadata --property xxx yyy --advOverride
+    akamai util delivery metadata --property xxx yyy --advOverride
     '''
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, we can lookup one property'))
@@ -923,7 +934,7 @@ def get_custom_behavior(args, logger):
     status, response = papi.list_custom_behaviors()
     if status == 200:
         if len(response) == 0:
-            sys.exit(logger.info('No custome behavior found'))
+            sys.exit(logger.info('No custom behavior found'))
         df = pd.DataFrame(response)
         columns = df.columns.values.tolist()
         for x in ['xml', 'updatedDate', 'sharingLevel', 'description', 'status', 'updatedByUser', 'approvedByUser']:
@@ -988,7 +999,7 @@ def add_group_url(df: pd.DataFrame, papi) -> pd.DataFrame:
     del df['groupURL']
     del df['propertyCount']
     df = df.rename(columns={'groupName_url': 'propertyCount'})  # show column with hyperlink instead
-    summary_columns = ['accountId', 'contractId', 'groupId', 'groupName']
+    summary_columns = ['accountId', 'contractId', 'groupId', 'group_structure', 'groupName']
     if 'parentGroupId' in df.columns.values.tolist():
         summary_columns.extend(['parentGroupId', 'propertyCount'])
     else:

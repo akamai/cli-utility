@@ -333,7 +333,7 @@ class PapiWrapper(Papi):
             assetId = detail['assetId'][4:]
             gid = detail['groupId'][4:]
             acc_url = f'https://control.akamai.com/apps/property-manager/#/property-version/{assetId}/{version}/edit?gid={gid}'
-            self.logger.info(f'{propertyName:<46} {acc_url}')
+            self.logger.info(f'{propertyName:<40} {acc_url}')
         try:
             return detail['versions']['items'][0][dict_key]
         except:
@@ -539,7 +539,7 @@ class PapiWrapper(Papi):
         account_properties = []
 
         def process_row(row):
-            msg = f"{row.name:<5} {row['groupId']:<12} {row['group_structure']}"
+            msg = f"{row.name:<5} {row['groupId']:<13} {row['group_structure']}"
             if row['propertyCount'] == 0:
                 self.logger.info(f'{msg} no property to collect')
             else:
@@ -830,7 +830,7 @@ class PapiWrapper(Papi):
                 df[behavior] = df.parallel_apply(lambda row: self.siteshield_value(row['propertyName'], row['ruletree']['rules']), axis=1)
                 df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
             elif behavior == 'sureroute':
-                df[behavior] = df.parallel_apply(lambda row: self.sureroute_value_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+                df[behavior] = df.parallel_apply(lambda row: self.sureroute_value(row['propertyName'], row['ruletree']['rules']), axis=1)
                 df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
             elif behavior == 'custombehavior':
                 try:
