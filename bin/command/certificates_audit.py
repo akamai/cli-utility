@@ -22,17 +22,10 @@ from yaspin import yaspin
 from yaspin.spinners import Spinners
 
 
-def audit(args, logger):
+def audit(args, account_folder, logger):
 
-    # display full account name
-    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-    account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = iam.show_account_summary(account)
-    account_folder = f'output/{account}'
-    Path(account_folder).mkdir(parents=True, exist_ok=True)
-    filepath = f'{account_folder}/certificate.xlsx' if args.output is None else f'output/{args.output}'
-
-    cps = CpsWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    filepath = f'output/{args.output}' if args.output else f'{account_folder}/certificate.xlsx'
+    cps = CpsWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     csv_list = []
     if args.enrollment_id and not args.contract_id:
         csv_list = [int(value) for value in args.enrollment_id]
@@ -44,7 +37,7 @@ def audit(args, logger):
             print(tabulate(df, showindex=True))
             return None
 
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     contracts = args.contract_id if args.contract_id else papi.get_contracts()
     sheet = {}
     contract_data = []
@@ -61,7 +54,9 @@ def audit(args, logger):
             logger.warning(f'{msg} - found no certificate')
         else:
             logger.warning(f'{msg}')
-            columns = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'hostname_count']
+            columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'common_name', 'hostname_count']
+            df = df.rename(columns={'id': 'enrollment_id',
+                                    'ra': 'authority'})
             # print(tabulate(df[columns], headers=columns))
 
             if args.sni is True:
@@ -71,7 +66,7 @@ def audit(args, logger):
                 logger.debug(f'\n{df}')
             if args.authority:
                 filtered = True
-                df = df[df['ra'].isin(args.authority)].copy()
+                df = df[df['authority'].isin(args.authority)].copy()
                 df = df.reset_index(drop=True)
                 logger.debug(f'\n{df}')
             if args.slot:
@@ -80,13 +75,13 @@ def audit(args, logger):
                 df = df.reset_index(drop=True)
             if args.enrollment_id:
                 filtered = True
-                df = df[df['id'].isin(csv_list)].copy()
+                df = df[df['enrollment_id'].isin(csv_list)].copy()
                 df = df.reset_index(drop=True)
 
         if not df.empty:
             if filtered is True:
                 logger.warning('Filter based on selected criteria')
-                columns = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'hostname_count']
+                columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'common_name', 'hostname_count']
                 print(tabulate(df[columns], headers=columns))
 
             with yaspin(Spinners.star, timer=True) as sp:
@@ -113,9 +108,9 @@ def audit(args, logger):
                 df['hostname_with_ending_comma'] = df['hostname'].parallel_apply(lambda x: ',\n'.join(''.join(c) for c in x))
                 del df['hostname']
 
-                columns = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'expiration_date',
+                columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'common_name', 'expiration_date',
                         'hostname_count', 'hostname_one_per_line', 'hostname_with_ending_comma']
-                df['expiration_date'] = df['id'].parallel_apply(lambda x: cps.certificate_expiration_date(x))
+                df['expiration_date'] = df['enrollment_id'].parallel_apply(lambda x: cps.certificate_expiration_date(x))
                 if args.expire is True:
                     filtered = True
                     filtered_df = df.copy()
@@ -126,7 +121,7 @@ def audit(args, logger):
                     filtered_df = filtered_df.reset_index(drop=True)
                     filtered_df['expiration_date'] = filtered_df['expiration_date'].apply(
                         lambda x: x.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%dT%H:%M:%SZ'))
-                    temp_col = ['contractId', 'id', 'Slot', 'sni', 'ra', 'common_name', 'expiration_date']
+                    temp_col = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'common_name', 'expiration_date']
                     # logger.info(f'\n{filtered_df[temp_col]}')
                     table = tabulate(filtered_df[temp_col], headers=temp_col, showindex=True, tablefmt='github')
                     print()

@@ -12,10 +12,11 @@ from utils import google_dns as gg
 
 
 class CpsWrapper(AkamaiSession):
-    def __init__(self, account_switch_key: str | None = None, section: str | None = None,
-                 cookies: str | None = None,
+    def __init__(self, account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None,
                  logger: logging.Logger = None):
-        super().__init__(account_switch_key=account_switch_key, section=section, cookies=cookies)
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.MODULE = f'{self.base_url}/cps/v2'
         self.headers = {'Accept': 'application/vnd.akamai.cps.enrollments.v11+json'}
         self.account_switch_key = account_switch_key if account_switch_key else None
@@ -28,12 +29,10 @@ class CpsWrapper(AkamaiSession):
         params['contractId'] = contract_id
         resp = self.session.get(f'{self.MODULE}/enrollments', params=params, headers=self.headers)
         enrollments = []
-        empty_df = pd.DataFrame()
+        df = pd.DataFrame()
         if resp.status_code == 200:
-
             self.logger.debug(f'Enrollments for contract {contract_id:<15} {urlparse(resp.url).path:>20} {resp.status_code}')
             enrollments = resp.json()['enrollments']
-
             df = pd.DataFrame(enrollments)
             pd.set_option('display.max_rows', 300)
             pd.set_option('max_colwidth', 50)
@@ -62,8 +61,9 @@ class CpsWrapper(AkamaiSession):
                 df = df.rename(columns={'productionSlots': 'Slot'})
                 df['Slot'] = df['Slot'].astype(str)
 
-            if not empty_df.empty:
-                self.logger.critical(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do have hostname assigned to')
+            if not df.empty:
+                if empty_df.shape[0] > 0:
+                    self.logger.critical(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do not have hostname assigned to')
                 columns = ['contractId', 'id', 'Slot', 'ra', 'common_name', 'sni', 'hostname_count', 'hostname']
                 return enrollments, df[columns]
             else:
