@@ -61,15 +61,15 @@ def setup_logger(args):
 
 def load_local_config_file(config_file: str) -> str:
     docker_path = os.path.expanduser(Path('/cli'))
-    local_home_path = os.path.expanduser(Path('~/.akamai-cli'))
+    local_home_path = os.path.expanduser(Path('~/.akamai-cli/src/cli-utility'))
 
     if Path(docker_path).exists():
         origin_config = f'{docker_path}/.akamai-cli/src/cli-utility/bin/config/{config_file}'
     elif Path(local_home_path).exists():
-        origin_config = f'{local_home_path}/src/cli-utility/bin/config/{config_file}'
+        origin_config = f'{local_home_path}/bin/config/{config_file}'
         origin_config = os.path.expanduser(origin_config)
     else:
-        raise FileNotFoundError(f'Could not find {config_file}')
+        origin_config = f'{os.getcwd()}/bin/config/{config_file}'
 
     try:
         shutil.copy2(origin_config, f'config/{config_file}')

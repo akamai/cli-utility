@@ -3,10 +3,10 @@
   "disable_existing_loggers": false,
   "formatters": {
     "short": {
-      "format": "%(levelname)s: %(message)s"
+      "format": "%(levelname)-8s: %(message)s"
     },
     "long": {
-      "format": "%(asctime)s %(process)d %(filename)-30s %(lineno)-3d %(levelname)s: %(message)s",
+      "format": "%(asctime)s %(process)d %(filename)-30s %(lineno)-3d %(levelname)-8s: %(message)s",
       "datefmt": "%Y-%m-%y %H:%M:%S"
     }
   },
