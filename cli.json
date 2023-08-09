@@ -8,8 +8,8 @@
             "aliases": [
                 "util"
             ],
-            "version": "0.0.0",
-            "description": "Provides a collection of useful tools"
+            "version": "1.0.0",
+            "description": "A collection of useful tools not limited to delivery, security, certificate."
         }
     ]
 }
