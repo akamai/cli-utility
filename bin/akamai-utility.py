@@ -37,13 +37,12 @@ if __name__ == '__main__':
                 iam = IdentityAccessManagement(account_switch_key=account_id, logger=logger)
                 account = iam.search_account_name(value=account_id)[0]
             account = iam.show_account_summary(account)
+            account_folder = f'output/{account}'
+            Path(account_folder).mkdir(parents=True, exist_ok=True)
 
     if args.command == 'delivery':
-        account_folder = f'output/delivery/{account}'
-        Path(account_folder).mkdir(parents=True, exist_ok=True)
-
         if args.subcommand == 'behavior':
-            dc.get_property_all_behaviors(args, account_folder, logger=logger)
+            dc.get_property_all_behaviors(args, logger=logger)
         elif args.subcommand == 'custom-behavior':
             dc.get_custom_behavior(args, logger=logger)
         elif args.subcommand == 'metadata':
@@ -63,8 +62,6 @@ if __name__ == '__main__':
             dc.main(args, account_folder, logger)
 
     if args.command == 'security':
-        account_folder = f'output/security/{account}'
-        Path(account_folder).mkdir(parents=True, exist_ok=True)
         if args.subcommand == 'hostname':
             sec.audit_hostname(args, account_folder, logger)
         else:
@@ -72,17 +69,22 @@ if __name__ == '__main__':
 
     if args.command == 'diff':
         if args.subcommand == 'behavior':
-            diff.compare_delivery_behaviors(args, logger)
+            diff.compare_delivery_behaviors(args, logger=logger)
         else:
-            diff.compare_config(args, logger)
+            diff.compare_config(args, logger=logger)
 
     if args.command == 'certificate':
-        ca.audit(args, logger)
+        ca.audit(args, account_folder, logger)
 
     if args.command == 'gtm':
-        gtm.audit(args, logger)
+        if args.subcommand == 'remove':
+            gtm.remove_gtm_property(args, logger)
+        else:
+            gtm.audit(args, account_folder, logger)
 
     if args.command == 'report':
+        account_folder = f'output/{account}/report'
+        Path(account_folder).mkdir(parents=True, exist_ok=True)
         if args.subcommand == 'list':
             report.all_reports(args, logger)
         elif args.subcommand == 'offload-url':
