@@ -30,7 +30,7 @@ class Appsec(AkamaiSession):
         self.group_id = self.group_id
         self.config_id = None
         self.account_switch_key = account_switch_key
-        self.cookies = cookies
+        self.cookies = self.cookies
         self.logger = logger
 
     def list_waf_configs(self):

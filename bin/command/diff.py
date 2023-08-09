@@ -93,8 +93,8 @@ def compare_config(args, logger=None):
 
         # First check X-Xsrf-Token
         msg = 'Cookie information from control.akamai.com are required to compare XML metadata'
-        msg = f'{msg}\n\t Cookies name required: XSRF-TOKEN, AKASSO, and AKATOKEN'
-        msg = f'{msg}\n\n\t You can set them up inside .edgerc file or add additional arguments --acc-cookies'
+        msg = f'{msg}\n\t  Cookies name required: XSRF-TOKEN, AKASSO, and AKATOKEN'
+        msg = f'{msg}\n\n\t  You can set them up inside .edgerc file or add additional arguments --acc-cookies'
         if not papi.cookies and args.acc_cookies is None:
             sys.exit(logger.error(msg))
 

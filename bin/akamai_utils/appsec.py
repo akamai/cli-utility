@@ -24,6 +24,7 @@ class AppsecWrapper(Appsec):
         super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc, cookies=cookies)
         self.account_switch_key = account_switch_key
         self.logger = logger
+        self.cookies = self.cookies
 
     def get_config_detail(self, config_id: int):
         return super().get_config_detail(config_id)
