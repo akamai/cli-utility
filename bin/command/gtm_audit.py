@@ -1,26 +1,18 @@
 from __future__ import annotations
 
+import csv
 import sys
-from pathlib import Path
 
 import pandas as pd
 from akamai_api.gtm import GtmWrapper
-from akamai_api.identity_access import IdentityAccessManagement
 from rich import print_json
 from utils import files
 
 
-def audit(args, logger):
+def audit(args, account_folder, logger):
 
-    # display full account name
-    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-    account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = iam.show_account_summary(account)
-    account_folder = f'output/{account}'
-    Path(account_folder).mkdir(parents=True, exist_ok=True)
-    filepath = f'{account_folder}/gtm.xlsx' if args.output is None else f'output/{args.output}'
-
-    gtm = GtmWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/gtm.xlsx'
+    gtm = GtmWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
 
     status, resp = gtm.list_domains()
     if status != 200:
@@ -75,3 +67,36 @@ def audit(args, logger):
     if sheet:
         files.write_xlsx(filepath, sheet)
         files.open_excel_application(filepath, not args.no_show, flat_df)
+
+
+def remove_gtm_property(args, logger):
+    gtm = GtmWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+    print()
+    with open(args.input, newline='') as csvfile:
+        line = csv.DictReader(csvfile, delimiter=',')
+        count = 0
+        for row in line:
+            try:
+                domain = row['domain']
+            except KeyError:
+                logger.error('please correct header to domain')
+                count += 1
+
+            try:
+                property = row['property']
+            except KeyError:
+                logger.error('please correct header to property')
+                count += 1
+
+            if count > 1:
+                sys.exit()
+            else:
+                status, resp = gtm.get_property(domain, property)
+                msg = f'domain: {domain:<40} property: {property:<20}'
+
+                if status == 200:
+                    logger.info(f'{msg}removed success')
+                elif status == 404:
+                    logger.error(f'{msg}invalid input')
+                else:
+                    print_json(data=resp)
