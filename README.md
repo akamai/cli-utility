@@ -1,73 +1,227 @@
-# cli-utility
+# Introduction
 
-Provides a collection of useful tools.
+The `akamai utility` is designed to enhance efficiency and productivity. This command-line interface (CLI) is inspired by customer requests and has been developed to benefit both Akamai customers and internal Akamai employees. By encapsulating complex API calls into user-friendly commands, the utility facilitates tasks that involve Akamai services, offering a streamlined and efficient experience.
+
+# Key Features
+
+- **Versatile Functionality**: `akamai utility` offers a range of commands that cater to various needs, ensuring a seamless experience for users.
+- **Excel Output**: Most commands generate results in Excel format, promoting ease of analysis and interpretation. The output files are stored in the `output` folder.
+- **XML Handling**: For commands involving XML data, `akamai utility` provides options to display XML results in the terminal. Line numbers can be toggled, ensuring readability. When XML is incorporated into Excel files, character counts are included due to Excel's 32,767 character limitation per cell.
+- **Account-Wide Analysis**: To expedite requests for specific commands, the `--concurrency` argument allows users to analyze account-wide information efficiently. Users are advised to consider rate limiting associated with their credentials.
 
 # Installation
 
-```bash
-akamai install utility
-```
+To install the utility execute command `akamai install utility`
 
 # Usage
 
-Use `-h/--help`- to get a list of available top commands via akamai utility CLI
+`akamai utility` can be accessed using the alias `util`, substituting the need for `utility`. For a list of available top-level commands, refer to the help menu
 
 ```bash
-akamai utility -h
-akamai utility --help
-akamai util -h
-akamai util --help
+akamai utility/util -h/--help
 ```
 
 ![main help](./bin/doc/help/utility.jpg)
 
-# delivery
+# Delivery Command
 
-You can use `delivery` command to get high level information about all properties on the account. Those information includes groupId, contractId, versions (latest, staging, production), last updated, productId, # of hostnames, list of hostnames.
+`delivery` command offers a comprehensive overview of properties associated with the account. This information includes group ID, contract ID, version details (latest, staging, production), last update timestamp, product ID, hostname count, and a list of hostnames.
 
 ![delivery](./bin/doc/help/delivery.jpg)
 
-`delivery` command has 7 subcommands: `behavior`, `custom-behavior`, `metadata`, `hostname-cert`, `origin-cert`, `ruletree`, and `activate`.
+`--summary` argument provides a structural overview of [Property Groups structures](https://control.akamai.com/apps/property-manager/#/groups) and the count of properties within each group. Unlike the order displayed on Akamai Control Center portal, CLI organizes groups and properties alphabetically.
 
-Each summand has its own arguments, use `-h/--help` for completion
+```bash
+akamai util delivery --summary --show
+```
+
+For detailed property information, the `--summary` argument can be omitted. Additionally, the `--behavior` argument facilitates checks for specific behaviors implemented by properties. Multiple behaviors are supported.
+
+```bash
+akamai util delivery --show --behavior adaptiveAcceleration allowPost \
+    cacheKeyIgnoreCase caching cpCode downstreamCache enhancedAkamaiProtocol \
+    failAction gzipResponse http2 imageManager mPulse \
+    modifyOutgoingResponseHeader origin prefetch prefetchable redirect report \
+    setVariable siteShield sureRoute
+```
+
+`delivery` command features seven subcommands:
+
+- [behavior](#delivery-behavior)
+- [custom-behavior](#delivery-custom-behavior)
+- [metadata](#delivery-metadata)
+- [hostname-cert](#delivery-hostname-cert)
+- [origin-cert](#delivery-origin-cert)
+- [ruletree](#delivery-ruletree)
+- [activate]()
+
+detailed arguments for each subcommand can be accessed using the `-h/--help` option:
 
 ```bash
 akamai util delivery [subcommand] -h
 ```
 
-# security
+## Delivery Behavior
 
-You can use `security` command to download one or more security configurations on the account. If the security configuration has network list, you will have a list of IP addresses included in the result.
+To view all behaviors associated with a property
 
-`security` command has one subcommand `hostname` which provides a list of hostname activating on Akamai staging network not yet added to the security config.
+```bash
+akamai util delivery behavior --property sample
+```
+
+## Delivery Custom-Behavior
+
+To retrieve a list of all custom behaviors on the account
+
+```bash
+akamai util delivery custom-behavior
+akamai util delivery custom-behavior --hidexml
+akamai util delivery custom-behavior --id cbe_382209004 cbe_314399535
+akamai util delivery custom-behavior --id cbe_382209004 cbe_314399535 --lineno
+akamai util delivery custom-behavior --namecontains IPA --hidexml
+```
+
+## Delivery Metadata
+
+To get advanced criteria, advanced behavior and advanced override on a property. Multiple properties are supported.
+
+```bash
+akamai util delivery metadata
+akamai util delivery metadata --property SANDBOX SANDBOX_2
+akamai util delivery metadata --property SANDBOX --hidexml
+akamai util delivery metadata --property SANDBOX --lineno
+```
+
+## Delivery Hostname-Cert
+
+To obtain a list of hostnames and corresponding edge hostnames on a property and whether they are CPS managed or Secure By Default. Multiple properties are supported.
+
+```bash
+akamai util delivery hostname-cert --property A B C D
+```
+
+## Delivery Netstorage
+
+To get netstorage details utilized by properties on the account. Optionally, you can filter by groupId or by property.
+
+```bash
+akamai util delivery netstorage --concurrency 10
+akamai util delivery netstorage --group-id 11111 11112 11113 --concurency 5
+akamai util delivery netstorage --property A B C D
+```
+
+## Delivery Origin-Cert
+
+To retrieve certificate information for all origins on a property
+Note that properties implement Site Shield are exempt due to limitations. The command offers Site Shield map details and a list of CIDR and IPs.
+
+```bash
+akamai util delivery origin-cert
+akamai util delivery origin-cert  --group-id 11111 11112 11113
+akamai util delivery origin-cert  --property A B C D
+```
+
+## Delivery Ruletree
+
+To obtain a hierarchical representation of a property's ruletree structure. For deep nested rules, utilize the `--show-depth` argument to identify the highest depth. The `--show-limit` argument reveals other delivery configuration limits.
+
+# Security
+
+The security command facilitates the download of security configurations for the account. A list of CIDR and IP addresses are provided for configurations with network lists.
 
 ![security](./bin/doc/help/security.jpg)
+
+## security hostname
+
+This subcommand offers a list of hostnames active exclusively on the Akamai staging network, not yet added to the security configuration.
+
+```bash
+akamai util security hostname
+```
 
 # diff
 
 `diff` command supports both delivery and security configuration, both JSON and XML format. You can also compare 2 different delivery configurations.
 
-# ruleformat
+- For delivery config, specify the configuration name.
+- For security config, use the configuration ID.
 
-`ruleformat` provides JSON format from delivery configuration that match productId and rule format version. This JSON is helpful for referencing for example when you run into activation issue. The command also provide other arguments that help you narrow down on specific behaviors. This is also convenient if you are using Akamai-As-Code as you can reference and get sample JSON snippet for specific behaviors.
+```bash
+akamai util diff --config1 sample_pm --left 1 --right 2
+akamai util diff --config1 A --left 1 --config2 B --right 2
+akamai util diff --config1 sample_pm --left 1 --right 2  --remove-tag uuid --no-show
+akamai util diff --security --config1 34076 --left 71 --right 72
+akamai util diff --security --config1 34076 --left 71 --right 72 \
+    --xml --json \
+    --acc-cookies "XSRF-TOKEN=MjA2YzYxOGItYzY2MS00NDkzLTg3NmEtMzE5MzllMDM0YmMy;AKATOKEN=dG9rZW5fRVpDOjE6QUVTL0dDTS9QS0NTNVBhZGRpbmc6WXZHdWM0S0xtOUhlQmJSb0w2NUluQT09LDEyODoCxTw8yfsSvMg7l6/mcA+Ap8ERnFZ780P9sZtDxA2vRlTESW1MrvyLnPvyN/DcE1T9yPCb;AKASSO=Y2EyYjQ3MTMtNTdkNy00Y2ViLWJhYTItNmFlYzQ3NDMyYThm;"
+```
+
+![diff](./bin/doc/help/diff.jpg)
+
+`diff` command has 1 subcommand:
+
+- [behavior](#delivery-behavior)
+
+## Diff Behavior
+
+This subcommand extracts requested behaviors and criteria from JSON ruletrees in delivery configurations. It provides output in xlsx format, streamlining the process for Excel pivot table analysis.
+
+```bash
+akamai util diff behavior --property A B C D
+akamai util diff behavior --property A B C D --behavior origin --criteria path
+akamai util diff behavior --property A B C D --behavior origin --criteria None
+```
+
+# Certificate
+
+The `certificate` command offers detailed information about certificates provisioned by the Akamai Certificate Provisioning System (CPS).
+Filtering can be done using options like `--sni`, `--expire`, and `--authority`.
+
+```bash
+akamai util certificate
+akamai util certificate --expire --sni
+akamai util certificate --slot 3024 7176 9977
+akamai util certificate --authority geotrust --enrollement-id 19569 18843
+```
+
+![certificate](./bin/doc/help/certificate.jpg)
+
+# Ruleformat
+
+The `ruleformat` command provides JSON format from delivery configurations that match a given product ID and rule format version.
+This JSON is valuable for referencing during activation issues.
+The command also aids in obtaining JSON schema and snippet samples for specific behaviors.
 
 ![ruleformat](./bin/doc/help/ruleformat.jpg)
 
-###sample commands
-
 ```bash
+# Retrieve all behaviors of prd_SPM's latest version in xlsx format
 akamai util ruleformat --product-id prd_SPM --version latest --xlsx
 
-# lookup behavior contains keyword "origin"
-akamai util ruleformat --product-id prd_SPM --version latest --behavior origin
+# Filter behavior containing the keyword "origin"
+akamai util ruleformat --product-id prd_SPM --version latest \
+    --behavior origin
 
-# lookup behavior contains keyword "conditionalOrigin", display json schema and provide snippet sample
-akamai util ruleformat --product-id prd_SPM --version latest --behavior conditionalOrigin --json --sample
+# Obtain JSON schema and sample for behavior containing the keyword "conditionalOrigin"
+akamai util ruleformat --product-id prd_SPM --version latest \
+    --behavior conditionalOrigin --json --sample
 
-# lookup behavior contains keyword "conditionalOrigin", display json schema in json format and table format, and provide snippet sample
-akamai util ruleformat --product-id prd_SPM --version latest --behavior conditionalOrigin --json --sample --table
-
+# Retrieve JSON schema in both JSON and table formats, along with a snippet sample
+akamai util ruleformat --product-id prd_SPM --version latest \
+    --behavior conditionalOrigin --json --sample --table
 ```
+
+# search
+
+For users managing multiple accounts, the search command aids in finding the account switch key.
+
+![search](./bin/doc/help/search.jpg)
+
+```bash
+akamai util search --account "TC East" "TC West"
+```
+
+![search_resulr](./bin/doc/result/search.jpg)
 
 # Contribution
 
@@ -75,6 +229,7 @@ By submitting a contribution (the “Contribution”) to this project, and for g
 
 ## Local Install
 
+For local installation, follow these steps:
 Depending on your local python setup,
 replace `python with python3` and `pip with pip3`
 
