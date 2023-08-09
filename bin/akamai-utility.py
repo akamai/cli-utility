@@ -86,13 +86,13 @@ if __name__ == '__main__':
         account_folder = f'output/{account}/report'
         Path(account_folder).mkdir(parents=True, exist_ok=True)
         if args.subcommand == 'list':
-            report.all_reports(args, logger)
-        elif args.subcommand == 'offload-url':
+            report.all_reports(args, account_folder, logger)
+        elif args.subcommand == 'offload-file-extension':
             report.offload_by_url(args, logger)
         elif args.subcommand == 'offload-hostname':
-            report.offload_by_hostname(args, logger)
+            report.offload_by_hostname(args, account_folder, logger)
         elif args.subcommand == 'response-class':
-            report.traffic_by_response_class(args, logger)
+            report.traffic_by_response_class(args, account_folder, logger)
             # report.traffic_by_response_class_async(args)
 
     if args.command == 'ruleformat':

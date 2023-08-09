@@ -22,8 +22,8 @@ from tabulate import tabulate
 from utils import files
 
 
-def all_reports(args, logger):
-    rpt = Reporting(account_switch_key=args.account_switch_key, logger=logger)
+def all_reports(args, account_folder, logger):
+    rpt = Reporting(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     data = rpt.list_report()
     df = pd.json_normalize(data)
 
@@ -40,30 +40,47 @@ def all_reports(args, logger):
             df = df.query(f"businessObjectName == '{args.type}'").copy()
             if args.namecontains:
                 df = df[df['name'].str.contains(args.namecontains)].copy()
-            df = df.fillna('')
-            df = df.sort_values(by='name')
-            df = df.reset_index(drop=True)
-            limit = df.limit.unique()
-            maxLimit = df.maxLimit.unique()
-            console_columns = ['name', 'dataRetentionDays', 'limit', 'maxLimit', 'timeBased', 'endpoint', 'version']
-            if limit == maxLimit and limit == ['']:
-                console_columns.remove('limit')
-                console_columns.remove('maxLimit')
-            print()
-            print(tabulate(df[console_columns], headers=console_columns, tablefmt='github', showindex='false'))
-            print()
+        if args.namecontains:
+            df = df[df['name'].str.contains(args.namecontains)].copy()
 
+        df = df.fillna('')
+        df = df.sort_values(by='name')
+        df = df.reset_index(drop=True)
+        limit = df.limit.unique().tolist()
+        maxLimit = df.maxLimit.unique().tolist()
+        console_columns = ['name', 'dataRetentionDays', 'limit', 'maxLimit', 'timeBased', 'endpoint', 'version']
+        if args.type is None:
+            console_columns.append('businessObjectName')
+        if limit == maxLimit and limit == ['']:
+            console_columns.remove('limit')
+            console_columns.remove('maxLimit')
+        print()
+        integer_columns = ['limit', 'maxLimit']
+        for col in integer_columns:
+            df[col] = df[col].replace('', '0')
+            df[col] = df[col].astype('int64')
+            df[col] = df[col].astype('str')
+            df[col] = df[col].replace('0', '')
+
+        print(tabulate(df[console_columns], headers=console_columns, tablefmt='github'))
+        print()
         sheet = {}
-        sheet['report'] = df
-        filepath = 'output/reports_type.xlsx'
+        all_columns = df.columns.tolist()
+        all_columns.remove('description')
+        all_columns.append('description')
+        sheet['report'] = df[all_columns]
+        filepath = f'{account_folder}/reports_type.xlsx'
         files.write_xlsx(filepath, sheet, freeze_column=1) if not df.empty else None
-        subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' else None
+        if args.type is None:
+            files.open_excel_application(filepath, True, df)
+        else:
+            files.open_excel_application(filepath, False, df)
 
 
-def offload_by_hostname(args, logger):
-
-    rpt = Reporting(account_switch_key=args.account_switch_key, logger=logger)
-    papi = Papi(account_switch_key=args.account_switch_key, logger=logger)
+def offload_by_hostname(args, account_folder, logger):
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
+    rpt = Reporting(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
+    papi = Papi(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     start, end = reporting.get_start_end(args.interval, int(args.last), logger=logger)
     data = rpt.hits_by_hostname(start, end)
 
@@ -79,20 +96,22 @@ def offload_by_hostname(args, logger):
     stat_df = stat_df.sort_values(by='edgeHits', ascending=False)
 
     sheets = {}
+    df['edgeHits'] = df['edgeHits'].apply(lambda x: f'{x:,}')
+    stat_df['edgeHits'] = stat_df['edgeHits'].apply(lambda x: f'{x:,}')
     sheets['hostname_hit'] = df
     sheets['hit_by_property'] = stat_df
     top_five = stat_df.head(5)
     logger.warning('Top 5 hits, for a full list please check excel file')
     print(tabulate(top_five, headers=['hostname', 'edgeHits'], tablefmt='simple', showindex='false'))
     print()
-    filepath = 'output/reporting_offload_by_host.xlsx'
+    filepath = f'{account_folder}/reporting_offload_by_host.xlsx'
     files.write_xlsx(filepath, sheets)
-    subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath]) if platform.system() == 'Darwin' else None
+    files.open_excel_application(filepath, True, df)
 
 
 def offload_by_url(args, logger):
-
-    rpt = Reporting(account_switch_key=args.account_switch_key, logger=logger)
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
+    rpt = Reporting(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     start, end = reporting.get_start_end(args.interval, int(args.last), logger=logger)
     cpcode_list = args.cpcode
     logger.info(f'Report CpCodes are {" ".join(cpcode_list)}')
@@ -134,23 +153,19 @@ def offload_by_url(args, logger):
     console.print(table)
 
 
-def traffic_by_response_class(args, logger):
-    rpt = Reporting(args.output, account_switch_key=args.account_switch_key, logger=logger)
-    iam = IdentityAccessManagement(args.account_switch_key, logger=logger)
-    account = iam.search_account_name(value=args.account_switch_key)[0]
-    account = account.replace(' ', '_')
-    print()
-    logger.warning(f'Found account {account}')
-    account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
-    account_folder = f'output/reports/{account}'
-    Path(account_folder).mkdir(parents=True, exist_ok=True)
-
+def traffic_by_response_class(args, account_folder, logger):
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
+    rpt = Reporting(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     if args.file and args.cpcode:
         sys.exit(logger.error('Please use either --file or --cpcode, not both'))
 
     start, end = reporting.get_start_end(args.interval, int(args.last), logger=logger)
     # use parallel_apply
     concurrency = int(args.concurrency)
+    if concurrency > 5:
+        logger.critical('This API has limit of 25 request per minute')
+        logger.critical(f'Reduce concurrenct from {concurrency} to 5')
+        concurrency = 5
     pandarallel.initialize(progress_bar=True, nb_workers=concurrency, verbose=0)
 
     if args.cpcode:

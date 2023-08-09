@@ -12,9 +12,12 @@ from utils import files
 
 
 class Reporting(AkamaiSession):
-    def __init__(self, output: str | None = None, account_switch_key: str | None = None,
+    def __init__(self, account_switch_key: str | None = None,
+                 section: str | None = None,
+                 edgerc: str | None = None,
+                 output: str | None = None,
                  logger: logging.Logger = None):
-        super().__init__()
+        super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.MODULE = f'{self.base_url}/reporting-api/v1'
         self.headers = {'Accept': 'application/json'}
         if output == 'csv':
