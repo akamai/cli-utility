@@ -805,6 +805,56 @@ class PapiWrapper(Papi):
             return criteria[columns]
         return criteria
 
+    def get_property_path_n_criteria_condition(self, json: dict):
+        navigation = []
+        visited_paths = set()
+
+        def traverse_json(json, path=''):
+            if isinstance(json, dict):
+                if 'criteriaMustSatisfy' in json and len(json['criteria']) > 0:
+                    current_path = f'{path} {json["name"]}'.strip()
+                    if current_path not in visited_paths:
+                        visited_paths.add(current_path)
+                        navigation.append({current_path: json['criteriaMustSatisfy']})
+
+                for k, v in json.items():
+                    if k in ['children', 'behaviors']:
+                        traverse_json(v, f'{path} {json["name"]} {k}')
+
+            elif isinstance(json, list):
+                for i, item in enumerate(json):
+                    index = i + 1
+                    traverse_json(item, f'{path} [{index:>3}] > ')
+
+        traverse_json(json)
+        return navigation
+
+    def collect_property_criteria_condition(self, property_name: str, json: dict) -> pd.DataFrame:
+        criteria = self.get_property_path_n_criteria_condition(json)
+        dx = pd.DataFrame()
+        if len(criteria) > 0:
+            flat = pd.json_normalize(criteria)
+            dx = pd.DataFrame(flat)
+            dx = dx.melt(var_name='path', value_name='json')
+            dx = dx.dropna(subset=['json'])
+            dx['property'] = property_name
+
+        criteria = pd.DataFrame()
+        if not dx.empty:
+            criteria = dx.explode('json').reset_index(drop=True)
+            criteria['type'] = 'criteria_condition'
+            criteria['index'] = criteria.groupby(['property', 'path']).cumcount() + 1
+            criteria['name'] = 'criteriaMustSatisfy'
+        if not criteria.empty:
+            criteria['json_or_xml'] = criteria['json']
+            criteria['path'] = criteria.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
+            criteria['jsonpath'] = criteria.apply(
+                lambda row: self.get_jsonpath_match_criteria_condition(
+                    self.find_jsonpath_criteria_condition(json), navigation=row['path']), axis=1)
+            columns = ['property', 'path', 'jsonpath', 'type', 'name', 'json_or_xml']
+            return criteria[columns]
+        return criteria
+
     def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
         status, response = super().get_ruleformat_schema(product_id, format_version)
         if status == 200:
@@ -1135,7 +1185,24 @@ class PapiWrapper(Papi):
         traverse(ruletree, '')
         return result
 
-    def find_jsonpath_criteria_condition(self, ruletree: dict, criterion: str | None = None, current_path=[]):
+    def get_jsonpath_match_criteria_condition(self, result: list, navigation: str):
+        if len(result) == 1:
+            return result[0][0]
+        else:
+            numbers_inside_brackets = re.findall(r'\[ *(\d+) *\]', navigation)
+            navipath_nums = [int(num) for num in numbers_inside_brackets]
+            jsonpath_nums = [num - 1 for num in navipath_nums]
+            extracted_numbers = [list(map(int, re.findall(r'\d+', item[0]))) for item in result]
+            matching_indices = [index for index, numbers in enumerate(extracted_numbers) if numbers == jsonpath_nums]
+            matching_paths = [result[index][0] for index in matching_indices]
+            self.logger.debug(jsonpath_nums)
+            self.logger.debug(extracted_numbers)
+            self.logger.debug(matching_paths)
+            if len(matching_paths) == 1:
+                return matching_paths[0]
+            return [x[0] for x in result]
+
+    def find_jsonpath_criteria_condition(self, ruletree: dict, current_path=[]):
         result = []
 
         def traverse(node, path):

@@ -305,6 +305,7 @@ def compare_delivery_behaviors(args, logger):
     for property_name, rule in prop.items():
         all_behaviors.append(papi_rules.collect_property_behavior(property_name, rule))
         all_criteria.append(papi_rules.collect_property_criteria(property_name, rule))
+        all_criteria.append(papi_rules.collect_property_criteria_condition(property_name, rule))
 
     db = pd.concat(all_behaviors)
     if args.behavior:
