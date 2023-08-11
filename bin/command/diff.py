@@ -33,7 +33,6 @@ def collect_json(config_name: str, version: int, response_json, logger=None):
     return json_file
 
 
-# get delivery config json
 def delivery_config_json(papi, config: str, version: int | None = None, exclude: list | None = None, logger=None):
     status, _ = papi.search_property_by_name(config)
     if status == 200:
@@ -46,7 +45,6 @@ def delivery_config_json(papi, config: str, version: int | None = None, exclude:
         sys.exit(logger.error(f"{config=} {json_response['title']}: {version}"))
 
 
-# get security config json
 def security_config_json(appsec, waf_config_name: str, config_id: int,
                          version: int | None = None,
                          exclude: list | None = None,
@@ -261,7 +259,7 @@ def compare_config(args, logger=None):
 
 def compare_delivery_behaviors(args, logger):
     '''
-    python bin/akamai-utility.py -a 1-1S6D diff behavior --property AAA BBB CCC \
+    akamai util diff behavior --property AAA BBB CCC \
         --remove-tags advanced uuid variables templateUuid templateLink xml \
         --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost
     '''
@@ -269,8 +267,9 @@ def compare_delivery_behaviors(args, logger):
         sys.exit(logger.error('Please use either --rulecontains or --rulenotcontains, not both'))
 
     properties, left, right = args.property, args.left, args.right
-    papi = Papi(account_switch_key=args.account_switch_key, section=args.section, logger=logger)
-    papi_rules = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
+    papi = Papi(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
+    papi_rules = p.PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     print()
 
     filename = args.output if args.output else f'{args.property[0]}_compare.xlsx'  # by default use the first property
@@ -323,8 +322,10 @@ def compare_delivery_behaviors(args, logger):
     df = df.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
     df = df.reset_index(drop=True)
 
-    if df['custom_behaviorId'].notna().all():
-        del df['custom_behaviorId']  # drop if no value in custom_behaviorId for all rows
+    # drop if no value in custom_behaviorId for all rows
+    df['custom_behaviorId'] = df['custom_behaviorId'].replace('', pd.NA)
+    if df['custom_behaviorId'].isna().all():
+        del df['custom_behaviorId']
 
     df['character_count'] = df['json_or_xml'].str.len()
     if df.query('character_count > 32767').empty:
@@ -337,7 +338,13 @@ def compare_delivery_behaviors(args, logger):
     if df.empty:
         logger.info('no result found')
     else:
-        sheet['flat_json'] = df
+        columns = ['property', 'path', 'jsonpath', 'type', 'name']
+        if 'custom_behaviorId' in df.columns:
+            columns.append('custom_behaviorId')
+        if 'character_count' in df.columns:
+            columns.append('character_count')
+        columns.append('json_or_xml')
+        sheet['flat_json'] = df[columns]
         # Pivot the DataFrame
         '''
         pivot_df = df.groupby(['type', 'name', 'json', 'path', 'property']).size().unstack(fill_value=0)
@@ -360,7 +367,7 @@ def compare_delivery_behaviors(args, logger):
                 path = path.reset_index(drop=True)
 
             if not path.empty:
-                columns = ['property', 'path', 'type', 'values']
+                columns = ['property', 'path', 'jsonpath', 'type', 'values']
                 path_df = path[columns].copy()
                 path_df['path_match_count'] = path_df['values'].str.len()
                 path_df['values'] = path_df[['values']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
@@ -458,5 +465,4 @@ def compare_delivery_behaviors(args, logger):
             sheet['original_rules'] = original
 
         files.write_xlsx(filepath, sheet, show_index=False, adjust_column_width=True, freeze_column=4)
-        show = not args.no_show
-        files.open_excel_application(filepath, show=show, df=sheet['flat_json'])
+        files.open_excel_application(filepath, not args.no_show, sheet['flat_json'])

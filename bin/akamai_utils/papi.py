@@ -603,6 +603,18 @@ class PapiWrapper(Papi):
             self.logger.error(f'{property_id=} {version=}')
             return 'XXX'
 
+    def get_property_full_ruletree(self, property_id: int, version: int):
+        return super().get_property_full_ruletree(property_id, version)
+
+    def update_property_ruletree(self, property_id: int, version: int, payload: dict) -> tuple:
+        status, response = super().update_property_ruletree(property_id, version, payload)
+        if status == 200:
+            return response
+        else:
+            self.logger.error(f'{property_id=} {version=}')
+            print_json(data=payload)
+            return 'XXX'
+
     def get_property_behavior(self, data: dict) -> list:
         behavior_names = []
         if 'behaviors' in data:
@@ -727,8 +739,11 @@ class PapiWrapper(Papi):
         behavior['custom_behaviorId'] = behavior.apply(lambda row: self.extract_custom_behavior_id(row), axis=1)
         behavior['json_or_xml'] = behavior.apply(lambda row: self.extract_behavior_json(row), axis=1)
         behavior = behavior.rename(columns={'behavior': 'name'})
+        behavior['jsonpath'] = behavior.apply(
+            lambda row: self.get_jsonpath_match_behavior(
+                self.find_jsonpath_behavior(json, behavior=row['name']), navigation=row['path']), axis=1)
 
-        columns = ['property', 'path', 'type', 'name', 'json_or_xml', 'custom_behaviorId']
+        columns = ['property', 'path', 'jsonpath', 'type', 'name', 'json_or_xml', 'custom_behaviorId']
         return behavior[columns]
 
     def get_property_path_n_criteria(self, json: dict):
@@ -780,7 +795,10 @@ class PapiWrapper(Papi):
         if not criteria.empty:
             criteria['json_or_xml'] = criteria.apply(lambda row: self.extract_criteria_json(row), axis=1)
             criteria['path'] = criteria.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
-            columns = ['property', 'path', 'type', 'name', 'json_or_xml']
+            criteria['jsonpath'] = criteria.apply(
+                lambda row: self.get_jsonpath_match_criteria(
+                    self.find_jsonpath_criteria(json, criterion=row['name']), navigation=row['path']), axis=1)
+            columns = ['property', 'path', 'jsonpath', 'type', 'name', 'json_or_xml']
             return criteria[columns]
         return criteria
 
@@ -1019,6 +1037,97 @@ class PapiWrapper(Papi):
             return row['json']['options']['behaviorId']
         else:
             return ''
+
+    def get_jsonpath_match_behavior(self, result: list, navigation: str):
+        if len(result) == 1:
+            return result[0][0]
+        else:
+            if '>' not in navigation:
+                match_result = [x[0] for x in result if 'children' not in x[0]]
+                if len(match_result) == 1:
+                    return match_result[0]
+            elif 'children' in navigation:
+                count_children = navigation.count('children')
+                matching_elements = [x[0] for x in result if x[0].count('children') == count_children]
+                if len(matching_elements) == 1:
+                    return matching_elements[0]
+            return [x[0] for x in result]
+
+    def find_jsonpath_behavior(self, ruletree: dict, behavior: str | None = None, current_path=[]):
+        result = []
+
+        def traverse(node, path):
+            if path:
+                path += '/'
+            path += 'rules'
+            behaviors = node.get('behaviors', [])
+            for behavior_index, beh in enumerate(behaviors):
+                if behavior:
+                    if beh['name'] == behavior:
+                        result.append((f'{path}/behaviors/{behavior_index}', node['name'], beh['options']))
+                else:
+                    result.append((f'{path}/behaviors/{behavior_index}', node['name'], beh['name'], beh['options']))
+
+            children = node.get('children', [])
+            for child_index, child in enumerate(children):
+                traverse(child, f'{path}/children/{child_index}')
+
+        traverse(ruletree, '')
+        return result
+
+    def get_jsonpath_match_criteria(self, result: list, navigation: str):
+        if len(result) == 1:
+            return result[0][0]
+        else:
+            if '>' not in navigation:
+                match_result = [x[0] for x in result if 'children' not in x[0]]
+                if len(match_result) == 1:
+                    return match_result[0]
+            elif 'children' in navigation:
+                count_children = navigation.count('children')
+                matching_elements = [x[0] for x in result if x[0].count('children') == count_children]
+                if len(matching_elements) == 1:
+                    return matching_elements[0]
+            return [x[0] for x in result]
+
+    def find_jsonpath_criteria(self, ruletree: dict, criterion: str | None = None, current_path=[]):
+        result = []
+
+        def traverse(node, path):
+            if path:
+                path += '/'
+            path += 'rules'
+            criteria = node.get('criteria', [])
+            for index, beh in enumerate(criteria):
+                if criterion:
+                    if beh['name'] == criterion:
+                        result.append((f'{path}/criteria/{index}', node['name'], beh['options']))
+                else:
+                    result.append((f'{path}/criteria/{index}', node['name'], beh['name'], beh['options']))
+
+            children = node.get('children', [])
+            for child_index, child in enumerate(children):
+                traverse(child, f'{path}/children/{child_index}')
+
+        traverse(ruletree, '')
+        return result
+
+    def find_jsonpath_criteria_condition(self, ruletree: dict, criterion: str | None = None, current_path=[]):
+        result = []
+
+        def traverse(node, path):
+            if path:
+                path += '/'
+            path += 'rules'
+            criteria = node.get('criteriaMustSatisfy', [])
+            result.append((path, node['name'], 'criteriaMustSatisfy', criteria))
+
+            children = node.get('children', [])
+            for child_index, child in enumerate(children):
+                traverse(child, f'{path}/children/{child_index}')
+
+        traverse(ruletree, '')
+        return result
 
 
 class Node:
