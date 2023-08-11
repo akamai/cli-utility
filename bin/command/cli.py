@@ -44,15 +44,6 @@ delivery = [{'name': 'behavior',
                   'optional_arguments': [{'name': 'version', 'help': 'version'},
                                          {'name': 'show-depth', 'help': 'to display max depth', 'action': 'store_true'},
                                          {'name': 'show-limit', 'help': 'show config limit ie. max-nested-rules-limit', 'action': 'store_true'}]},
-                 {'name': 'activate',
-                  'help': 'activate property',
-                  'required_arguments': [{'name': 'file', 'help': 'excel file'},
-                                         {'name': 'email', 'help': 'notificatin email(s) for activations', 'nargs': '+'},
-                                         {'name': 'network', 'help': 'options: staging, production', 'default': 'staging', 'nargs': '+'},
-                                         {'name': 'note', 'help': 'activation note', 'nargs': '+'}],
-                  'optional_arguments': [{'name': 'sheet', 'help': 'excel sheetname'},
-                                         {'name': 'filter-column', 'help': 'filter column of the excel table'},
-                                         {'name': 'property-id', 'help': 'provide at least one property without prefix prp_', 'nargs': '+'}]}
                 ]
 
 security = [{'name': 'hostname',

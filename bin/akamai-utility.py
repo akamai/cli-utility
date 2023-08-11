@@ -47,8 +47,6 @@ if __name__ == '__main__':
             dc.get_custom_behavior(args, logger=logger)
         elif args.subcommand == 'metadata':
             dc.get_property_advanced_behavior(args, account_folder, logger)
-        elif args.subcommand == 'activate':
-            dc.activate_from_excel(args, logger=logger)
         elif args.subcommand == 'ruletree':
             Path(f'{account_folder}/ruletree').mkdir(parents=True, exist_ok=True)
             dc.get_property_ruletree(args, account_folder, logger=logger)
