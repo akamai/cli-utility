@@ -741,7 +741,10 @@ class PapiWrapper(Papi):
         behavior = behavior.rename(columns={'behavior': 'name'})
         behavior['jsonpath'] = behavior.apply(
             lambda row: self.get_jsonpath_match_behavior(
-                self.find_jsonpath_behavior(json, behavior=row['name']), navigation=row['path']), axis=1)
+                self.find_jsonpath_behavior(json, behavior=row['name']),
+                behavior=row['name'],
+                navigation=row['path'],
+                data=row['json_or_xml']), axis=1)
 
         columns = ['property', 'path', 'jsonpath', 'type', 'name', 'json_or_xml', 'custom_behaviorId']
         return behavior[columns]
@@ -797,7 +800,7 @@ class PapiWrapper(Papi):
             criteria['path'] = criteria.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
             criteria['jsonpath'] = criteria.apply(
                 lambda row: self.get_jsonpath_match_criteria(
-                    self.find_jsonpath_criteria(json, criterion=row['name']), navigation=row['path']), axis=1)
+                    self.find_jsonpath_criteria(json, criterion=row['name']), navigation=row['path'], data=row['json_or_xml']), axis=1)
             columns = ['property', 'path', 'jsonpath', 'type', 'name', 'json_or_xml']
             return criteria[columns]
         return criteria
@@ -1038,19 +1041,21 @@ class PapiWrapper(Papi):
         else:
             return ''
 
-    def get_jsonpath_match_behavior(self, result: list, navigation: str):
+    def get_jsonpath_match_behavior(self, result: list, behavior: str, navigation: str, data: str):
         if len(result) == 1:
             return result[0][0]
         else:
-            if '>' not in navigation:
-                match_result = [x[0] for x in result if 'children' not in x[0]]
-                if len(match_result) == 1:
-                    return match_result[0]
-            elif 'children' in navigation:
-                count_children = navigation.count('children')
-                matching_elements = [x[0] for x in result if x[0].count('children') == count_children]
-                if len(matching_elements) == 1:
-                    return matching_elements[0]
+            numbers_inside_brackets = re.findall(r'\[ *(\d+) *\]', navigation)
+            navipath_nums = [int(num) for num in numbers_inside_brackets]
+            jsonpath_nums = [num - 1 for num in navipath_nums]
+            extracted_numbers = [list(map(int, re.findall(r'\d+', item[0]))) for item in result]
+            matching_indices = [index for index, numbers in enumerate(extracted_numbers) if numbers == jsonpath_nums]
+            matching_paths = [result[index][0] for index in matching_indices]
+            self.logger.debug(jsonpath_nums)
+            self.logger.debug(extracted_numbers)
+            self.logger.debug(matching_paths)
+            if len(matching_paths) == 1:
+                return matching_paths[0]
             return [x[0] for x in result]
 
     def find_jsonpath_behavior(self, ruletree: dict, behavior: str | None = None, current_path=[]):
@@ -1075,7 +1080,7 @@ class PapiWrapper(Papi):
         traverse(ruletree, '')
         return result
 
-    def get_jsonpath_match_criteria(self, result: list, navigation: str):
+    def get_jsonpath_match_criteria(self, result: list, navigation: str, data: str):
         if len(result) == 1:
             return result[0][0]
         else:
@@ -1088,6 +1093,24 @@ class PapiWrapper(Papi):
                 matching_elements = [x[0] for x in result if x[0].count('children') == count_children]
                 if len(matching_elements) == 1:
                     return matching_elements[0]
+                else:
+                    matching_option = [x[0] for x in result if x[2] == data]
+                    if len(matching_option) == 1:
+                        return matching_option[0]
+                    else:
+                        self.logger.debug(navigation)
+                        self.logger.debug(result)
+                        numbers_inside_brackets = re.findall(r'\[ *(\d+) *\]', navigation)
+                        navipath_nums = [int(num) for num in numbers_inside_brackets]
+                        jsonpath_nums = [num - 1 for num in navipath_nums]
+                        extracted_numbers = [list(map(int, re.findall(r'\d+', item[0]))) for item in result]
+                        matching_indices = [index for index, numbers in enumerate(extracted_numbers) if numbers == jsonpath_nums]
+                        matching_paths = [result[index][0] for index in matching_indices]
+                        self.logger.debug(jsonpath_nums)
+                        self.logger.debug(extracted_numbers)
+                        self.logger.debug(matching_paths)
+                        if len(matching_paths) == 1:
+                            return matching_paths[0]
             return [x[0] for x in result]
 
     def find_jsonpath_criteria(self, ruletree: dict, criterion: str | None = None, current_path=[]):
