@@ -31,6 +31,7 @@ if __name__ == '__main__':
             if args.account_switch_key:
                 iam = IdentityAccessManagement(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
                 account = iam.search_account_name(value=args.account_switch_key)[0]
+
             else:
                 papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
                 account_id = papi.get_account_id()
@@ -56,6 +57,8 @@ if __name__ == '__main__':
             dc.netstorage(args, account_folder, logger=logger)
         elif args.subcommand == 'origin-cert':
             dc.origin_certificate(args, account_folder, logger=logger)
+        elif args.subcommand == 'jsonpath':
+            dc.jsonpath(args, account_folder, logger=logger)
         else:
             dc.main(args, account_folder, logger)
 

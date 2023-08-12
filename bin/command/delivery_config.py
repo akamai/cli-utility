@@ -491,7 +491,7 @@ def origin_certificate(args, account_folder, logger):
 
 
 def activate_from_excel(args, logger):
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
+    papi = p.PapiWrapper(args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     df = load_config_from_xlsx(papi, args.file, args.sheet, args.filter)
 
     network = args.network[0]
@@ -517,7 +517,7 @@ def activate_from_excel(args, logger):
 
 
 def activation_status(args, logger):
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key)
+    papi = p.PapiWrapper(args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
 
     # iterate over files in directory
     if args.directory:
@@ -689,6 +689,90 @@ def get_property_ruletree(args, account_folder, logger):
                     subprocess.call(['open', '-a', 'TextEdit', Path(TREE_FILE).absolute()])
     if args.show_depth is False:
         logger.warning('To display max depth, add --show-depth')
+
+
+def jsonpath(args, account_folder, logger):
+    '''
+    akamai util delivery jsonpath --property AAA BBB
+    '''
+
+    if args.version is not None and len(args.property) > 1:
+        sys.exit(logger.error('If --version is specified, only one property is supported'))
+
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
+    papi = p.PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
+    alls = []
+    console_columns = ['property', 'rulename', 'type', 'name', 'JSONPATH']
+    columns = ['property', 'JSONPATH', 'rulename', 'type', 'name', 'json_options']
+
+    for property in args.property:
+        status, resp = papi.search_property_by_name(property)
+        if status != 200:
+            logger.info(f'property {property:<50} not found')
+            break
+        else:
+            stg, prd = papi.property_version(resp)
+            try:
+                version = prd
+            except:
+                version = stg
+            if args.version:
+                version = int(args.version)
+            logger.debug(f'{papi.group_id=}\t{papi.contract_id=}\t{papi.property_id=}')
+            ruletree = papi.get_property_full_ruletree(papi.property_id, version)
+            property_name = f'{property}_v{version}'
+            if ruletree.status_code != 200:
+                sys.exit(logger.error(f'{ruletree.json()["title"]}. please provide correct version'))
+            else:
+                ruletree = ruletree.json()['rules']
+                keys_to_remove = ['variables', 'options', 'uuid', 'comments']
+                for key in keys_to_remove:
+                    ruletree.pop(key, None)
+                # print_json(data=ruletree)
+
+                for type in args.type:
+                    if type == 'criteria':
+                        result = papi.find_jsonpath_criteria(ruletree)
+                        df = pd.DataFrame(result, columns=['JSONPATH', 'rulename', 'name', 'json_options'])
+                        if args.criteria:
+                            df = df[df['name'].isin(args.criteria)].copy()
+                        df['property'] = property_name
+                        df['type'] = 'criteria'
+                        alls.append(df)
+                    if type == 'behavior':
+                        result = papi.find_jsonpath_behavior(ruletree)
+                        df = pd.DataFrame(result, columns=['JSONPATH', 'rulename', 'name', 'json_options'])
+                        if args.behavior:
+                            df = df[df['name'].isin(args.behavior)].copy()
+                        df['property'] = property_name
+                        df['type'] = 'behavior'
+
+                        alls.append(df)
+
+                result = papi.find_jsonpath_criteria_condition(ruletree)
+                df = pd.DataFrame(result, columns=['JSONPATH', 'rulename', 'name', 'json_options'])
+                df['property'] = property_name
+                df['type'] = 'criteria_condition'
+                alls.append(df)
+
+    df = pd.concat(alls)
+    df = df.sort_values(by=['property', 'JSONPATH'])
+    df = df.reset_index(drop=True)
+
+    if args.rulecontains:
+        included_rules = args.rulecontains
+        df = df[df['rulename'].str.contains('|'.join(included_rules))].copy()
+        df = df.sort_values(by='type', ascending=False)
+        df = df.reset_index(drop=True)
+        print()
+        print(tabulate(df[console_columns], headers=console_columns, tablefmt='github'))
+        print()
+
+    sheet = {}
+    sheet['json_path'] = df[columns]
+    filepath = f'{account_folder}/json_path.xlsx'
+    files.write_xlsx(filepath, sheet, freeze_column=1, adjust_column_width=True)
+    files.open_excel_application(filepath, True, df)
 
 
 def hostnames_certificate(args, account_folder, logger):
@@ -1005,4 +1089,3 @@ def add_group_url(df: pd.DataFrame, papi) -> pd.DataFrame:
     else:
         summary_columns.extend(['propertyCount'])
     return df[summary_columns]
-# END helper method

@@ -161,7 +161,9 @@ class Papi(AkamaiSession):
                 self.group_id = int(property_items[0]['groupId'])
                 self.property_id = int(property_items[0]['propertyId'])
                 return 200, property_items
-
+        elif resp.status_code == 401:
+            self.logger.error(resp.json()['title'])
+            sys.exit()
         elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
             self.logger.error(resp.json()['detail'])
             lg.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)
@@ -338,6 +340,14 @@ class Papi(AkamaiSession):
         else:
             return response.json()
 
+    def update_property_ruletree(self, property_id: int, version: int, payload: dict) -> tuple:
+        url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
+        headers = {'PAPI-Use-Prefixes': 'false',
+                   'Accept': 'application/json',
+                   'content-type': 'application/json-patch+json'}
+        resp = self.session.patch(url, json=payload, headers=headers)
+        return resp.status_code, resp.text
+
     def get_property_hostnames(self, property_id: int) -> list:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/hostnames')
         response = self.session.get(url, headers=self.headers)
@@ -439,6 +449,14 @@ class Papi(AkamaiSession):
         else:
             self.logger.error(f'{resp.status_code} {self.contract_id=} {self.group_id=} {resp.url}')
             return resp.status_code, resp.json()
+
+    def get_property_full_ruletree(self, property_id: int, version: int):
+        url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
+        params = {'contractId': self.contract_id,
+                  'groupId': self.group_id}
+        resp = self.session.get(url, headers=self.headers, params=params)
+        self.logger.debug(f'{resp.status_code} {resp.text}')
+        return resp
 
     def get_ruleformat_schema(self, product_id: str, format_version: str | None = 'latest'):
         url = self.form_url(f'{self.MODULE}/schemas/products/{product_id}/{format_version}')
