@@ -811,14 +811,14 @@ class PapiWrapper(Papi):
 
         def traverse_json(json, path=''):
             if isinstance(json, dict):
-                if 'criteriaMustSatisfy' in json and len(json['criteria']) > 0:
+                if 'criteriaMustSatisfy' in json:
                     current_path = f'{path} {json["name"]}'.strip()
                     if current_path not in visited_paths:
                         visited_paths.add(current_path)
                         navigation.append({current_path: json['criteriaMustSatisfy']})
 
                 for k, v in json.items():
-                    if k in ['children', 'behaviors']:
+                    if k in ['children']:
                         traverse_json(v, f'{path} {json["name"]} {k}')
 
             elif isinstance(json, list):
@@ -1189,18 +1189,11 @@ class PapiWrapper(Papi):
         if len(result) == 1:
             return result[0][0]
         else:
-            numbers_inside_brackets = re.findall(r'\[ *(\d+) *\]', navigation)
-            navipath_nums = [int(num) for num in numbers_inside_brackets]
-            jsonpath_nums = [num - 1 for num in navipath_nums]
-            extracted_numbers = [list(map(int, re.findall(r'\d+', item[0]))) for item in result]
-            matching_indices = [index for index, numbers in enumerate(extracted_numbers) if numbers == jsonpath_nums]
-            matching_paths = [result[index][0] for index in matching_indices]
-            self.logger.debug(jsonpath_nums)
-            self.logger.debug(extracted_numbers)
-            self.logger.debug(matching_paths)
-            if len(matching_paths) == 1:
-                return matching_paths[0]
-            return [x[0] for x in result]
+            for i, item in enumerate(result):
+                if i > 0 and result[i][1] in navigation:
+                    self.logger.debug(result[i])
+                    return result[i][0]
+        return [x[0] for x in result]
 
     def find_jsonpath_criteria_condition(self, ruletree: dict, current_path=[]):
         result = []

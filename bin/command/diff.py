@@ -266,7 +266,7 @@ def compare_delivery_behaviors(args, logger):
     if args.rulenotcontains and args.rulecontains:
         sys.exit(logger.error('Please use either --rulecontains or --rulenotcontains, not both'))
 
-    properties, left, right = args.property, args.left, args.right
+    properties, left, right = sorted(args.property), args.left, args.right
     account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
     papi = Papi(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     papi_rules = p.PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
@@ -302,10 +302,11 @@ def compare_delivery_behaviors(args, logger):
 
     all_behaviors = []
     all_criteria = []
+    all_criteria_condition = []
     for property_name, rule in prop.items():
         all_behaviors.append(papi_rules.collect_property_behavior(property_name, rule))
         all_criteria.append(papi_rules.collect_property_criteria(property_name, rule))
-        all_criteria.append(papi_rules.collect_property_criteria_condition(property_name, rule))
+        all_criteria_condition.append(papi_rules.collect_property_criteria_condition(property_name, rule))
 
     db = pd.concat(all_behaviors)
     if args.behavior:
@@ -319,10 +320,9 @@ def compare_delivery_behaviors(args, logger):
         dc = dc.reset_index(drop=True)
     # sheet['criteria'] = dc
 
-    df = pd.concat([db, dc])
-    df = df.sort_values(by=['property', 'path', 'type'], ascending=[True, True, False])
-    df = df.reset_index(drop=True)
+    dcc = pd.concat(all_criteria_condition)
 
+    df = pd.concat([db, dc, dcc])
     # drop if no value in custom_behaviorId for all rows
     df['custom_behaviorId'] = df['custom_behaviorId'].replace('', pd.NA)
     if df['custom_behaviorId'].isna().all():
@@ -345,6 +345,12 @@ def compare_delivery_behaviors(args, logger):
         if 'character_count' in df.columns:
             columns.append('character_count')
         columns.append('json_or_xml')
+
+        df['path_order'] = df['path'].str.replace(r'\s*\[\s*\d+\s*\]$', '', regex=True)
+        df = df.sort_values(by=['property', 'path_order', 'type', 'path'], ascending=[True, True, False, True])
+        df = df.reset_index(drop=True)
+        logger.debug(df[['path', 'type', 'path_order']])
+
         sheet['flat_json'] = df[columns]
         # Pivot the DataFrame
         '''
