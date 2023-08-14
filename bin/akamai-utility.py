@@ -105,6 +105,6 @@ if __name__ == '__main__':
     if args.command == 'search':
         admin.lookup_account(args, logger)
 
-    if args.command not in ['search', 'ruleformat', 'log']:
+    if args.command not in ['search', 'ruleformat']:
         end_time = lg.log_cli_timing(start_time)
         logger.info(end_time)

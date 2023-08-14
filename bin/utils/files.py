@@ -105,8 +105,21 @@ def make_xlsx_hyperlink_to_another_sheet(filepath: str, url: str, cell: str) -> 
 
 
 def make_xlsx_hyperlink_to_external_link(url: str, alias: str) -> str:
+    """
+    create hyperlink using excel formula
+    """
     if alias:
         return f'=HYPERLINK("{url}", "{alias}")'
+    else:
+        return f'{url}'
+
+
+def create_hyperlink_to_external_link(url: str, alias: str) -> str:
+    """
+    append alias to URL constant
+    """
+    if alias:
+        return f'=HYPERLINK("{url}{alias}", "{alias}")'
     else:
         return f'{url}'
 
@@ -166,9 +179,9 @@ def write_xlsx(filepath: str, dict_value: dict,
                             logger.debug(f'Sheet{sheet}')
 
                             sheet_no = sheet
+                            logger.info(f'{sheetname}_{sheet_no}')
                             if sheet == 1:
                                 first_row = 0
-                                logger.info(f'{sheetname}_{sheet_no}')
                                 last_row = (sheet * MAX_XLXS_ROW) + 1
                             else:
                                 first_row = last_row + 1
@@ -221,7 +234,7 @@ def write_xlsx(filepath: str, dict_value: dict,
 
 def open_excel_application(filepath: str, show: bool | None = True, df: pd.DataFrame | None = None) -> None:
     if platform.system() == 'Darwin' and show is True:
-        if not df.empty:
+        if len(df.index) > 0:
             subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
 
 

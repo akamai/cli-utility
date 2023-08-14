@@ -3,17 +3,23 @@
 from __future__ import annotations
 
 import codecs
+import logging
 import platform
+import re
 import subprocess
 import sys
 import warnings
+from urllib.parse import unquote
 
+import dask.bag as db
 import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 from akamai_utils import ghost_index as gh
 from tabulate import tabulate
 from utils import files
+
+logger = logging.getLogger(__name__)
 
 
 def main(args, logger):
@@ -28,15 +34,16 @@ def main(args, logger):
     sheet = {}
 
     if args.only == 'R':
-        r_df = r_line(args.input, args.column, args.value_contains, logger=logger)
-        if not r_df.empty:
-            if r_df.shape[0] > 1:
+        r_df = r_line(args.input, args.column, args.value_contains, int(args.sample), logger=logger)
+        line_count = len(r_df.index)
+        if len(r_df.index) > 0:
+            if len(r_df.index) > 1:
                 sheet['R'] = r_df
             else:
                 logger.warning('No r/R line found')
 
     if args.only == 'F':
-        f_df, _ = f_line(args.input, args.column, args.value_contains, logger=logger)
+        f_df, _ = f_line(args.input, args.column, args.value_contains, int(args.sample), logger=logger)
         if not f_df.empty:
             if f_df.shape[0] > 1:
                 sheet['F'] = f_df
@@ -47,22 +54,29 @@ def main(args, logger):
     if len(keys) > 0 and args.output is not None:
         filepath = f'output/{args.output}'
         if sheet:
-            files.write_xlsx(f'output/{args.output}', sheet, freeze_column=3, freeze_row=5,
+            files.write_xlsx(filepath, sheet, freeze_column=3, freeze_row=5,
                             show_url=False,
                             show_index=True,
                             adjust_column_width=False)
-            if platform.system() != 'Darwin':
-                logger.info('--show argument is supported only on Mac OS')
-            else:
-                subprocess.check_call(['open', '-a', 'Microsoft Excel', filepath])
-                logger.info('https://docs.akamai.com/esp/user/edgesuite/log-format.xml')
+            files.open_excel_application(filepath, True, r_df)
 
 
-def r_line(filename, column: str | None = None, search_keyword: list | None = None, logger=None) -> pd.DataFrame:
+def filter_r_line(line):
+    values = line.strip().split(' ')
+    if values[1] == 'r':
+        return tuple(values[:-2])
+
+
+def filter_f_line(line):
+    values = line.strip().split(' ')
+    if values[1] == 'r':
+        return tuple(values[:-2])
+
+
+def r_line(filename: str, column: str | None = None, search_keyword: list | None = None, sample: int | None = 0, logger=None) -> pd.DataFrame:
     """
     Convert r/R lines from QGREP log to excel
     """
-
     try:
         r_columns, r_dict = gh.build_ghost_log_index('bin/config/ghost_r.txt', logger=logger)
     except:
@@ -72,32 +86,27 @@ def r_line(filename, column: str | None = None, search_keyword: list | None = No
     logger.warning('checking r line')
 
     # https://pandas.pydata.org/docs/reference/api/pandas.errors.ParserWarning.html
+    # df = pd.read_csv(filename, header=None, sep=' ', names=r_columns, index_col=False, engine='python')
 
-    df = pd.read_csv(filename, header=None, sep=' ', names=r_columns,
-                     index_col=False,
-                     engine='python',
-                     )
-    '''
-
-    # Read the compressed CSV file using Dask
-    ddf = dd.read_csv(filename, sep=' ', compression='gzip', assume_missing=False, header=None,  names=r_columns,
-                     dtype={'TCP_statistics_uniqueID': 'object',
-                            'customfield': 'object',
-                            'incomingSSLhandshakebytes': 'object',
-                            'record': 'object'})
-    # Compute the result and convert to Pandas DataFrame if needed
+    bag = db.read_text(filename, compression='gzip')
+    if sample > 0:
+        bag_head = bag.take(sample)
+        processed_lines = [filter_r_line(line) for line in bag_head if filter_r_line(line) is not None]
+        ddf = db.from_sequence(processed_lines).to_dataframe(columns=r_columns)
+    else:
+        processed_bag = bag.map(filter_r_line).filter(lambda x: x is not None)
+        ddf = processed_bag.to_dataframe(columns=r_columns)
     df = ddf.compute()
-    logger.info(f'\n{df.dtypes}')
-    temp_columns = ['ghostIP', 'record', 'starttime', 'ssloverhead', 'objectstatus1']
-    sys.exit(logger.info(f'\n{df.head(5)[temp_columns]}'))
-    '''
-
+    df['starttime'] = pd.to_numeric(df['starttime'], errors='coerce')
     df['GMT'] = pd.to_datetime(df['starttime'], unit='s', utc=True)
     df['GMT'] = pd.to_datetime(df.GMT).dt.tz_localize(None)
-    # Set pd.options.mode.chained_assignment to 'warn'
+
     pd.options.mode.chained_assignment = 'warn'
-    df['useragent'] = df['useragent'].astype(str)
-    df['useragent'] = df['useragent'].apply(lambda x: codecs.decode(x, 'utf-8') if isinstance(x, bytes) else x)
+
+    df['useragent'] = df['useragent'].apply(unquote)
+    df['SNIservernamedata'] = df['SNIservernamedata'].apply(unquote)
+    # df['useragent'] = df['useragent'].astype(str)
+    # df['useragent'] = df['useragent'].apply(lambda x: codecs.decode(x, 'utf-8') if isinstance(x, bytes) else x)
 
     pd.options.mode.chained_assignment = None
     df = df.loc[df['record'] == 'r'].copy()
@@ -113,14 +122,18 @@ def r_line(filename, column: str | None = None, search_keyword: list | None = No
         if search_keyword is None:
             sys.exit(logger.error('At least one value is required for --value-contains'))
         else:
-            logger.warning(f'Filtering {search_keyword}')
+            logger.warning(f'Filtered {column} values: {search_keyword}')
             df[column] = df[column].astype(str)
             df = df[df[column].str.contains('|'.join(search_keyword))].copy()
 
     df = df.sort_values(by=['arl', 'starttime', 'ghostIP']).copy()
     df = df.reset_index(drop=True)
-    logger.warning(df.shape)
-    logger.info(df.record.unique())
+    line_count = len(df.index)
+    if line_count > 1:
+        logger.warning(f'Total {line_count:,} lines after filter')
+
+    logger.debug(df.shape)
+    logger.debug(df.record.unique())
 
     show_columns = list(df.columns)
     show_columns = show_columns[-1:] + show_columns[:-1]  # move last column to the first column
@@ -150,8 +163,8 @@ def r_line(filename, column: str | None = None, search_keyword: list | None = No
     cdf = df.head(10)[temp_columns].copy()
     logger.debug(f'\n{cdf}')
 
-    url = 'http://lp.engr.akamai.com/log-format.xml#'
-    df.loc[-1] = df.loc[1].apply(lambda x: files.make_xlsx_hyperlink_to_external_link(url, x) if x not in ['0', '-1'] else x)
+    url = 'https://docs.akamai.com/esp/user/edgesuite/log-format.xml#'
+    df.loc[-1] = df.loc[1].apply(lambda x: files.create_hyperlink_to_external_link(url, x) if x not in ['0', '-1'] else x)
 
     df.index = df.index + 1
     df = df.sort_index()
@@ -164,12 +177,19 @@ def r_line(filename, column: str | None = None, search_keyword: list | None = No
     edf = df.head(10)[temp_columns].copy()
     # logger.info(f'Sample first 10 rows')
     # print(tabulate(edf[temp_columns], headers=temp_columns, tablefmt='github', numalign='center'))
-    logger.warning(df.shape)
+    logger.debug(df.shape)
 
-    return df
+    # remove columns if all of them are '-'
+    mask = (df.iloc[1:] == '-').all()
+    columns_to_drop = df.columns[mask].tolist()
+    logger.critical('Dropped columns')
+    logger.info(columns_to_drop)
+    mask = (df.iloc[1:] != '-').any()
+    df_filtered = df.loc[:, mask]
+    return df_filtered
 
 
-def f_line(filename: str, search_keyword: list | None = None, logger=None) -> tuple:
+def f_line(filename: str, column: str | None = None, search_keyword: list | None = None, sample: int | None = 0, logger=None) -> tuple:
     """
     Convert f/F lines from QGREP log to excel
     """
@@ -231,7 +251,7 @@ def f_line(filename: str, search_keyword: list | None = None, logger=None) -> tu
     logger.debug(f'\n{cdf}')
 
     url = 'http://lp.engr.akamai.com/log-format.xml#'
-    df.loc[-1] = df.loc[1].apply(lambda x: files.make_xlsx_hyperlink_to_external_link(url, x) if x not in ['0', '-1'] else x)
+    df.loc[-1] = df.loc[1].apply(lambda x: files.create_hyperlink_to_external_link(url, x) if x not in ['0', '-1'] else x)
 
     df.index = df.index + 1
     df = df.sort_index()
