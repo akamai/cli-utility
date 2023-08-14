@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 def main(args, logger):
     warnings.filterwarnings('ignore')
 
-    if args.column and args.value_contains is None:
+    if args.column and args.valuecontains is None:
         sys.exit(logger.error('At least one value is required for --value-contains'))
 
     line_count = files.get_line_count(args.input)
@@ -33,20 +33,24 @@ def main(args, logger):
 
     sheet = {}
 
+    alls = []
+
     if args.only == 'R':
-        r_df = r_line(args.input, args.column, args.value_contains, int(args.sample), logger=logger)
+        r_df = r_line(args.input, args.column, args.valuecontains, int(args.sample), logger=logger)
         line_count = len(r_df.index)
         if len(r_df.index) > 0:
             if len(r_df.index) > 1:
                 sheet['R'] = r_df
+                alls.append(r_df)
             else:
                 logger.warning('No r/R line found')
 
     if args.only == 'F':
-        f_df, _ = f_line(args.input, args.column, args.value_contains, int(args.sample), logger=logger)
+        f_df, _ = f_line(args.input, args.column, args.valuecontains, int(args.sample), logger=logger)
         if not f_df.empty:
             if f_df.shape[0] > 1:
                 sheet['F'] = f_df
+                alls.append(f_df)
             else:
                 logger.warning('No f/F line found')
 
@@ -58,7 +62,7 @@ def main(args, logger):
                             show_url=False,
                             show_index=True,
                             adjust_column_width=False)
-            files.open_excel_application(filepath, True, r_df)
+            files.open_excel_application(filepath, True, pd.concat(alls))
 
 
 def filter_r_line(line):
@@ -69,8 +73,8 @@ def filter_r_line(line):
 
 def filter_f_line(line):
     values = line.strip().split(' ')
-    if values[1] == 'r':
-        return tuple(values[:-2])
+    if values[1] == 'f':
+        return tuple(values)
 
 
 def r_line(filename: str, column: str | None = None, search_keyword: list | None = None, sample: int | None = 0, logger=None) -> pd.DataFrame:
@@ -200,21 +204,24 @@ def f_line(filename: str, column: str | None = None, search_keyword: list | None
         f_columns, f_dict = gh.build_ghost_log_index('config/ghost_f.txt', logger)
 
     try:
+        f_dict[-1] = 'GMT'
         logger.warning('checking f line')
-        df = pd.read_csv(filename, header=0, sep=' ', names=f_columns,
-                     # low_memory=False,
-                     index_col=False,
-                     engine='python',
-                     # on_bad_lines='warn',
-                     # nrows=20
-                     )
+        bag = db.read_text(filename, compression='gzip')
     except:
         return pd.DataFrame(), pd.DataFrame()
 
+    if sample > 0:
+        bag_head = bag.take(sample)
+        processed_lines = [filter_f_line(line) for line in bag_head if filter_f_line(line) is not None]
+        ddf = db.from_sequence(processed_lines).to_dataframe(columns=f_columns)
+    else:
+        processed_bag = bag.map(filter_f_line).filter(lambda x: x is not None)
+        ddf = processed_bag.to_dataframe(columns=f_columns)
+
+    df = ddf.compute()
+    df['starttime'] = pd.to_numeric(df['starttime'], errors='coerce')
     df['GMT'] = pd.to_datetime(df['starttime'], unit='s', utc=True)
     df['GMT'] = pd.to_datetime(df.GMT).dt.tz_localize(None)
-
-    f_dict[-1] = 'GMT'
 
     pd.options.mode.chained_assignment = None
     df = df.loc[df['record'] == 'f'].copy()
@@ -250,7 +257,7 @@ def f_line(filename: str, column: str | None = None, search_keyword: list | None
     cdf = df.head(10)[temp_columns].copy()
     logger.debug(f'\n{cdf}')
 
-    url = 'http://lp.engr.akamai.com/log-format.xml#'
+    url = 'https://docs.akamai.com/esp/user/edgesuite/log-format.xml#'
     df.loc[-1] = df.loc[1].apply(lambda x: files.create_hyperlink_to_external_link(url, x) if x not in ['0', '-1'] else x)
 
     df.index = df.index + 1
@@ -261,8 +268,16 @@ def f_line(filename: str, column: str | None = None, search_keyword: list | None
     df = df.drop(labels=[1, 2, 3], axis=0)
     df = df.sort_index()
     df = df.reset_index(drop=True)
-    edf = df.head(10)[temp_columns].copy()
 
+    # remove columns if all of them are '-'
+    mask = (df.iloc[1:] == '-').all()
+    columns_to_drop = df.columns[mask].tolist()
+    logger.critical('Dropped columns')
+    logger.info(columns_to_drop)
+    mask = (df.iloc[1:] != '-').any()
+    df_filtered = df.loc[:, mask]
+
+    edf = df.head(10)[temp_columns].copy()
     logger.debug(f'\n{edf}')
 
     '''
@@ -276,7 +291,7 @@ def f_line(filename: str, column: str | None = None, search_keyword: list | None
                    'turnaroundtime', 'transfertime', 'bytesreceived', 'forwardip', 'clientip', 'httpmethod',
                    'arl', 'objectstatus_1', 'request_number']
     stat_df = df[str_columns]
-    return df, stat_df
+    return df_filtered, stat_df
 
 
 def foo():
