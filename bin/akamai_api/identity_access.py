@@ -23,6 +23,11 @@ class IdentityAccessManagement(AkamaiSession):
         self.contract_id = self.contract_id
         self.group_id = self.group_id
         self.account_switch_key = account_switch_key
+        if account_switch_key and ':' in account_switch_key:
+            self.account_id = account_switch_key.split(':')[0]
+            self.contract_type = account_switch_key.split(':')[1]
+        else:
+            self.account_id = self.account_switch_key
         self.property_id = None
         self.logger = logger
 
@@ -110,6 +115,9 @@ class IdentityAccessManagement(AkamaiSession):
         print()
         self.logger.warning(f'Found account {account}')
         account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
-        account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={self.account_switch_key}&targetUrl='
+        try:
+            account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={self.account_id}&contractTypeId={self.contract_type}&targetUrl='
+        except:
+            account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={self.account_id}&targetUrl='
         self.logger.warning(f'Akamai Control Center Homepage: {account_url}')
         return account

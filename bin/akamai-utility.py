@@ -20,6 +20,7 @@ from utils import _logging as lg
 
 if __name__ == '__main__':
     args = Parser.get_args(args=None if sys.argv[1:] else ['--help'])
+    account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
     start_time = perf_counter()
     logger = lg.setup_logger(args)
 
@@ -28,12 +29,11 @@ if __name__ == '__main__':
     else:
         if args.command not in ['search', 'ruleformat', 'log']:
             # display full account name
-            if args.account_switch_key:
-                iam = IdentityAccessManagement(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
-                account = iam.search_account_name(value=args.account_switch_key)[0]
-
+            if account_switch_key:
+                iam = IdentityAccessManagement(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
+                account = iam.search_account_name(value=account_switch_key)[0]
             else:
-                papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+                papi = p.PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
                 account_id = papi.get_account_id()
                 iam = IdentityAccessManagement(account_switch_key=account_id, logger=logger)
                 account = iam.search_account_name(value=account_id)[0]

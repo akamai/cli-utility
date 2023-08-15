@@ -8,10 +8,10 @@ from akamai_api.identity_access import IdentityAccessManagement
 from tabulate import tabulate
 
 
-def homepage_url(account_id: str) -> str:
+def homepage_url(account_id: str, contract_id: str) -> str:
     url = 'https://control.akamai.com/apps/home-page/#/manage-account?accountId='
     if account_id:
-        url = f'{url}{account_id}&targetUrl='
+        url = f'{url}{account_id}&contractTypeId={contract_id}&targetUrl='
         # this clickable link using escape sequences may not work in all terminal emulators or environments
         return f'\033]8;;{url}\033\\{url}\033]8;;\033\\'
     else:
@@ -77,8 +77,8 @@ def lookup_account(args, logger=None):
 
         # extract accountSwitchKey to generate direct url
         df['accountId'] = df['accountSwitchKey'].str.split(':').apply(lambda col: col[0] if len(col) > 0 else col)
-        df['contractTypeId'] = df['accountSwitchKey'].str.split(':').apply(lambda col: col[0] if len(col) > 0 else col)
-        df['url'] = df.apply(lambda row: homepage_url(row['accountId']), axis=1)
+        df['contractTypeId'] = df['accountSwitchKey'].str.split(':').apply(lambda col: col[1] if len(col) > 1 else col)
+        df['url'] = df.apply(lambda row: homepage_url(row['accountId'], row['contractTypeId']), axis=1)
 
         # drop header and unwanted columns
         accountSwitchKey = ' ' * 20
