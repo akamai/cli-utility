@@ -13,10 +13,9 @@ def build_ghost_log_index(file_location: str, logger=None):
 
 
 def log_format_url(record: str, col_number: int):
-
     if isinstance(col_number, numpy.float64):
         col_number = col_number.astype(numpy.int64)
-    return f'http://lp.engr.akamai.com/log-format.xml#{record}{col_number}'
+    return f' https://docs.akamai.com/esp/user/edgesuite/log-format.xml#{record}{col_number}'
 
 
 if __name__ == '__main__':
