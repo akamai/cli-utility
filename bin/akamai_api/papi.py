@@ -133,7 +133,7 @@ class Papi(AkamaiSession):
             self.logger.error(response.json()['title'])
             return response.status_code, response.json()['title']
         else:
-            self.logger.error(f'{response.status_code}\n{response.text}')
+            self.logger.error(f'{response.text}')
             return response.status_code, response.json()
 
     # SEARCH

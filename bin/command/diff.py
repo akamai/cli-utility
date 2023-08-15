@@ -34,15 +34,17 @@ def collect_json(config_name: str, version: int, response_json, logger=None):
 
 
 def delivery_config_json(papi, config: str, version: int | None = None, exclude: list | None = None, logger=None):
-    status, _ = papi.search_property_by_name(config)
+    status, response = papi.search_property_by_name(config)
     if status == 200:
         json_tree_status, json_response = papi.property_ruletree(papi.property_id, version, exclude)
         _ = papi.get_property_version_detail(papi.property_id, version)
-    if json_tree_status == 200:
-        return collect_json(config, version, json_response, logger=logger)
+        if json_tree_status == 200:
+            return collect_json(config, version, json_response, logger=logger)
+        else:
+            logger.debug(f'{papi.property_id=} {config=} {status=} {version} {json_tree_status}')
+            sys.exit(logger.error(f"{config=} {json_response['title']}: {version}"))
     else:
-        logger.debug(f'{papi.property_id=} {config=} {status=} {version} {json_tree_status}')
-        sys.exit(logger.error(f"{config=} {json_response['title']}: {version}"))
+        sys.exit(logger.error(response))
 
 
 def security_config_json(appsec, waf_config_name: str, config_id: int,
@@ -83,7 +85,6 @@ def compare_config(args, logger=None):
 
     papi = Papi(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies, logger=logger)
     appsec = a.AppsecWrapper(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies, logger=logger)
-    print()
 
     if args.xml is True:
         Path('output/diff/xml').mkdir(parents=True, exist_ok=True)
@@ -102,6 +103,8 @@ def compare_config(args, logger=None):
     # compare delivery config
     if args.security is False:
         status, response = papi.search_property_by_name(config1)
+        if status != 200:
+            sys.exit(logger.error(response))
 
         if config2 is None:
             if left is None and right:
@@ -122,7 +125,6 @@ def compare_config(args, logger=None):
             if left == right:
                 sys.exit(logger.error('Same version, nothing to compare'))
             else:
-                print()
                 v1 = delivery_config_json(papi, config1, left, args.remove_tag, logger=logger)
                 v2 = delivery_config_json(papi, config1, right, args.remove_tag, logger=logger)
 
@@ -269,6 +271,9 @@ def compare_delivery_behaviors(args, logger):
     properties, left, right = sorted(args.property), args.left, args.right
     account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
     papi = Papi(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
+    has_contracts = papi.get_contracts()
+    if isinstance(has_contracts, dict) and has_contracts['status'] == 403:
+        sys.exit(logger.error(has_contracts['detail']))
     papi_rules = p.PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     print()
 
