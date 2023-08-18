@@ -277,11 +277,11 @@ class CodeDiff:
     Manages a pair of source files and generates a single html diff page comparing the contents.
     """
     home = str(Path.home())
-    pygmentsCssFile = f'file:///{home}/.akamai-cli/src/cli-property-status/deps/codeformats/vs.css'
-    diffCssFile = f'file:///{home}/.akamai-cli/src/cli-property-status/deps/diff.css'
-    diffJsFile = f'file:///{home}/.akamai-cli/src/cli-property-status/deps/diff.js'
-    resetCssFile = f'file:///{home}/.akamai-cli/src/cli-property-status/deps/reset.css'
-    jqueryJsFile = f'file:///{home}/.akamai-cli/src/cli-property-status/deps/jquery.min.js'
+    pygmentsCssFile = f'file:///{home}/.akamai-cli/src/cli-utility/deps/codeformats/vs.css'
+    diffCssFile = f'file:///{home}/.akamai-cli/src/cli-utility/deps/diff.css'
+    diffJsFile = f'file:///{home}/.akamai-cli/src/cli-utility/deps/diff.js'
+    resetCssFile = f'file:///{home}/.akamai-cli/src/cli-utility/deps/reset.css'
+    jqueryJsFile = f'file:///{home}/.akamai-cli/src/cli-utility/deps/jquery.min.js'
 
     def __init__(self, fromfile, tofile, fromtxt=None, totxt=None, name=None):
         self.filename = name

@@ -81,6 +81,14 @@ class Papi(AkamaiSession):
         else:
             return response.json()
 
+    def get_account_hostnames(self):
+        url = self.form_url(f'{self.MODULE}/hostnames?sort=hostname%3Aa')
+        resp = self.session.get(url, headers=self.headers)
+        if resp.status_code == 200:
+            return resp.json()['hostnames']['items']
+        else:
+            return resp.json()
+
     # BULK
     def bulk_search_properties(self):
 
@@ -183,7 +191,11 @@ class Papi(AkamaiSession):
                 files.write_json('output/error_others.json', response.json())
                 return 'ERROR_Others'
             try:
+
                 property_items = response.json()['versions']['items'][0]
+                property_name = property_items['propertyName']
+                self.logger.debug(property_name)
+                # print_json(data=response.json()['versions']['items']))
                 return property_items['propertyName']
             except:
                 return 'ERROR_X'
@@ -304,7 +316,7 @@ class Papi(AkamaiSession):
 
         response = self.session.get(url, headers=self.headers)
         if response.status_code == 200:
-            filepath = f'output/diff/xml/{property_name}_v{version}.xml'
+            filepath = f'output/0_diff/xml/{property_name}_v{version}.xml'
             with open(filepath, 'wb') as file:
                 file.write(response.content)
             files.remove_tags_from_xml_file(filepath, ignore_tags)
@@ -410,11 +422,15 @@ class Papi(AkamaiSession):
     # RULETREE
     def property_ruletree(self, property_id: int, version: int, remove_tags: list | None = None):
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
-
         try:
             self.contract_id = self.get_property_version_full_detail(property_id, version, 'contractId')
         except:
-            self.contract_id = self.get_property_version_full_detail(property_id, version)['contractId'][4:]
+            try:
+                self.contract_id = self.get_property_version_full_detail(property_id, version)['contractId'][4:]
+            except:
+                version_json = self.get_property_version_detail(property_id, version)
+                if version_json['status'] == 404:
+                    return version_json['status'], version_json
         try:
             self.group_id = self.get_property_version_full_detail(property_id, version, 'groupId')
         except:

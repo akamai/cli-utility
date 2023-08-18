@@ -24,10 +24,12 @@ from utils import files
 
 
 def collect_json(config_name: str, version: int, response_json, logger=None):
-    Path('output/diff/json').mkdir(parents=True, exist_ok=True)
+    output_dir = 'output/0_diff/json'
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
     config_name = config_name.replace(' ', '_')
-    dt_string = datetime.now().strftime('%Y%m%d_%H%M%s')
-    json_file = f'output/diff/json/{config_name}_v{version}_{dt_string}.json'
+    # dt_string = datetime.now().strftime('%Y%m%d_%H%M%s')
+    # json_file = f'output/0_diff/json/{config_name}_v{version}_{dt_string}.json'
+    json_file = f'output/0_diff/json/{config_name}_v{version}.json'
     logger.debug(json_file)
     files.write_json(json_file, response_json)
     return json_file
@@ -66,7 +68,7 @@ def compare_versions(v1: str, v2: str, outputfile: str, args, logger=None):
     cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
     subprocess.run(cmd_text, shell=True)
 
-    output_path = f'output/diff/{outputfile}.html'
+    output_path = f'output/0_diff/{outputfile}.html'
     compare.main(v1, v2, output_path, args)
     location = f'{os.path.abspath(output_path)}'
 
@@ -87,7 +89,7 @@ def compare_config(args, logger=None):
     appsec = a.AppsecWrapper(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies, logger=logger)
 
     if args.xml is True:
-        Path('output/diff/xml').mkdir(parents=True, exist_ok=True)
+        Path('output/o_diff/xml').mkdir(parents=True, exist_ok=True)
         papi.account_id = papi.get_account_id()
 
         # First check X-Xsrf-Token
