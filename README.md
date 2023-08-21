@@ -292,11 +292,33 @@ replace `python with python3` and `pip with pip3`
 ```
 git clone https://github.com/akamai/cli-utility
 cd cli-utility
+pwd
 pre-commit install
 git checkout -b [branchname]
 python -m venv .venv
+source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+## Test as akamai cli
+
+Assuming result from above `pwd` command returns `/Users/Documents/cli-utility`
+You don't need to run `akamai uninstall utility` if you never install it. This steps will uninstall production version and allow you to verify local branch
+You can run `akamai install file://C:/Users/sample/cli-utlity` anywhere. It doesn't have to be the location where you ran `git clone`
+
+Mac OS users,
+
+```bash
+akamai uninstall utility
+akamai install file:///Users/Documents/cli-utility
+```
+
+Window users
+
+```bash
+akamai uninstall utility
+akamai install file://C:/Users/sample/cli-utlity
 ```
 
 # Notice
