@@ -8,11 +8,17 @@ import re
 import time
 from pathlib import Path
 from time import perf_counter
+from typing import Any
+from typing import Dict
+from typing import Optional
+from typing import SupportsIndex
 
 import numpy as np
 import pandas as pd
 from akamai_api.papi import Papi
+from akamai_utils.cpcode import CpCodeWrapper
 from pandarallel import pandarallel
+from pandas import DataFrame
 from rich import print_json
 from rich.console import Console
 from rich.syntax import Syntax
@@ -24,15 +30,15 @@ class PapiWrapper(Papi):
     def __init__(self, account_switch_key: str | None = None,
                  section: str | None = None,
                  edgerc: str | None = None,
-                 logger: logging.Logger = None):
+                 logger: logging.Logger = None):  # type: ignore
         super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
         self.account_switch_key = account_switch_key
         self.logger = logger
 
-    def get_account_id(self):
+    def get_account_id(self) -> str:
         return super().get_account_id()
 
-    def get_contracts(self):
+    def get_contracts(self) -> list[str]:
         contracts = super().get_contracts()
         df = pd.DataFrame(contracts)
         df.sort_values(by=['contractId'], inplace=True)
@@ -41,14 +47,17 @@ class PapiWrapper(Papi):
         self.logger.info(f'{sorted_contracts=}')
         return sorted_contracts
 
-    def get_edgehostnames(self, contract_id: str, group_id: int):
+    def get_edgehostnames(self, contract_id: str, group_id: int) -> list[str]:
         return super().get_edgehostnames(contract_id, group_id)
 
+    def get_account_hostnames(self) -> list[str]:
+        return super().get_account_hostnames()
+
     # GROUPS
-    def group_url(self, group_id: int):
+    def group_url(self, group_id: int) -> str:
         return f'https://control.akamai.com/apps/property-manager/#/groups/{group_id}/properties'
 
-    def create_groups_dataframe(self, groups: list) -> pd.dataframe:
+    def create_groups_dataframe(self, groups: list[str]) -> DataFrame:
         df = pd.DataFrame(groups)
         df['path'] = df.apply(lambda row: self.build_path(row, groups), axis=1)
         df['level'] = df['path'].str.count('>')
@@ -57,16 +66,16 @@ class PapiWrapper(Papi):
             df[f'L{level}'] = df['path'].apply(lambda x: self.get_level_value(x, level))
         return df
 
-    def build_path(self, row, groups: list) -> str:
+    def build_path(self, row: pd.Series[str], groups: list[str]) -> str:
         path = row['groupName']
-        parent_group_id = row.get('parentGroupId')
+        parent_group_id = row['parentGroupId'] if 'parentGroupId' in row else 0
         while parent_group_id and parent_group_id in [group['groupId'] for group in groups]:
             parent_group = next(group for group in groups if group['groupId'] == parent_group_id)
             path = f"{parent_group['groupName']} > {path}"
             parent_group_id = parent_group.get('parentGroupId')
         return path
 
-    def update_path(self, df, row, column_name):
+    def update_path(self, df: pd.DataFrame, row: pd.Series, column_name: str) -> str:
         '''
         Function to update the path based on contractId
         '''
@@ -76,13 +85,13 @@ class PapiWrapper(Papi):
             return row[column_name] + '_' + row['contractId']
         return row[column_name]
 
-    def get_level_value(self, path, level):
+    def get_level_value(self, path: str, level: int) -> str:
         path_parts = path.split(' > ')
         if len(path_parts) > level:
             return path_parts[level]
         return ''
 
-    def get_properties_count(self, row):
+    def get_properties_count(self, row: pd.Series) -> int:
         group_id = int(row['groupId'])
         if 'contractIds' in list(row.index.values):
             contract_ids = row['contractIds']
@@ -104,7 +113,7 @@ class PapiWrapper(Papi):
                 count = self.get_properties_count_in_group(group_id, contract_ids)
         return count
 
-    def get_valid_contract(self, row) -> str:
+    def get_valid_contract(self, row: pd.Series) -> list[str]:
 
         group_id = int(row['groupId'])
         contract_ids = row['contractIds']
@@ -119,9 +128,9 @@ class PapiWrapper(Papi):
         elif len(contracts) > 1:
             return contracts
         else:
-            return ''
+            return []
 
-    def get_top_groups(self) -> tuple:
+    def get_top_groups(self) -> tuple[list[int], DataFrame]:
         status, groups = super().get_groups()
         if status == 200:
             df = pd.DataFrame(groups)
@@ -137,10 +146,10 @@ class PapiWrapper(Papi):
             df = pd.DataFrame()
         return groups, df
 
-    def get_all_groups(self):
+    def get_all_groups(self) -> tuple[int, str]:
         return super().get_groups()
 
-    def get_groups(self) -> tuple:
+    def get_groups(self) -> tuple[list[int], DataFrame]:
         status, groups = super().get_groups()
         if status == 200:
             df = pd.DataFrame(groups)
@@ -169,7 +178,7 @@ class PapiWrapper(Papi):
                 group_name = ''
             return group_name
 
-    def get_group_contract_id(self, group_id: int) -> list:
+    def get_group_contract_id(self, group_id: int) -> list[str]:
         status, groups = super().get_groups()
         contract_id = []
         if status == 200:
@@ -191,6 +200,7 @@ class PapiWrapper(Papi):
         df['parentGroupId'] = df[['groupId']].parallel_apply(lambda x: papi.get_parent_group_id(*x), axis=1)
         '''
         status, groups = super().get_groups()
+        parent_group_id = 0
         if status == 200:
             df = pd.DataFrame(groups)
             df['groupId'] = df['groupId'].astype(int)
@@ -198,10 +208,10 @@ class PapiWrapper(Papi):
             try:
                 parent_group_id = df['parentGroupId'].values[0]
             except:
-                parent_group_id = None
-            return parent_group_id
+                pass
+        return parent_group_id
 
-    def get_child_group_id(self, parent_group_id: int) -> list:
+    def get_child_group_id(self, parent_group_id: int) -> list[int]:
         status, groups = super().get_groups()
         if status == 200:
             df = pd.DataFrame(groups)
@@ -213,7 +223,7 @@ class PapiWrapper(Papi):
                 child_group_id = None
             return child_group_id
 
-    def get_child_groups(self, parent_group_id: int) -> list:
+    def get_child_groups(self, parent_group_id: int) -> list[str]:
         status, groups = super().get_groups()
 
         if status == 200:
@@ -226,7 +236,7 @@ class PapiWrapper(Papi):
         properties = self.get_propertyname_per_group(group_id, contract_id)
         return len(properties)
 
-    def get_propertyname_per_group(self, group_id: int, contract_id: str) -> list:
+    def get_propertyname_per_group(self, group_id: int, contract_id: str) -> list[str]:
         self.logger.debug(f'{group_id=} {contract_id=}')
         properties_json = super().get_propertyname_per_group(group_id, contract_id)
         property_df = pd.DataFrame(properties_json)
@@ -235,7 +245,7 @@ class PapiWrapper(Papi):
             properties = property_df['propertyName'].values.tolist()
         return properties
 
-    def get_properties_detail_per_group(self, group_id: int, contract_id: str) -> pd.DataFrame:
+    def get_properties_detail_per_group(self, group_id: int, contract_id: str) -> DataFrame:
         self.logger.debug(f'{group_id=} {contract_id=}')
         properties_json = super().get_propertyname_per_group(group_id, contract_id)
         property_df = pd.DataFrame(properties_json)
@@ -246,53 +256,77 @@ class PapiWrapper(Papi):
             del property_df['note']
         return property_df
 
-    def get_properties_in_group(self, group_id: int | None = None, contract_id: str | None = None) -> tuple:
+    def get_properties_in_group(self, group_id: int | None = 0, contract_id: str | None = '') -> tuple:
         df_list = []
         property_count = {}
-        if not group_id:
+        if group_id == 0:
             parent_groups, df = self.get_top_groups()
-            for group_id in parent_groups:
-                contracts = df[df['groupId'] == group_id]['contractIds'].item()
-                group_name = df[df['groupId'] == group_id]['groupName'].item()
+            for _group_id in parent_groups:
+                contracts = df[df['groupId'] == _group_id]['contractIds'].item()
+                group_name = df[df['groupId'] == _group_id]['groupName'].item()
                 if len(contracts) > 1:
                     count = 0
                     for i, contract_id in enumerate(contracts, 1):
-                        self.logger.debug(f'{group_name} {group_id} {contract_id}')
-                        properties = super().get_propertyname_per_group(group_id, contract_id)
+                        self.logger.debug(f'{group_name} {_group_id} {contract_id}')
+                        properties = super().get_propertyname_per_group(_group_id, contract_id)
                         count += len(properties)
 
                         if not bool(properties):
-                            self.logger.debug(f'{group_name} {group_id} {contracts[0]} {properties} no property')
+                            self.logger.debug(f'{group_name} {_group_id} {contracts[0]} {properties} no property')
                         else:
-                            self.logger.debug(f'Collecting properties for {group_name:<50} {group_id:<10} {contract_id:<10}')
+                            self.logger.debug(f'Collecting properties for {group_name:<50} {_group_id:<10} {contract_id:<10}')
                             property_df = pd.DataFrame(properties)
                             df_list.append(property_df)
                     property_count[group_id] = count
                 elif len(contracts) == 1:
-                    self.logger.debug(f'Collecting properties for {group_name:<50} {group_id:<10} {contracts[0]:<10}')
-                    properties = self.get_propertyname_per_group(group_id, contracts[0])
-                    property_count[group_id] = len(properties)
+                    self.logger.debug(f'Collecting properties for {group_name:<50} {_group_id:<10} {contracts[0]:<10}')
+                    properties = self.get_propertyname_per_group(_group_id, contracts[0])
+                    property_count[_group_id] = len(properties)
                     if not bool(properties):
-                        self.logger.debug(f'{group_name} {group_id} {contracts[0]} {properties} no property')
+                        self.logger.debug(f'{group_name} {_group_id} {contracts[0]} {properties} no property')
                     else:
                         property_df = pd.DataFrame(properties)
                         df_list.append(property_df)
         else:
-            self.logger.debug(f'Collecting properties for {group_id=} {contract_id=}')
-            properties = self.get_propertyname_per_group(group_id, contract_id)
-            property_count[group_id] = len(properties)
+            _group_id = group_id
+            _contract_id = contract_id
+            self.logger.debug(f'Collecting properties for {_group_id=} {_contract_id=}')
+            properties = self.get_propertyname_per_group(_group_id, _contract_id)
+            property_count[_group_id] = len(properties)
             property_df = pd.DataFrame(properties)
             df_list.append(property_df)
         return pd.concat(df_list), property_count
+
+    # SEARCH
+    def search_property_version(self, json: dict) -> tuple[int, int]:
+        return super().property_version(json)
+
+    def search_property_by_name(self, property_name: str) -> tuple[int, str]:
+        return super().search_property_by_name(property_name)
+
+    def search_property_by_hostname(self, hostname: str) -> str:
+        return super().search_property_by_hostname(hostname)
 
     # PROPERTIES
     def get_property_version_latest(self, property_id: int) -> dict:
         return super().get_property_version_latest(property_id)
 
-    def property_url(self, asset_id: int, group_id: int):
+    def property_url(self, asset_id: int, group_id: int) -> str:
         return f'https://control.akamai.com/apps/property-manager/#/property/{asset_id}?gid={group_id}'
 
-    def get_property_hostnames(self, property_id: int) -> list:
+    def build_propertyname_with_version(self, row) -> str:
+        property_name = row.propertyName
+        production_version = int(row.productionVersion) if not pd.isna(row.productionVersion) else None
+        latest_version = int(row.latestVersion) if not pd.isna(row.latestVersion) else None
+
+        if production_version is not None:
+            return f'{property_name}_v{production_version}'
+        elif latest_version is not None:
+            return f'{property_name}_v{latest_version}'
+        else:
+            return property_name
+
+    def get_property_hostnames(self, property_id: int) -> list[str]:
         '''
         sample:
         df['hostname'] = df[['propertyId']].parallel_apply(lambda x: papi.get_property_hostnames(*x), axis=1)
@@ -314,7 +348,7 @@ class PapiWrapper(Papi):
         data = super().get_property_version_full_detail(property_id, version)
         return data[dict_key]
 
-    def get_property_version_detail(self, property_id: int, version: int, dict_key: str):
+    def get_property_version_detail(self, property_id: int, version: int, dict_key: str) -> int:
         '''
         df['ruleFormat'] = df.parallel_apply(
             lambda row: papi.get_property_version_detail(
@@ -340,7 +374,11 @@ class PapiWrapper(Papi):
             print_json(data=detail)
             return property_id
 
-    def find_name_and_xml(self, json_data, target_data, grandparent=None, parent=None):
+    def find_name_and_xml(self,
+                          json_data: dict[str, Any],
+                          target_data: list[str],
+                          grandparent: str | None = None,
+                          parent: str | None = None):
         if isinstance(json_data, list):
             for item in json_data:
                 self.find_name_and_xml(item, target_data, parent=parent, grandparent=grandparent)
@@ -357,7 +395,11 @@ class PapiWrapper(Papi):
                 if isinstance(value, (dict, list)):
                     self.find_name_and_xml(value, target_data, grandparent=grandparent, parent=parent)
 
-    def find_name_and_openxml(self, json_data, target_data, grandparent=None, parent=None):
+    def find_name_and_openxml(self,
+                              json_data: dict[str, Any],
+                              target_data: list[str],
+                              grandparent: str | None = None,
+                              parent: str | None = None):
         if isinstance(json_data, list):
             for item in json_data:
                 self.find_name_and_openxml(item, target_data, parent=parent, grandparent=grandparent)
@@ -377,20 +419,20 @@ class PapiWrapper(Papi):
                 if isinstance(value, (dict, list)):
                     self.find_name_and_openxml(value, target_data, grandparent=grandparent, parent=parent)
 
-    def same_rule(self, properties: dict, first: str, second: str) -> list:
+    def same_rule(self, properties: dict[str, dict[str, Any]], first: str, second: str) -> list[str]:
         left = list(properties[first][0].keys())
         right = list(properties[second][0].keys())
         same_rule = list(set(left) & set(right))
         return same_rule
 
-    def different_rule(self, properties: dict, first: str, second: str) -> list:
+    def different_rule(self, properties: dict[str, dict[str, Any]], first: str, second: str) -> list[str]:
         left = list(properties[first][0].keys())
         right = list(properties[second][0].keys())
         different_rule = list(set(left) - set(right))
         different_rule.extend(list(set(right) - set(left)))
         return different_rule
 
-    def compare_xml(self, properties: dict, first: str, second: str, rule: str) -> bool:
+    def compare_xml(self, properties: dict[str, dict[str, Any]], first: str, second: str, rule: str) -> bool:
         try:
             xml_1 = properties[first][0][rule]
         except KeyError:
@@ -404,7 +446,7 @@ class PapiWrapper(Papi):
         return xml_1 == xml_2
 
     # WHOLE ACCOUNT
-    def account_group_summary(self) -> tuple:
+    def account_group_summary(self) -> tuple[DataFrame, list[str]]:
         status_code, all_groups = self.get_all_groups()
         if status_code == 200:
             df = self.create_groups_dataframe(all_groups)
@@ -492,53 +534,10 @@ class PapiWrapper(Papi):
         allgroups_df = allgroups_df[columns].copy()
         return allgroups_df, columns
 
-    def property_summary_x(self, df: pd.DataFrame) -> list:
-        account_properties = []
-        for index, row in df.iterrows():
-            msg = f"{index:<5} {row['groupId']:<12} {row['group_structure']:<130}"
-            if row['propertyCount'] == 0:
-                self.logger.info(f'{msg} no property to collect')
-            else:
-                self.logger.warning(f"{msg} {row['propertyCount']:>5} properties")
-                properties = self.get_properties_detail_per_group(row['groupId'], row['contractId'])
-
-                if not properties.empty:
-                    properties['propertyId'] = properties['propertyId'].astype('Int64')
-                    properties['groupName'] = row['groupName']  # add group name
-
-                    self.logger.debug(' Collecting hostname')
-                    properties['hostname'] = properties[['propertyId']].parallel_apply(lambda x: self.get_property_hostnames(*x), axis=1)
-                    properties['hostname_count'] = properties['hostname'].str.len()
-                    # show one hostname per list and remove list syntax
-                    # properties['hostname'] = properties[['hostname']].parallel_apply(lambda x: ',\n'.join(x.iloc[0]) if not x.empty else '', axis=1)
-                    self.logger.debug(properties.head(5)['hostname'])
-
-                    self.logger.debug(' Collecting productId')
-                    properties['productId'] = properties.parallel_apply(
-                        lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
-                                                                    if pd.notnull(row['productionVersion']) else row['latestVersion'],
-                                                                    'productId'), axis=1)
-                    self.logger.debug(' Collecting ruleFormat')
-                    properties['ruleFormat'] = properties.parallel_apply(
-                        lambda row: self.get_property_version_detail(row['propertyId'], int(row['productionVersion'])
-                                                                    if pd.notnull(row['productionVersion']) else row['latestVersion'],
-                                                                    'ruleFormat'), axis=1)
-
-                    self.logger.debug(' Collecting property url')
-                    properties['propertyURL'] = properties.parallel_apply(lambda row: self.property_url(row['assetId'], row['groupId']), axis=1)
-                    properties['url'] = properties.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
-
-                    self.logger.debug(' Collecting updatedDate')
-                    # pandarallel.initialize(progress_bar=True, nb_workers=1, verbose=0)
-                    properties['updatedDate'] = properties.parallel_apply(lambda row: self.get_property_version_detail(row['propertyId'], row['latestVersion'], 'updatedDate'), axis=1)
-
-                    account_properties.append(properties)
-        return account_properties
-
     def property_summary(self, df: pd.DataFrame, concurrency: int | None = 1) -> list:
         account_properties = []
 
-        def process_row(row):
+        def process_row(row: pd.Series):
             msg = f"{row.name:<5} {row['groupId']:<13} {row['group_structure']}"
             if row['propertyCount'] == 0:
                 self.logger.info(f'{msg} no property to collect')
@@ -552,6 +551,9 @@ class PapiWrapper(Papi):
                     properties['groupName'] = row['groupName']
 
                     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+                        # 'append _vXXX to propertyName
+                        properties['propertyName'] = list(executor.map(self.build_propertyname_with_version,  properties.itertuples()))
+
                         # 'collecting hostname'
                         properties['hostname'] = list(executor.map(self.get_property_hostnames, properties['propertyId']))
                         properties['hostname_count'] = properties['hostname'].str.len()
@@ -584,38 +586,36 @@ class PapiWrapper(Papi):
         return account_properties
 
     # RULETREE
-    def get_properties_ruletree_digest(self, property_id: int, version: int):
+    def get_properties_ruletree_digest(self, property_id: int, version: int) -> dict:
         '''
         sample
         df['ruleFormat'] = df[['propertyId', 'latestVersion']].parallel_apply(lambda x: papi.get_properties_ruletree_digest(*x), axis=1)
         '''
         return super().get_properties_ruletree_digest(property_id, version)
 
-    def get_property_limit(self, property_id: int, version: int):
+    def get_property_limit(self, property_id: int, version: int) -> tuple[int, dict]:
         limit, full_ruletree = super().property_rate_limiting(property_id, version)
         return limit, full_ruletree
 
-    def get_property_ruletree(self, property_id: int, version: int, remove_tags: list | None = None):
+    def get_property_ruletree(self, property_id: int, version: int, remove_tags: list | None = None) -> dict:
         status, ruletree = super().property_ruletree(property_id, version, remove_tags)
         if status == 200:
             return ruletree
         else:
             self.logger.error(f'{property_id=} {version=}')
-            return 'XXX'
+            return {}
 
     def get_property_full_ruletree(self, property_id: int, version: int):
         return super().get_property_full_ruletree(property_id, version)
 
-    def update_property_ruletree(self, property_id: int, version: int, payload: dict) -> tuple:
+    def update_property_ruletree(self, property_id: int, version: int, payload: dict) -> str:
         status, response = super().update_property_ruletree(property_id, version, payload)
-        if status == 200:
-            return response
-        else:
+        if status != 200:
             self.logger.error(f'{property_id=} {version=}')
             print_json(data=payload)
-            return 'XXX'
+        return response
 
-    def get_property_behavior(self, data: dict) -> list:
+    def get_property_behavior(self, data: dict) -> list[str]:
         behavior_names = []
         if 'behaviors' in data:
             for behavior in data['behaviors']:
@@ -627,9 +627,8 @@ class PapiWrapper(Papi):
         return behavior_names
 
     def get_property_advanced_match_xml(self, property_id: int, version: int,
-                                    displayxml: bool | None = True,
-                                    showlineno: bool | None = False) -> dict:
-
+                                        displayxml: bool | None = True,
+                                        showlineno: bool = False) -> tuple[str, dict[str, str]]:
         ruletree_json = self.get_property_ruletree(property_id, version)
         title = f'{self.property_name}_v{version}'
         self.logger.debug(f'{self.property_name} {property_id=}')
@@ -639,9 +638,9 @@ class PapiWrapper(Papi):
             json_object = json.load(f)
 
         excel_sheet = f'{self.property_name}_v{version}'
-        target_data = []
+        target_data: list[str] = []
         self.find_name_and_openxml(ruletree_json, target_data)
-        xml_data = {}
+        xml_data: dict[str, str] = {}
         for index, item in enumerate(target_data):
             self.logger.debug(item)
             xml_data[item['name']] = f"{item['openXml']}{item['closeXml']}"
@@ -658,7 +657,7 @@ class PapiWrapper(Papi):
 
     def get_property_advanced_behavior_xml(self, property_id: int, version: int,
                                            displayxml: bool | None = True,
-                                           showlineno: bool | None = False) -> dict:
+                                           showlineno: bool = False) -> tuple[str, dict[str, str]]:
         ruletree_json = self.get_property_ruletree(property_id, version)
         title = f'{self.property_name}_v{version}'
         self.logger.debug(f'{self.property_name} {property_id=}')
@@ -669,13 +668,13 @@ class PapiWrapper(Papi):
             json_object = json.load(f)
 
         excel_sheet = f'{self.property_name}_v{version}'
-        target_data = []
+        target_data: list[str] = []
         self.find_name_and_xml(ruletree_json, target_data)
-        xml_data = {}
 
         # print_json(data=ruletree_json)
         # logger.debug(target_data)
         print()
+        xml_data: dict[str, str] = {}
         for index, item in enumerate(target_data):
             xml_data[item['name']] = item['xml']
             if displayxml:
@@ -687,19 +686,19 @@ class PapiWrapper(Papi):
                 print()
         return excel_sheet, xml_data
 
-    def get_property_advanced_override(self, property_id: int, version: int):
+    def get_property_advanced_override(self, property_id: int, version: int) -> str:
         _, full_ruletree = super().property_rate_limiting(property_id, version)
         try:
             advancedOverride = full_ruletree['rules']['advancedOverride']
-            return advancedOverride
         except:
-            return None
+            pass
+        return advancedOverride
 
-    def get_property_path_n_behavior(self, json: dict):
+    def get_property_path_n_behavior(self, json: dict[str, Any]) -> list[dict[str, Any]]:
         navigation = []
         visited_paths = set()
 
-        def traverse_json(json, path=''):
+        def traverse_json(json: dict[str, Any], path: str | None = '') -> list[dict[str, Any]]:
             if isinstance(json, dict):
                 if 'behaviors' in json and len(json['behaviors']) > 0:
                     current_path = f'{path} {json["name"]}'.strip()
@@ -711,19 +710,18 @@ class PapiWrapper(Papi):
                 for k, v in json.items():
                     if k in ['children', 'behaviors']:
                         traverse_json(v, f'{path} {json["name"]} {k}')
-
             elif isinstance(json, list):
                 for i, item in enumerate(json):
                     index = i + 1
                     traverse_json(item, f'{path} [{index:>3}] > ')
-
+            return navigation
         traverse_json(json)
         return navigation
 
-    def collect_property_behavior(self, property_name: str, json: dict) -> pd.DataFrame:
-        behavior = self.get_property_path_n_behavior(json)
+    def collect_property_behavior(self, property_name: str, json: dict[str, Any]) -> pd.DataFrame:
+        _behavior = self.get_property_path_n_behavior(json)
 
-        flat = pd.json_normalize(behavior)
+        flat = pd.json_normalize(_behavior)
         dx = pd.DataFrame()
         dx = pd.DataFrame(flat)
         dx = dx.melt(var_name='path', value_name='json')
@@ -749,11 +747,11 @@ class PapiWrapper(Papi):
         columns = ['property', 'path', 'jsonpath', 'type', 'name', 'json_or_xml', 'custom_behaviorId']
         return behavior[columns]
 
-    def get_property_path_n_criteria(self, json: dict):
+    def get_property_path_n_criteria(self, json: dict[str, Any]) -> list[dict[str, Any]]:
         navigation = []
         visited_paths = set()
 
-        def traverse_json(json, path=''):
+        def traverse_json(json: dict[str, Any], path: str | None = '') -> list[dict[str, Any]]:
             if isinstance(json, dict):
                 if 'criteria' in json and len(json['criteria']) > 0:
                     current_path = f'{path} {json["name"]}'.strip()
@@ -770,14 +768,16 @@ class PapiWrapper(Papi):
                     index = i + 1
                     traverse_json(item, f'{path} [{index:>3}] > ')
 
+            return navigation
+
         traverse_json(json)
         return navigation
 
-    def collect_property_criteria(self, property_name: str, json: dict) -> pd.DataFrame:
-        criteria = self.get_property_path_n_criteria(json)
+    def collect_property_criteria(self, property_name: str, json: dict[str, Any]) -> pd.DataFrame:
+        criteria_list = self.get_property_path_n_criteria(json)
         dx = pd.DataFrame()
-        if len(criteria) > 0:
-            flat = pd.json_normalize(criteria)
+        if len(criteria_list) > 0:
+            flat = pd.json_normalize(criteria_list)
             dx = pd.DataFrame(flat)
             dx = dx.melt(var_name='path', value_name='json')
             dx = dx.dropna(subset=['json'])
@@ -800,16 +800,17 @@ class PapiWrapper(Papi):
             criteria['path'] = criteria.apply(lambda row: f"{row['path']} [{str(row['index']):>3}]", axis=1)
             criteria['jsonpath'] = criteria.apply(
                 lambda row: self.get_jsonpath_match_criteria(
-                    self.find_jsonpath_criteria(json, criterion=row['name']), navigation=row['path'], data=row['json_or_xml']), axis=1)
+                    self.find_jsonpath_criteria(json, criterion=row['name']),
+                    navigation=row['path'], data=row['json_or_xml']), axis=1)
             columns = ['property', 'path', 'jsonpath', 'type', 'name', 'json_or_xml']
             return criteria[columns]
         return criteria
 
-    def get_property_path_n_criteria_condition(self, json: dict):
+    def get_property_path_n_criteria_condition(self, json: dict[str, Any]) -> list[dict[str, Any]]:
         navigation = []
         visited_paths = set()
 
-        def traverse_json(json, path=''):
+        def traverse_json(json: dict[str, Any], path: str | None = '') -> list[dict[str, Any]]:
             if isinstance(json, dict):
                 if 'criteriaMustSatisfy' in json:
                     current_path = f'{path} {json["name"]}'.strip()
@@ -825,15 +826,16 @@ class PapiWrapper(Papi):
                 for i, item in enumerate(json):
                     index = i + 1
                     traverse_json(item, f'{path} [{index:>3}] > ')
+            return navigation
 
         traverse_json(json)
         return navigation
 
-    def collect_property_criteria_condition(self, property_name: str, json: dict) -> pd.DataFrame:
-        criteria = self.get_property_path_n_criteria_condition(json)
+    def collect_property_criteria_condition(self, property_name: str, json: dict[str, Any]) -> pd.DataFrame:
+        criteria_list = self.get_property_path_n_criteria_condition(json)
         dx = pd.DataFrame()
-        if len(criteria) > 0:
-            flat = pd.json_normalize(criteria)
+        if len(criteria_list) > 0:
+            flat = pd.json_normalize(criteria_list)
             dx = pd.DataFrame(flat)
             dx = dx.melt(var_name='path', value_name='json')
             dx = dx.dropna(subset=['json'])
@@ -855,15 +857,15 @@ class PapiWrapper(Papi):
             return criteria[columns]
         return criteria
 
-    def get_product_schema(self, product_id: str, format_version: str | None = 'latest'):
+    def get_product_schema(self, product_id: str, format_version: str | None = 'latest') -> dict[str, Any]:
         status, response = super().get_ruleformat_schema(product_id, format_version)
         if status == 200:
             return response
         else:
-            return 'XXX'
+            return {}
 
     # BEHAVIORS
-    def get_behavior(self, rule_dict: dict, behavior: str) -> dict:
+    def get_behavior(self, rule_dict: dict[str, Any], behavior: str) -> dict[str, Any]:
         rule_dict = rule_dict['definitions']['catalog']['behaviors']
         matching = [key for key in rule_dict if behavior.lower() in key.lower()]
         if not matching:
@@ -872,7 +874,7 @@ class PapiWrapper(Papi):
         data = {key: rule_dict[key] for key in matching}
         return data
 
-    def get_behavior_option(self, behavior_dict: dict, behavior: str) -> dict:
+    def get_behavior_option(self, behavior_dict: dict[str, Any], behavior: str) -> dict[str, Any]:
         matching = [key for key in behavior_dict if behavior.lower() in key.lower()]
         if not matching:
             self.logger.critical(f'{behavior} not in catalog')
@@ -890,13 +892,50 @@ class PapiWrapper(Papi):
             else:
                 return value
 
-    def check_behavior(self, behaviors: list, df: pd.DataFrame, cpcode):
+    def check_criteria(self, criteria: list[str], df: pd.DataFrame) -> pd.DataFrame:
+        for criterion in criteria:
+            if criterion == 'cloudletsOrigin':
+                df[criterion] = df.apply(lambda row: self.cloudlets_origin_value(row['ruletree']['rules']), axis=1)
+                df[f'{criterion}_count'] = df[criterion].str.len()
+                df[criterion] = df[[criterion]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+                self.logger.debug(f'\n{df}')
+        return df
+
+    def cloudlets_origin_value(self, json: dict[str, Any]) -> list[str]:
+        origins = []
+
+        def traverse_json(json: dict[str, Any]) -> list[str]:
+            if isinstance(json, dict):
+                if 'criteria' in json and len(json['criteria']) > 0:
+                    for x in json['criteria']:
+                        try:
+                            if x['name'] == 'cloudletsOrigin':
+                                origins.append(x['options']['originId'])
+                        except:
+                            pass
+                for k, v in json.items():
+                    if k in ['children', 'behaviors']:
+                        traverse_json(v)
+            elif isinstance(json, list[Any]):
+                for i, item in enumerate(json):
+                    index = i + 1
+                    traverse_json(item)
+            return origins
+
+        traverse_json(json)
+        return origins
+
+    def check_behavior(self, behaviors: list[str], df: pd.DataFrame, cpcode: CpCodeWrapper) -> DataFrame:
         for behavior in behaviors:
             self.logger.debug(behavior)
             if behavior == 'origin':
                 df[behavior] = df.parallel_apply(lambda row: self.origin_value(row['propertyName'], row['ruletree']['rules']), axis=1)
                 df[f'{behavior}_count'] = df[behavior].str.len()
                 df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            elif behavior == 'edgeConnect':
+                # cloudlets
+                df[behavior] = df.parallel_apply(lambda row: self.cloudlets_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+
             elif behavior == 'siteshield':
                 df[behavior] = df.parallel_apply(lambda row: self.siteshield_value(row['propertyName'], row['ruletree']['rules']), axis=1)
                 df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
@@ -925,7 +964,7 @@ class PapiWrapper(Papi):
         return df
 
     @staticmethod
-    def behavior_count(property_name: str, rules: dict, target_behavior: str):
+    def behavior_count(property_name: str, rules: dict[str, Any], target_behavior: str) -> int:
         parent_count = 0
 
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
@@ -938,7 +977,7 @@ class PapiWrapper(Papi):
                     parent_count += child_count
         return parent_count
 
-    def cpcode_value(self, property_name: str, rules: dict):
+    def cpcode_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
         values = []
 
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
@@ -971,7 +1010,7 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return list(set(values))
 
-    def custom_behavior_value(self, property_name: str, rules: dict):
+    def custom_behavior_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -986,7 +1025,7 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return list(set(values))
 
-    def origin_value(self, property_name: str, rules: dict):
+    def origin_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -1006,7 +1045,7 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return sorted(list(set(values)))
 
-    def siteshield_value(self, property_name: str, rules: dict):
+    def siteshield_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -1021,7 +1060,7 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return sorted(list(set(values)))
 
-    def sureroute_value(self, property_name: str, rules: dict):
+    def sureroute_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -1037,7 +1076,8 @@ class PapiWrapper(Papi):
         return sorted(list(set(values)))
 
     # ACTIVATION
-    def activate_property_version(self, property_id: int, version: int, network: str, note: str, emails: list):
+    def activate_property_version(self, property_id: int, version: int,
+                                  network: str, note: str, emails: list[str]) -> int:
         status, response = super().activate_property_version(property_id, version, network, note, emails)
         if status == 201:
             try:
@@ -1048,8 +1088,7 @@ class PapiWrapper(Papi):
                 return 0
         return status
 
-    def activation_status(self, property_id: int, activation_id: int, version: int):
-
+    def activation_status(self, property_id: int, activation_id: int, version: int) -> str:
         if activation_id > 0 and version > 0:
             status, response = super().activation_status(property_id, activation_id)
             self.logger.debug(f'{activation_id=} {version=} {property_id=} {status}')
@@ -1059,17 +1098,17 @@ class PapiWrapper(Papi):
             self.logger.debug(f'FILTERED\n{df}')
             return df.status.values[0]
         else:
-            return ' '
+            return ''
 
     # CUSTOM BEHAVIOR
-    def list_custom_behaviors(self):
+    def list_custom_behaviors(self) -> tuple[int, list[str]]:
         return super().list_custom_behaviors()
 
-    def get_custom_behaviors(self, id: str):
+    def get_custom_behaviors(self, id: str) -> tuple[int, str]:
         return super().get_custom_behaviors(id)
 
     # HELPER
-    def extract_criteria_json(self, row) -> str:
+    def extract_criteria_json(self, row: pd.Series[Any]) -> str:
         if row['name'] == 'matchAdvanced':
             openXml = row['json']['options']['openXml']
             closeXml = row['json']['options']['closeXml']
@@ -1077,7 +1116,7 @@ class PapiWrapper(Papi):
         else:
             return row['json']['options']
 
-    def extract_behavior_json(self, row) -> str:
+    def extract_behavior_json(self, row: pd.Series[Any]) -> str:
         if row['behavior'] == 'customBehavior':
             return self.get_custom_behaviors(row['custom_behaviorId'])[1]
         if row['behavior'] == 'advanced':
@@ -1085,13 +1124,17 @@ class PapiWrapper(Papi):
         else:
             return row['json']['options']
 
-    def extract_custom_behavior_id(self, row) -> str:
+    def extract_custom_behavior_id(self, row: pd.Series[Any]) -> str:
         if row['behavior'] == 'customBehavior':
             return row['json']['options']['behaviorId']
         else:
             return ''
 
-    def get_jsonpath_match_behavior(self, result: list, behavior: str, navigation: str, data: str):
+    def get_jsonpath_match_behavior(self,
+                                    result: list[tuple[str, str, str]],
+                                    behavior: str,
+                                    navigation: str,
+                                    data: str) -> Any:
         if len(result) == 1:
             return result[0][0]
         else:
@@ -1108,10 +1151,13 @@ class PapiWrapper(Papi):
                 return matching_paths[0]
             return [x[0] for x in result]
 
-    def find_jsonpath_behavior(self, ruletree: dict, behavior: str | None = None, current_path=[]):
+    def find_jsonpath_behavior(self,
+                               ruletree: dict[str, Any],
+                               behavior: str | None = None,
+                               current_path: list[str] = []) -> list[tuple[str, str, str]]:
         result = []
 
-        def traverse(node, path):
+        def traverse(node: dict[str, Any], path: str) -> list[tuple[str, str, str]]:
             if path:
                 path += '/'
             path += 'rules'
@@ -1121,16 +1167,21 @@ class PapiWrapper(Papi):
                     if beh['name'] == behavior:
                         result.append((f'{path}/behaviors/{behavior_index}', node['name'], beh['options']))
                 else:
-                    result.append((f'{path}/behaviors/{behavior_index}', node['name'], beh['name'], beh['options']))
+                    result.append((f'{path}/behaviors/{behavior_index}', node['name'], beh['options']))
 
             children = node.get('children', [])
             for child_index, child in enumerate(children):
                 traverse(child, f'{path}/children/{child_index}')
 
+            return result
+
         traverse(ruletree, '')
         return result
 
-    def get_jsonpath_match_criteria(self, result: list, navigation: str, data: str):
+    def get_jsonpath_match_criteria(self,
+                                    result: list[tuple[str, str, str]],
+                                    navigation: str,
+                                    data: str) -> Any:
         if len(result) == 1:
             return result[0][0]
         else:
@@ -1163,29 +1214,36 @@ class PapiWrapper(Papi):
                             return matching_paths[0]
             return [x[0] for x in result]
 
-    def find_jsonpath_criteria(self, ruletree: dict, criterion: str | None = None, current_path=[]):
+    def find_jsonpath_criteria(self,
+                               ruletree: dict[str, Any],
+                               criterion: str | None = None,
+                               current_path: list[str] = []) -> list[tuple[str, str, str]]:
         result = []
 
-        def traverse(node, path):
+        def traverse(node: dict[str, Any], path: str) -> list[tuple[str, str, str]]:
             if path:
                 path += '/'
             path += 'rules'
             criteria = node.get('criteria', [])
-            for index, beh in enumerate(criteria):
+            for index, cri in enumerate(criteria):
                 if criterion:
-                    if beh['name'] == criterion:
-                        result.append((f'{path}/criteria/{index}', node['name'], beh['options']))
+                    if cri['name'] == criterion:
+                        result.append((f'{path}/criteria/{index}', node['name'], cri['options']))
                 else:
-                    result.append((f'{path}/criteria/{index}', node['name'], beh['name'], beh['options']))
+                    result.append((f'{path}/criteria/{index}', node['name'], cri['options']))
 
             children = node.get('children', [])
             for child_index, child in enumerate(children):
                 traverse(child, f'{path}/children/{child_index}')
 
+            return result
+
         traverse(ruletree, '')
         return result
 
-    def get_jsonpath_match_criteria_condition(self, result: list, navigation: str):
+    def get_jsonpath_match_criteria_condition(self,
+                                              result: list[tuple[str, str, str, str]],
+                                              navigation: str) -> Any:
         if len(result) == 1:
             return result[0][0]
         else:
@@ -1195,10 +1253,12 @@ class PapiWrapper(Papi):
                     return result[i][0]
         return [x[0] for x in result]
 
-    def find_jsonpath_criteria_condition(self, ruletree: dict, current_path=[]):
+    def find_jsonpath_criteria_condition(self,
+                                         ruletree: dict[str, Any],
+                                         current_path: list[str] | None = []) -> list[tuple[str, str, str, str]]:
         result = []
 
-        def traverse(node, path):
+        def traverse(node: dict[str, Any], path: str) -> list[tuple[str, str, str, str]]:
             if path:
                 path += '/'
             path += 'rules'
@@ -1208,18 +1268,19 @@ class PapiWrapper(Papi):
             children = node.get('children', [])
             for child_index, child in enumerate(children):
                 traverse(child, f'{path}/children/{child_index}')
+            return result
 
         traverse(ruletree, '')
         return result
 
 
 class Node:
-    def __init__(self, name, value, parent=None):
+    def __init__(self, name: str, value: str, parent: Node | None = None):
         self.name = name
         self.value = value
         self.parent = parent
 
-    def get_path(self):
+    def get_path(self) -> str:
         if self.parent is None:
             return self.name
         else:
