@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import appsec as sec
 from akamai_utils import papi as p
 from rich import print_json
@@ -16,6 +15,7 @@ from utils import _logging as lg
 from utils import dataframe
 from utils import files
 from yaspin import yaspin
+from yaspin.spinners import Spinners
 
 
 def list_config(args, account_folder, logger):
@@ -227,6 +227,7 @@ def audit_hostname(args, account_folder, logger):
 
     appsec = sec.AppsecWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
     _, resp = appsec.list_waf_configs()
+    # print_json(data=resp)
     df = pd.DataFrame(resp)
     df = df.rename(columns={'id': 'configId', 'name': 'configName'})
     df = df.sort_values(by=['groupId', 'configName'], na_position='first')
@@ -287,11 +288,49 @@ def audit_hostname(args, account_folder, logger):
         print(tabulate(security_config_by_group[temp_columns], headers=temp_columns, showindex=True,
                        numalign='center', tablefmt='grid', maxcolwidths=50))
 
+    papi = p.PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
+    if args.summary:
+        all_account_hostnames = papi.get_account_hostnames()
+        df = pd.DataFrame(all_account_hostnames)
+        df = df.rename(columns={'cnameFrom': 'hostname'})
+        columns = ['propertyName', 'hostname', 'stagingCnameTo', 'productionCnameTo']
+
+        prd_df = df[~df['productionEdgeHostnameId'].isna()][columns].reset_index(drop=True)
+        del prd_df['stagingCnameTo']
+        prd_df = prd_df.rename(columns={'productionCnameTo': 'cnameTo'})
+
+        stg_df = df[~df['stagingEdgeHostnameId'].isna()][columns].reset_index(drop=True)
+        del stg_df['productionCnameTo']
+        stg_df = stg_df.rename(columns={'stagingCnameTo': 'cnameTo'})
+
+        # only deployed on Akamai production network
+        merged = prd_df.merge(stg_df, how='left', indicator=True)
+        prd_only = merged[merged['_merge'] == 'left_only'].reset_index(drop=True)
+
+        # only deployed on Akamai staging network
+        merged = prd_df.merge(stg_df, how='right', indicator=True)
+        stg_only = merged[merged['_merge'] == 'right_only'].reset_index(drop=True)
+
+        logger.warning('Hostname activated on Akamai staging network only')
+        combined_hostnames = pd.concat([prd_only['hostname'], stg_only['hostname']])
+        hostnames = sorted(pd.unique(combined_hostnames))
+
+        unique_hostnames = pd.DataFrame({'hostname': hostnames})
+
+        unique_hostnames['propertyName'] = unique_hostnames['hostname'].apply(lambda x: papi.search_property_by_hostname(x))
+        unique_hostnames['json'] = unique_hostnames['propertyName'].apply(lambda x: papi.search_property_by_name(x)[1])
+        unique_hostnames['staging_version'] = unique_hostnames['json'].apply(lambda x: papi.search_property_version(x)[0])
+
+        del unique_hostnames['json']
+        columns = ['propertyName', 'hostname', 'staging_version']
+        logger.info(f'\n{unique_hostnames[columns]}')
+        sys.exit()
+
     # get property from group
     print()
     logger.warning('Collecting hostnames from delivery configs from the same groups')
+
     with yaspin():
-        papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
         allgroups_df, columns = papi.account_group_summary()
 
     properties = df.query("groupId != ''")
@@ -301,84 +340,85 @@ def audit_hostname(args, account_folder, logger):
     group_df = group_df.reset_index(drop=True)
     columns.remove('groupName')
     columns = ['contractId', 'groupId', 'parentGroupId', 'group_structure', 'propertyCount']
-    print(tabulate(group_df[columns], headers=columns, showindex=True, tablefmt='github'))
-    print()
+    if not group_df.empty:
+        print(tabulate(group_df[columns], headers=columns, showindex=True, tablefmt='github'))
+    else:
+        print('no property found')
 
-    account_properties = papi.property_summary(group_df)
+    account_properties = papi.property_summary(group_df, args.concurrency)
     if len(account_properties) > 0:
         delivery = pd.concat(account_properties, axis=0)
-
-    # only look for property activated on Staging only
-    staging = delivery[delivery['productionVersion'].apply(lambda x: pd.isna(x) or x == '')].copy()
-    agg_dict = {
-        'groupId': lambda x: list(set(x.tolist())),
-        'propertyName': lambda x: x.tolist(),
-        'hostname': sum  # Concatenate lists
-        }
-    staging = staging.groupby('groupId').agg(agg_dict)
-    staging = staging.reset_index(drop=True)
-    staging['groupId'] = staging[['groupId']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-    staging['hostname_count'] = staging['hostname'].str.len()
-    columns = ['groupId', 'propertyName', 'hostname', 'hostname_count']
-    staging = staging[columns]
-
-    delivery['hostname'] = delivery[['hostname']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-    del delivery['propertyURL']
-    delivery = delivery.rename(columns={'url': 'propertyName (hyperlink)'})
-
-    if not staging.empty:
-        print()
-        logger.warning('Delivery configs activated on staging only')
-        print(tabulate(staging, headers=columns, showindex=True, tablefmt='grid', maxcolwidths=50))
-
-    # Merge the dataframes on 'groupId'
-    '''
-    new_value = ['a', 'A', 'Y', 'Z']
-    group_id = '26333'
-    mask = delivery['groupId'] == group_id
-    logger.debug(delivery['hostname'])
-    delivery.loc[mask, 'hostname'] = delivery.loc[mask, 'hostname'].apply(lambda x: x + new_value)
-    logger.info(f"\n{delivery['hostname']}")
-    '''
-
-    merged_df = pd.merge(security_config_by_group, staging, on='groupId', how='left')
-    diff_df = merged_df.dropna(subset=['hostname'])
-    diff_df = diff_df[diff_df['hostname'].apply(len) > 0]  # remove rows where 'hostname' is an empty list
-    if not diff_df.empty:
-        # Convert NaN values to empty lists
-        diff_df['productionHostnames'] = diff_df['productionHostnames'].fillna('').apply(lambda x: x if isinstance(x, list) else [])
-        diff_df['hostname'] = diff_df['hostname'].fillna('').apply(lambda x: x if isinstance(x, list) else [])
-        diff_df['host_not_in_waf'] = diff_df.apply(lambda row: [hostname for hostname in row['hostname'] if hostname not in row['productionHostnames']], axis=1)
-        diff_df['host_not_in_waf'] = diff_df[['host_not_in_waf']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-        diff_df['productionHostnames'] = diff_df[['productionHostnames']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-        diff_df['delivery_hostname'] = diff_df[['hostname']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-        diff_df['configId'] = diff_df[['configId']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-        diff_df['configName'] = diff_df[['configName']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-        columns = ['host_not_in_waf', 'delivery_hostname', 'productionHostnames', 'groupId', 'configId', 'configName', 'productionHostnames_count']
-    if diff_df.empty:
-        logger.info('all hostnames from delivery configs are in security configs')
-    else:
-        # cleanup data for excel
-        waf_security_df['configId'] = waf_security_df['configId'].astype(str)
-
-        security_config_by_group['configId'] = security_config_by_group[['configId']].apply(
-            lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-        security_config_by_group['configName'] = security_config_by_group[['configName']].apply(
-            lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-
-        staging = staging.sort_values(by='groupId')
-        staging['propertyName'] = staging[['propertyName']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
-        staging['hostname'] = staging[['hostname']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+        # only look for property activated on Staging only
+        staging = delivery[delivery['productionVersion'].apply(lambda x: pd.isna(x) or x == '')].copy()
+        agg_dict = {
+            'groupId': lambda x: list(set(x.tolist())),
+            'propertyName': lambda x: x.tolist(),
+            'hostname': sum  # Concatenate lists
+            }
+        staging = staging.groupby('groupId').agg(agg_dict)
         staging = staging.reset_index(drop=True)
+        staging['groupId'] = staging[['groupId']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+        staging['hostname_count'] = staging['hostname'].str.len()
+        columns = ['groupId', 'propertyName', 'hostname', 'hostname_count']
+        staging = staging[columns]
 
-        sheet = {}
-        sheet['compare'] = diff_df[columns]
-        sheet['security_by_groupId'] = security_config_by_group
-        sheet['properties_by_groupId'] = staging
-        sheet['original_security_configs'] = waf_security_df
-        sheet['delivery_properties_detail'] = delivery
-        sheet['delivery_summary'] = group_df
+        delivery['hostname'] = delivery[['hostname']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+        del delivery['propertyURL']
+        delivery = delivery.rename(columns={'url': 'propertyName (hyperlink)'})
 
-        filepath = f'{account_folder}/hostname_audit.xlsx' if args.output is None else f'output/{args.output}'
-        files.write_xlsx(filepath, sheet, adjust_column_width=True, freeze_column=3)
-        files.open_excel_application(filepath, show=True, df=diff_df[columns])
+        if not staging.empty:
+            print()
+            logger.warning('Delivery configs activated on staging only')
+            print(tabulate(staging, headers=columns, showindex=True, tablefmt='grid', maxcolwidths=50))
+
+        # Merge the dataframes on 'groupId'
+        '''
+        new_value = ['a', 'A', 'Y', 'Z']
+        group_id = '26333'
+        mask = delivery['groupId'] == group_id
+        logger.debug(delivery['hostname'])
+        delivery.loc[mask, 'hostname'] = delivery.loc[mask, 'hostname'].apply(lambda x: x + new_value)
+        logger.info(f"\n{delivery['hostname']}")
+        '''
+
+        merged_df = pd.merge(security_config_by_group, staging, on='groupId', how='left')
+        diff_df = merged_df.dropna(subset=['hostname'])
+        diff_df = diff_df[diff_df['hostname'].apply(len) > 0]  # remove rows where 'hostname' is an empty list
+        if not diff_df.empty:
+            # Convert NaN values to empty lists
+            diff_df['productionHostnames'] = diff_df['productionHostnames'].fillna('').apply(lambda x: x if isinstance(x, list) else [])
+            diff_df['hostname'] = diff_df['hostname'].fillna('').apply(lambda x: x if isinstance(x, list) else [])
+            diff_df['host_not_in_waf'] = diff_df.apply(lambda row: [hostname for hostname in row['hostname'] if hostname not in row['productionHostnames']], axis=1)
+            diff_df['host_not_in_waf'] = diff_df[['host_not_in_waf']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            diff_df['productionHostnames'] = diff_df[['productionHostnames']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            diff_df['delivery_hostname'] = diff_df[['hostname']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            diff_df['configId'] = diff_df[['configId']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            diff_df['configName'] = diff_df[['configName']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            columns = ['host_not_in_waf', 'delivery_hostname', 'productionHostnames', 'groupId', 'configId', 'configName', 'productionHostnames_count']
+        if diff_df.empty:
+            logger.info('all hostnames from delivery configs are in security configs')
+        else:
+            # cleanup data for excel
+            waf_security_df['configId'] = waf_security_df['configId'].astype(str)
+
+            security_config_by_group['configId'] = security_config_by_group[['configId']].apply(
+                lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            security_config_by_group['configName'] = security_config_by_group[['configName']].apply(
+                lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+
+            staging = staging.sort_values(by='groupId')
+            staging['propertyName'] = staging[['propertyName']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            staging['hostname'] = staging[['hostname']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            staging = staging.reset_index(drop=True)
+
+            sheet = {}
+            sheet['compare'] = diff_df[columns]
+            sheet['security_by_groupId'] = security_config_by_group
+            sheet['properties_by_groupId'] = staging
+            sheet['original_security_configs'] = waf_security_df
+            sheet['delivery_properties_detail'] = delivery
+            sheet['delivery_summary'] = group_df
+
+            filepath = f'{account_folder}/hostname_audit.xlsx' if args.output is None else f'output/{args.output}'
+            files.write_xlsx(filepath, sheet, adjust_column_width=True, freeze_column=3)
+            files.open_excel_application(filepath, show=True, df=diff_df[columns])

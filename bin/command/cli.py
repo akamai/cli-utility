@@ -59,9 +59,10 @@ delivery = [{'name': 'behavior',
 security = [{'name': 'hostname',
              'help': 'audit hostnames not yet assigned to the security configurations',
              'optional_arguments': [{'name': 'group-id', 'help': 'group-id', 'nargs': '+'},
-                                    {'name': 'concurrency', 'help': 'process X [numeric] requests at a time.  Maximum value is 10.', 'default': 1},
+                                    {'name': 'concurrency', 'help': 'process X [numeric] requests at a time.  Maximum value is 5.', 'default': 5},
                                     {'name': 'output', 'help': 'override excel output file (.xlsx)'},
-                                    {'name': 'no-show', 'help': 'automatically open excel', 'action': 'store_true'}]
+                                    {'name': 'no-show', 'help': 'automatically open excel', 'action': 'store_true'},
+                                    {'name': 'summary', 'help': 'only show account summary', 'action': 'store_true'}]
              }]
 
 diff = [{'name': 'behavior',
