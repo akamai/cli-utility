@@ -64,7 +64,7 @@ class CpsWrapper(AkamaiSession):
             if not df.empty:
                 if empty_df.shape[0] > 0:
                     self.logger.critical(f'out of {df.shape[0]}, {empty_df.shape[0]} certificates do not have hostname assigned to')
-                columns = ['contractId', 'id', 'Slot', 'ra', 'common_name', 'sni', 'hostname_count', 'hostname']
+                columns = ['contractId', 'id', 'Slot', 'ra', 'orgId', 'common_name', 'sni', 'hostname_count', 'hostname']
                 return enrollments, df[columns]
             else:
                 return [], pd.DataFrame()

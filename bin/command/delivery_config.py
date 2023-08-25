@@ -18,8 +18,6 @@ from time import strftime
 
 import numpy as np
 import pandas as pd
-import swifter
-from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import cpcode as cp
 from akamai_utils import papi as p
 from akamai_utils import siteshield as ss
@@ -58,8 +56,9 @@ def main(args, account_folder, logger):
         original_behaviors = [x.lower() for x in args.behavior]
     sheet = {}
     if args.property:
+        distinct_properties = list(set(sorted(args.property)))
         all_properties = []
-        for property in args.property:
+        for property in distinct_properties:
             status, resp = papi.search_property_by_name(property)
             # print_json(data=resp)
             if status != 200:
@@ -105,16 +104,15 @@ def main(args, account_folder, logger):
                                                             if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
         # properties.loc[pd.notnull(properties['cpcode_unique_value']) & (properties['cpcode_unique_value'] == ''), 'cpcode'] = '0'
 
-        if args.behavior:
-            pandarallel.initialize(progress_bar=False, verbose=0)
-            properties_df = papi.check_behavior(original_behaviors, properties_df, cpc)
-
-        # columns = ['accountId', 'groupId', 'groupName',
         columns = ['propertyName', 'propertyId', 'latestVersion', 'stagingVersion', 'productionVersion',
                    'updatedDate', 'productId', 'ruleFormat', 'hostname_count', 'hostname']
         properties_df['propertyId'] = properties_df['propertyId'].astype(str)
 
+        if args.behavior or args.criteria:
+            pandarallel.initialize(progress_bar=False, verbose=0)
+
         if args.behavior:
+            properties_df = papi.check_behavior(original_behaviors, properties_df, cpc)
             columns.extend(sorted(original_behaviors))
             if 'cpcode' in original_behaviors:
                 columns.remove('cpcode')
@@ -123,10 +121,29 @@ def main(args, account_folder, logger):
                 columns.remove('origin')
                 columns.extend(['origin_count', 'origin'])
 
+        if args.criteria:
+            properties_df = papi.check_criteria(args.criteria, properties_df)
+            columns.extend(sorted(args.criteria))
+            if 'cloudletsOrigin' in args.criteria:
+                columns.remove('cloudletsOrigin')
+                columns.extend(['cloudletsOrigin_count', 'cloudletsOrigin'])
+
         columns.extend(['propertyName(hyperlink)'])
         properties_df = properties_df[columns].copy()
         properties_df = properties_df.reset_index(drop=True)
-        sheet['properties'] = properties_df
+
+        generic_columns = properties_df.columns
+        main = ['propertyName', 'propertyId',
+                'latestVersion', 'stagingVersion', 'productionVersion',
+                'updatedDate', 'productId', 'ruleFormat', 'propertyName(hyperlink)']
+        properties_columns = [column for column in generic_columns if column not in main]
+        count_columns = sorted([col for col in properties_columns if col.endswith('_count')])
+        noncount_columns = sorted([col for col in properties_columns if not col.endswith('_count')])
+        properties_columns = ['propertyName(hyperlink)'] + count_columns + noncount_columns
+
+        if args.behavior or args.criteria:
+            sheet['properties'] = properties_df[properties_columns]
+        sheet['generic'] = properties_df[main]
         df = properties_df.copy()
 
     else:
@@ -214,9 +231,23 @@ def main(args, account_folder, logger):
                                'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
                                'productId', 'ruleFormat', 'hostname_count', 'hostname', 'ruletree']
 
+                    if args.criteria:
+                        print()
+                        msg = 'collecting criteria'
+                        logger.critical(f'{msg} ...')
+                        t0 = perf_counter()
+                        df = papi.check_criteria(args.criteria, df)
+                        columns.extend(sorted(args.criteria))
+                        if 'cloudletsOrigin' in args.criteria:
+                            columns.remove('cloudletsOrigin')
+                            columns.extend(['cloudletsOrigin_count', 'cloudletsOrigin'])
+                        t1 = perf_counter()
+                        logger.critical(f'{msg:<40} finished  {t1 - t0:.2f} seconds')
+
                     if args.behavior:
                         print()
-                        logger.critical('collecting behavior ...')
+                        msg = 'collecting behaviors'
+                        logger.critical(f'{msg} ...')
                         t0 = perf_counter()
                         df = papi.check_behavior(original_behaviors, df, cpc)
                         columns.extend(sorted(original_behaviors))
@@ -226,7 +257,6 @@ def main(args, account_folder, logger):
                         if 'origin' in original_behaviors:
                             columns.remove('origin')
                             columns.extend(['origin_count', 'origin'])
-                        msg = 'collecting behaviors'
                         t1 = perf_counter()
                         logger.critical(f'{msg:<40} finished  {t1 - t0:.2f} seconds')
 
@@ -237,10 +267,23 @@ def main(args, account_folder, logger):
                     df['hostname'] = df[['hostname']].parallel_apply(lambda x: dataframe.split_elements_newline(x[0])
                                                         if len(x[0]) > 0 else '', axis=1)
 
-                    columns.remove('ruletree')
-                    properties_df = df[columns]
-                    sheet['properties'] = properties_df
+                    generic_columns = df.columns
+                    main = ['accountId', 'groupId', 'propertyId', 'groupName', 'propertyName',
+                            'latestVersion', 'stagingVersion', 'productionVersion',
+                            'updatedDate', 'productId', 'ruleFormat']
+                    properties_columns = [column for column in generic_columns if column not in main]
+                    count_columns = sorted([col for col in properties_columns if col.endswith('_count')])
+                    noncount_columns = sorted([col for col in properties_columns if not col.endswith('_count')])
+                    columns_to_remove = ['propertyName(hyperlink)', 'ruletree']
+                    noncount_columns = [col for col in noncount_columns if col not in columns_to_remove]
+                    properties_columns = ['propertyName(hyperlink)'] + count_columns + noncount_columns
 
+                    if args.behavior or args.criteria:
+                        sheet['properties'] = df[properties_columns]
+
+                    main_with_link = list(map(lambda x: x.replace('propertyName', 'propertyName(hyperlink)'), main))
+                    properties_df = df[main_with_link]
+                    sheet['generic'] = properties_df
         # add hyperlink to groupName column
         print()
         t0 = perf_counter()
@@ -269,9 +312,10 @@ def main(args, account_folder, logger):
     filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/account_detail.xlsx'
     files.write_xlsx(filepath, sheet, freeze_column=1) if not properties_df.empty else None
     files.open_excel_application(filepath, args.show, properties_df)
-    columns.append('ruletree')
+
+    main.append('ruletree')
     try:
-        properties_with_ruletree_df = df[columns]
+        properties_with_ruletree_df = df[main]
     except:
         properties_with_ruletree_df = properties_df
     return properties_with_ruletree_df
@@ -286,7 +330,6 @@ def netstorage(args, account_folder, logger):
         print()
         pandarallel.initialize(progress_bar=False, verbose=0)
         print()
-
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     if 'ruletree' not in properties_df.columns:
         properties_df['ruletree'] = properties_df.apply(lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
@@ -695,6 +738,8 @@ def jsonpath(args, account_folder, logger):
     '''
     akamai util delivery jsonpath --property AAA BBB
     '''
+    if args.property is None:
+        sys.exit(logger.error('at least one property is required'))
 
     if args.version is not None and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, only one property is supported'))
@@ -780,9 +825,13 @@ def hostnames_certificate(args, account_folder, logger):
     akamai util delivery hostname-cert --property A --version 27
     akamai util delivery hostname-cert --property A B C D
     '''
+    if args.property is None:
+        sys.exit(logger.error('At least one property is required'))
+
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, only one property is supported'))
-    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, logger=logger)
+
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     all_properties = []
     sheet = {}
     print()
@@ -957,6 +1006,9 @@ def get_property_advanced_override(args, logger):
     '''
     akamai util delivery metadata --property xxx yyy --advOverride
     '''
+    if args.property is None:
+        sys.exit(logger.error('at least one property is required'))
+
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, we can lookup one property'))
 

@@ -54,7 +54,7 @@ def audit(args, account_folder, logger):
             logger.warning(f'{msg} - found no certificate')
         else:
             logger.warning(f'{msg}')
-            columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'common_name', 'hostname_count']
+            columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'orgId', 'common_name', 'hostname_count']
             df = df.rename(columns={'id': 'enrollment_id',
                                     'ra': 'authority'})
             # print(tabulate(df[columns], headers=columns))
@@ -81,7 +81,7 @@ def audit(args, account_folder, logger):
         if not df.empty:
             if filtered is True:
                 logger.warning('Filter based on selected criteria')
-                columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'common_name', 'hostname_count']
+                columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'orgId', 'common_name', 'hostname_count']
                 print(tabulate(df[columns], headers=columns))
 
             with yaspin(Spinners.star, timer=True) as sp:
@@ -108,7 +108,7 @@ def audit(args, account_folder, logger):
                 df['hostname_with_ending_comma'] = df['hostname'].parallel_apply(lambda x: ',\n'.join(''.join(c) for c in x))
                 del df['hostname']
 
-                columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'common_name', 'expiration_date',
+                columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'orgId', 'common_name', 'expiration_date',
                         'hostname_count', 'hostname_one_per_line', 'hostname_with_ending_comma']
                 df['expiration_date'] = df['enrollment_id'].parallel_apply(lambda x: cps.certificate_expiration_date(x))
                 if args.expire is True:
@@ -121,7 +121,7 @@ def audit(args, account_folder, logger):
                     filtered_df = filtered_df.reset_index(drop=True)
                     filtered_df['expiration_date'] = filtered_df['expiration_date'].apply(
                         lambda x: x.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%dT%H:%M:%SZ'))
-                    temp_col = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'common_name', 'expiration_date']
+                    temp_col = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'orgId', 'common_name', 'expiration_date']
                     # logger.info(f'\n{filtered_df[temp_col]}')
                     table = tabulate(filtered_df[temp_col], headers=temp_col, showindex=True, tablefmt='github')
                     print()

@@ -132,7 +132,7 @@ class Papi(AkamaiSession):
         return resp.status_code, resp.json()
 
     # GROUPS
-    def get_groups(self) -> list:
+    def get_groups(self) -> tuple:
         response = self.session.get(f'{self.MODULE}/groups', params=self.params, headers=self.headers)
         if response.status_code == 200:
             return 200, response.json()['groups']['items']
