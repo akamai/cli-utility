@@ -24,7 +24,7 @@ from yaspin.spinners import Spinners
 
 def audit(args, account_folder, logger):
 
-    filepath = f'output/{args.output}' if args.output else f'{account_folder}/certificate.xlsx'
+    filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/certificate.xlsx'
     cps = CpsWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     csv_list = []
     if args.enrollment_id and not args.contract_id:
@@ -54,7 +54,9 @@ def audit(args, account_folder, logger):
             logger.warning(f'{msg} - found no certificate')
         else:
             logger.warning(f'{msg}')
-            columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'orgId', 'common_name', 'hostname_count']
+            columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority',
+                       'orgId', 'org', 'adminContact', 'techContact',
+                       'common_name', 'hostname_count']
             df = df.rename(columns={'id': 'enrollment_id',
                                     'ra': 'authority'})
             # print(tabulate(df[columns], headers=columns))
@@ -108,8 +110,10 @@ def audit(args, account_folder, logger):
                 df['hostname_with_ending_comma'] = df['hostname'].parallel_apply(lambda x: ',\n'.join(''.join(c) for c in x))
                 del df['hostname']
 
-                columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority', 'orgId', 'common_name', 'expiration_date',
-                        'hostname_count', 'hostname_one_per_line', 'hostname_with_ending_comma']
+                columns = ['contractId', 'enrollment_id', 'Slot', 'sni', 'authority',
+                           'orgId', 'org', 'adminContact', 'techContact',
+                           'common_name', 'expiration_date',
+                           'hostname_count', 'hostname_one_per_line', 'hostname_with_ending_comma']
                 df['expiration_date'] = df['enrollment_id'].parallel_apply(lambda x: cps.certificate_expiration_date(x))
                 if args.expire is True:
                     filtered = True
