@@ -409,7 +409,7 @@ def compare_delivery_behaviors(args, logger):
                 origin_df = origin_df.rename(columns={'hostname': 'values'})
                 path_n_behavior.append(origin_df)
 
-        if len(path_n_behavior) > 0:
+        if len(path_n_behavior) == 2:
             original = pd.concat(path_n_behavior).sort_values(by=['path', 'property', 'type'], ascending=[True, True, False])
             excluded_rules = args.rulenotcontains if args.rulenotcontains else None
             included_rules = args.rulecontains if args.rulecontains else None
@@ -431,6 +431,7 @@ def compare_delivery_behaviors(args, logger):
             original_pivot = original.pivot_table(index=['property', 'rulename'], columns='type', values='values', aggfunc='first')
             columns = ['property', 'path_match_count', 'path_match', 'origin_behavior', 'rulename']
 
+            # filter rule contains
             try:
                 included_pivot = included.pivot_table(index=['property', 'rulename'], columns='type', values='values', aggfunc='first')
                 included_pivot = included_pivot.reset_index()
@@ -448,6 +449,7 @@ def compare_delivery_behaviors(args, logger):
                 msg = '--rulecontains'
                 logger.info(f'{msg:<20} not provided')
 
+            # filter rule not contains
             try:
                 excluded_pivot = excluded.pivot_table(index=['property', 'rulename'], columns='type', values='values', aggfunc='first')
                 excluded_pivot = excluded_pivot.reset_index()
