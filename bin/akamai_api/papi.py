@@ -352,12 +352,20 @@ class Papi(AkamaiSession):
         else:
             return response.json()
 
-    def update_property_ruletree(self, property_id: int, version: int, payload: dict) -> tuple:
+    def update_property_ruletree(self, property_id: int, version: int,
+                                 rule_format: str,
+                                 rules: dict,
+                                 version_notes: str) -> tuple:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
-        headers = {'PAPI-Use-Prefixes': 'false',
-                   'Accept': 'application/json',
-                   'content-type': 'application/json-patch+json'}
-        resp = self.session.patch(url, json=payload, headers=headers)
+
+        headers = {'Content-Type': 'application/vnd.akamai.papirules.latest+json'}
+        if rule_format != 'latest':
+            headers['Content-Type'] = f'application/vnd.akamai.papirules.{rule_format}json'
+
+        payload = {'rules': rules}
+        payload['comments'] = version_notes
+
+        resp = self.session.put(url, json=payload, headers=headers)
         return resp.status_code, resp.text
 
     def get_property_hostnames(self, property_id: int) -> list:
@@ -472,6 +480,9 @@ class Papi(AkamaiSession):
                   'groupId': self.group_id}
         resp = self.session.get(url, headers=self.headers, params=params)
         self.logger.debug(f'{resp.status_code} {resp.text}')
+        # print_json(data=resp.json()['rules'])
+        chidren = len(resp.json()['rules']['children'])
+        self.logger.debug(f'original {chidren}')
         return resp
 
     def get_ruleformat_schema(self, product_id: str, format_version: str | None = 'latest'):
@@ -492,22 +503,28 @@ class Papi(AkamaiSession):
     # ACTIVATION
     def activate_property_version(self, property_id: int, version: int,
                                   network: str,
-                                  note: list,
-                                  emails: list):
+                                  note: str,
+                                  emails: list,
+                                  reviewed_email: str,
+                                  ticketId: str):
 
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/activations')
-        payload = {'acknowledgeAllWarnings': True,
-                   'activationType': 'ACTIVATE',
-                   'ignoreHttpErrors': True,
-                   'complianceRecord': {'noncomplianceReason': 'EMERGENCY',
-                                        'peerReviewedBy': 'anpatel@akamai.com',
-                                        'unitTested': True,
-                                        'ticketId': note[1]
-                                       }
-                    }
+        if network == 'production':
+            payload = {'acknowledgeAllWarnings': True,
+                       'activationType': 'ACTIVATE',
+                       'ignoreHttpErrors': True,
+                       'complianceRecord': {'noncomplianceReason': 'EMERGENCY',
+                                            'peerReviewedBy': reviewed_email,
+                                            'unitTested': True,
+                                            'ticketId': ticketId
+                                            }
+                      }
+        else:
+            payload = {}
+
         payload['network'] = network.upper()
         payload['propertyVersion'] = version
-        payload['note'] = note[0]
+        payload['note'] = note
         payload['notifyEmails'] = emails
         self.logger.debug(payload)
         self.logger.debug(self.headers)

@@ -552,7 +552,7 @@ class PapiWrapper(Papi):
 
                     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
                         # 'append _vXXX to propertyName
-                        properties['propertyName'] = list(executor.map(self.build_propertyname_with_version,  properties.itertuples()))
+                        properties['property_with_version'] = list(executor.map(self.build_propertyname_with_version, properties.itertuples()))
 
                         # 'collecting hostname'
                         properties['hostname'] = list(executor.map(self.get_property_hostnames, properties['propertyId']))
@@ -579,11 +579,19 @@ class PapiWrapper(Papi):
                         properties['updatedDate'] = list(executor.map(self.get_property_version_detail, properties['propertyId'],
                                                                     properties['latestVersion'],
                                                                     ['updatedDate'] * len(properties)))
+
+                        # 'determining environment type'
+                        properties['env'] = list(executor.map(self.guestimate_env_type, properties['propertyName']))
+
                         time.sleep(3)
 
                     account_properties.append(properties)
         df.apply(process_row, axis=1)
         return account_properties
+
+    def guestimate_env_type(self, name: str):
+        lower = ['-qa', '-it', 'stg', 'test', '-stage.', 'stage-', 'staging', '.stage.', '-dev-', 'nonprod']
+        return 'lower' if any(substring in name for substring in lower) else 'prd'
 
     # RULETREE
     def get_properties_ruletree_digest(self, property_id: int, version: int) -> dict:
@@ -613,7 +621,14 @@ class PapiWrapper(Papi):
         if status != 200:
             self.logger.error(f'{property_id=} {version=}')
             print_json(data=payload)
-        return response
+        return status
+
+    def build_new_ruletree(self, ruletree: dict, new_rule: dict) -> str:
+        ruletree['rules']['children'].insert(0, new_rule)
+        # print_json(data=ruletree)
+        chidren = len(ruletree['rules']['children'])
+        self.logger.critical(f'after {chidren}')
+        return ruletree
 
     def get_property_behavior(self, data: dict) -> list[str]:
         behavior_names = []
@@ -1082,7 +1097,7 @@ class PapiWrapper(Papi):
         if status == 201:
             try:
                 activation_id = int(response.split('?')[0].split('/')[-1])
-                return int(activation_id)
+                return activation_id
             except:
                 self.logger.warning(activation_id)
                 return 0
