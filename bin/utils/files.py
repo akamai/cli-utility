@@ -30,6 +30,14 @@ def write_json(filepath: str, json_object: dict) -> None:
     logger.debug(f'JSON file is saved locally at {str(filepath)}')
 
 
+def load_json(filepath: str) -> dict:
+    with open(filepath) as user_file:
+        file_contents = user_file.read()
+    filepath = Path(f'{filepath}').absolute()
+    logger.debug(f'Found JSON file at {str(filepath)}')
+    return json.loads(file_contents)
+
+
 def remove_comment_notes(root):
     ns = {'comment': 'uri:akamai.com/metadata/comment/5.0'}
     for element in root.iterfind('.//comment:note', namespaces=ns):
