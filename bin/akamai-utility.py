@@ -10,6 +10,7 @@ from command import admin
 from command import certificates_audit as ca
 from command import delivery_config as dc
 from command import diff
+from command import event
 from command import gtm_audit as gtm
 from command import log
 from command import report
@@ -76,6 +77,17 @@ if __name__ == '__main__':
 
     if args.command == 'certificate':
         ca.audit(args, account_folder, logger)
+
+    if args.command == 'event':
+        Path(f'{account_folder}').mkdir(parents=True, exist_ok=True)
+        if args.subcommand == 'create':
+            event.create_event(args, logger=logger)
+        elif args.subcommand == 'detail':
+            event.get_event(args, account_folder, logger=logger)
+        elif args.subcommand == 'remove':
+            event.remove_event(args, logger=logger)
+        else:
+            event.list_events(args, logger=logger)
 
     if args.command == 'gtm':
         if args.subcommand == 'remove':

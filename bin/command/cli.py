@@ -77,6 +77,27 @@ diff = [{'name': 'behavior',
                                 {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}]
         }]
 
+event = [{'name': 'center',
+          'help': 'list event centers',
+          'optional_arguments': [{'name': 'id', 'help': 'id', 'nargs': '+'}]},
+         {'name': 'detail',
+          'help': 'get detail of the specified event.',
+          'optional_arguments': [{'name': 'id', 'help': 'id', 'nargs': '+'}]},
+         {'name': 'create',
+          'help': 'create an event',
+          'required_arguments': [{'name': 'eventname', 'help': 'name of event'},
+                                 {'name': 'start', 'help': 'start date of event format (YYYY-MM-DD)'},
+                                 {'name': 'end', 'help': 'end date of event format (YYYY-MM-DD)'},
+                                 {'name': 'frequency', 'help': 'options: HOURLY, DAILY, WEEKLY, MONTHLY'},
+                                 {'name': 'count', 'help': 'number of times to repeat the event'},
+                                 {'name': 'tags', 'help': 'assign tag to the event', 'nargs': '+'},
+                                 {'name': 'input', 'help': '.txt file with cpCode per line'}
+                                 ]},
+         {'name': 'remove',
+          'help': 'remove an event',
+          'optional_arguments': [{'name': 'id', 'help': 'id', 'nargs': '+'}]},
+         ]
+
 gtm = [{'name': 'remove',
         'help': 'removes specific GTM properties listed in the csv input file',
         'required_arguments': [{'name': 'input', 'help': 'csv input file with 2 headers called domain,property'}]}]
@@ -114,6 +135,7 @@ report = [{'name': 'list',
 sub_commands = {'delivery': delivery,
                 'security': security,
                 'diff': diff,
+                'event': event,
                 'gtm': gtm,
                 'report': report,
                 }
@@ -147,6 +169,7 @@ main_commands = [{'delivery': 'information detail about delivery configuration',
                                          {'name': 'acc-cookies', 'help': '3 cookies value from control.akamai.com'},
                                          {'name': 'remove-tag', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}
                                          ]},
+                 {'event': 'Configure events, reporting, and alerts in Event Center'},
                  {'certificate': 'certificate report includes enrollmentId, slotId, SNI, hostname, commonName, cName, vendor, expirationDate',
                   'optional_arguments': [{'name': 'expire', 'help': 'only show expired certificate', 'action': 'store_true'},
                                          {'name': 'sni', 'help': 'only show SNI deployement type', 'action': 'store_true'},
