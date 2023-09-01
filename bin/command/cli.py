@@ -77,11 +77,8 @@ diff = [{'name': 'behavior',
                                 {'name': 'no-show', 'help': 'automatically open compare report in browser', 'action': 'store_true'}]
         }]
 
-event = [{'name': 'center',
-          'help': 'list event centers',
-          'optional_arguments': [{'name': 'id', 'help': 'id', 'nargs': '+'}]},
-         {'name': 'detail',
-          'help': 'get detail of the specified event.',
+event = [{'name': 'detail',
+          'help': 'get detail of the specified events',
           'optional_arguments': [{'name': 'id', 'help': 'id', 'nargs': '+'}]},
          {'name': 'create',
           'help': 'create an event',
@@ -169,7 +166,8 @@ main_commands = [{'delivery': 'information detail about delivery configuration',
                                          {'name': 'acc-cookies', 'help': '3 cookies value from control.akamai.com'},
                                          {'name': 'remove-tag', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}
                                          ]},
-                 {'event': 'Configure events, reporting, and alerts in Event Center'},
+                 {'event': 'Configure events, reporting, and alerts in Event Center',
+                  'optional_arguments': [{'name': 'name-contains', 'help': 'event name contains string'}]},
                  {'certificate': 'certificate report includes enrollmentId, slotId, SNI, hostname, commonName, cName, vendor, expirationDate',
                   'optional_arguments': [{'name': 'expire', 'help': 'only show expired certificate', 'action': 'store_true'},
                                          {'name': 'sni', 'help': 'only show SNI deployement type', 'action': 'store_true'},

@@ -28,7 +28,7 @@ class EventCenter(AkamaiSession):
 
     # EVENTS
     def list_events(self):
-        resp = self.session.get(f'{self._base_url}/events?sort=start,desc&status=ALL', params=self.params, headers=self.headers)
+        resp = self.session.get(f'{self._base_url}/events?pageSize=1000&sort=start,desc&status=ALL', params=self.params, headers=self.headers)
         return resp
 
     def create_event(self, payload: dict):

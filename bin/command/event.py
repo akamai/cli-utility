@@ -29,6 +29,9 @@ def list_events(args, logger):
             columns = ['tags', 'name', 'id', 'version', 'start', 'end', 'customerEventId']
 
             print()
+            if args.name_contains:
+                df = df[df['name'].str.contains(args.name_contains)]
+                df = df.reset_index(drop=True)
             print(tabulate(df, headers=columns, tablefmt='simple'))
             all_ids = df.id.values.tolist()
             modified_list = [str(id) for id in all_ids]
