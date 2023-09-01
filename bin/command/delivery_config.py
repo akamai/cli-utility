@@ -180,8 +180,9 @@ def main(args, account_folder, logger):
             print()
             if group_df.shape[0] > 0:
                 total_property_count = group_df['propertyCount'].sum()
-                logger.warning(f'Total {total_property_count:n} properties. '
-                               f'{group_df.shape[0]} groups have properties. (out of {allgroups_df.shape[0]} total groups)')
+                logger.warning(f'Total {total_property_count:n} properties. ')
+                if group_df.shape[0] != allgroups_df.shape[0]:
+                    logger.warning(f'{group_df.shape[0]} groups have properties. (out of {allgroups_df.shape[0]} total groups)')
             total = allgroups_df['propertyCount'].sum()
             all_groups = group_df['groupId'].unique().tolist()
             modified_list = [word for word in all_groups]
@@ -279,10 +280,13 @@ def main(args, account_folder, logger):
                         sheet['properties'] = df[properties_columns]
 
                     main_with_link = list(map(lambda x: x.replace('property_with_version', 'propertyName(hyperlink)'), main))
-                    if 'cpcode' in original_behaviors:
-                        main_with_link.append('cpcode')
-                    if 'origin' in original_behaviors:
-                        main_with_link.append('origin')
+                    try:
+                        if 'cpcode' in original_behaviors:
+                            main_with_link.append('cpcode')
+                        if 'origin' in original_behaviors:
+                            main_with_link.append('origin')
+                    except:
+                        pass  # call from another function not require --behavior
                     properties_df = df[main_with_link]
                     properties_df = properties_df.query('productionVersion > 0')
                     properties_df = properties_df.sort_values(by=['env', 'propertyName'])
