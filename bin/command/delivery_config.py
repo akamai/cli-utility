@@ -148,7 +148,8 @@ def main(args, account_folder, logger):
 
     else:
         # build group structure as displayed on control.akamai.com
-        logger.warning('Collecting properties summary for the account')
+        print()
+        logger.warning('Collecting properties summary')
         if args.group_id is None:
             logger.critical('  200 properties take ~  7 minutes')
             logger.critical('  800 properties take ~ 30 minutes')
@@ -205,16 +206,11 @@ def main(args, account_folder, logger):
             if total == 0:
                 logger.info('no property to collect.')
             else:
-                logger.critical('collecting properties ...')
+                logger.critical('collecting properties ruletree ...')
                 prop0 = perf_counter()
                 account_properties = papi.property_summary(group_df, concurrency)
                 if len(account_properties) > 0:
                     df = pd.concat(account_properties, axis=0)
-                    '''
-                    account_id = super().get_account_id()
-                    self.logger.warning(account_id)
-                    self.logger.warning(f'{self.account_switch_key=}')
-                    '''
                     df['ruletree'] = df.parallel_apply(
                         lambda row: papi.get_property_ruletree(int(row['propertyId']),
                                                                 int(row['productionVersion'])
@@ -226,10 +222,10 @@ def main(args, account_folder, logger):
                     prop1 = perf_counter()
                     msg = 'collecting properties'
                     logger.critical(f'{msg:<40} finished  {prop1 - prop0:.2f} seconds')
-
                     columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
                                'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
-                               'productId', 'ruleFormat', 'hostname_count', 'hostname', 'ruletree']
+                               'productId', 'ruleFormat', 'hostname_count', 'hostname', 'ruletree',
+                               'property_with_version', 'env']
 
                     if args.criteria:
                         print()
@@ -268,9 +264,10 @@ def main(args, account_folder, logger):
                                                         if len(x[0]) > 0 else '', axis=1)
 
                     generic_columns = df.columns
-                    main = ['accountId', 'groupId', 'propertyId', 'groupName', 'propertyName',
+                    main = ['accountId', 'groupId', 'propertyId', 'groupName', 'property_with_version',
                             'latestVersion', 'stagingVersion', 'productionVersion',
-                            'updatedDate', 'productId', 'ruleFormat']
+                            'updatedDate', 'productId', 'ruleFormat',
+                            'propertyName', 'env']
                     properties_columns = [column for column in generic_columns if column not in main]
                     count_columns = sorted([col for col in properties_columns if col.endswith('_count')])
                     noncount_columns = sorted([col for col in properties_columns if not col.endswith('_count')])
@@ -281,18 +278,25 @@ def main(args, account_folder, logger):
                     if args.behavior or args.criteria:
                         sheet['properties'] = df[properties_columns]
 
-                    main_with_link = list(map(lambda x: x.replace('propertyName', 'propertyName(hyperlink)'), main))
+                    main_with_link = list(map(lambda x: x.replace('property_with_version', 'propertyName(hyperlink)'), main))
+                    if 'cpcode' in original_behaviors:
+                        main_with_link.append('cpcode')
+                    if 'origin' in original_behaviors:
+                        main_with_link.append('origin')
                     properties_df = df[main_with_link]
+                    properties_df = properties_df.query('productionVersion > 0')
+                    properties_df = properties_df.sort_values(by=['env', 'propertyName'])
                     sheet['generic'] = properties_df
+
         # add hyperlink to groupName column
         print()
         t0 = perf_counter()
-        logger.critical('collecting hyperlink ...')
+        msg = 'collecting group hyperlink'
+        logger.critical(f'{msg} ...')
         if args.group_id is not None:
             sheet['group_filtered'] = add_group_url(group_df, papi)
         if not allgroups_df.empty:
             sheet['account_summary'] = add_group_url(allgroups_df, papi)
-        msg = 'collecting hyperlink'
         t1 = perf_counter()
         logger.critical(f'{msg:<40} finished  {t1 - t0:.2f} seconds')
 
