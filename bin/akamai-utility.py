@@ -7,6 +7,7 @@ from time import perf_counter
 from akamai_api.identity_access import IdentityAccessManagement
 from akamai_utils import papi as p
 from command import admin
+from command import bulk
 from command import certificates_audit as ca
 from command import delivery_config as dc
 from command import diff
@@ -18,6 +19,7 @@ from command import ruleformat
 from command import security as sec
 from command.parser import AkamaiParser as Parser
 from utils import _logging as lg
+
 
 if __name__ == '__main__':
     args = Parser.get_args(args=None if sys.argv[1:] else ['--help'])
@@ -74,6 +76,17 @@ if __name__ == '__main__':
             diff.compare_delivery_behaviors(args, logger=logger)
         else:
             diff.compare_config(args, logger=logger)
+
+    if args.command == 'bulk':
+        Path(f'{account_folder}/bulk').mkdir(parents=True, exist_ok=True)
+        if args.subcommand == 'search':
+            bulk.bulk_search(args, account_folder, logger=logger)
+        elif args.subcommand == 'create':
+            bulk.bulk_create(args, account_folder, logger=logger)
+        elif args.subcommand == 'activate':
+            bulk.bulk_activate(args, account_folder, logger=logger)
+        elif args.subcommand == 'update':
+            bulk.bulk_update(args, account_folder, logger=logger)
 
     if args.command == 'certificate':
         ca.audit(args, account_folder, logger)

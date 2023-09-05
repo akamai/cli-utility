@@ -54,6 +54,119 @@ class PapiWrapper(Papi):
     def get_account_hostnames(self) -> list[str]:
         return super().get_account_hostnames()
 
+    def list_bulk_search(self, id: int):
+        return super().list_bulk_search(id)
+
+    def list_bulk_patch(self, id: int):
+        return super().list_bulk_patch(id)
+
+    def list_bulk_activation(self, id: int):
+        return super().list_bulk_activation(id)
+
+    def list_bulk_create(self, id: int):
+        return super().list_bulk_create(id)
+
+    def bulk_search(self, query: dict):
+        resp = super().bulk_search_properties(query)
+        if resp.status_code == 202:
+            return_url = resp.json()['bulkSearchLink']
+            pattern = r'\/papi\/v1\/bulk\/rules-search-requests\/(\d+)'
+            match = re.search(pattern, return_url)
+            if match:
+                bulk_id = match.group(1)
+                count = 0
+                status = 'initial'
+                while (status != 'COMPLETE'):
+                    count += 1
+                    _resp = super().list_bulk_search(bulk_id)
+                    status = _resp.json()['searchTargetStatus']
+                    if count > 5:
+                        continue
+                        self.logger.error('check --bulk-id later')
+                resp = _resp
+            else:
+                self.logger.error('bulk_id not found in the URL')
+        else:
+            self.logger.error(print_json(data=resp.json()))
+
+        if len(resp.json()['results']) == 0:
+            self.logger.critical(f'bulkSearchId: {bulk_id}   no property found')
+        else:
+            self.logger.critical(f'bulkSearchId: {bulk_id}')
+        # print_json(data=resp.json())
+        return resp
+
+    def bulk_create_properties(self, property: list[str, int]):
+        resp = super().bulk_create_properties(property)
+        if resp.status_code == 202:
+            return_url = resp.json()['bulkCreateVersionLink']
+            pattern = r'\/papi\/v1\/bulk\/property-version-creations\/(\d+)'
+            match = re.search(pattern, return_url)
+            if match:
+                bulk_id = match.group(1)
+                self.logger.critical(f'bulkCreateId: {bulk_id}')
+                count = 0
+                status = 'initial'
+                while (status != 'COMPLETE'):
+                    count += 1
+                    _resp = super().list_bulk_create(bulk_id)
+                    status = _resp.json()['bulkCreateVersionsStatus']
+                    if count > 5:
+                        break
+                resp = _resp
+            else:
+                self.logger.error('bulk_id not found in the URL')
+        else:
+            self.logger.error(print_json(data=resp.json()))
+        return resp
+
+    def bulk_update_behavior(self, property: list, patch_json: dict):
+        resp = super().bulk_update_behavior(property, patch_json)
+        self.logger.debug(resp.status_code)
+        if resp.status_code == 202:
+            return_url = resp.json()['bulkPatchLink']
+            bulk_id = int(return_url.split('?')[0].split('/')[-1])
+            if bulk_id:
+                count = 0
+                status = 'initial'
+                while (status != 'COMPLETE'):
+                    count += 1
+                    _resp = super().list_bulk_patch(bulk_id)
+                    status = _resp.json()['bulkPatchStatus']
+                    if count > 5:
+                        break
+                resp = _resp
+            else:
+                self.logger.error('bulk_id not found in the URL')
+        else:
+            self.logger.error(print_json(data=resp.json()))
+            print_json(data=_resp.json())
+        self.logger.critical(f'bulkPatchId: {bulk_id}')
+        return resp
+
+    def bulk_activate_properties(self, network: str, email: list, pr_email: str, note: str, properties: list):
+        resp = super().bulk_activate_properties(network, email, pr_email, note, properties)
+        self.logger.debug(f'{resp.status_code} {resp.url}')
+        if resp.status_code != 202:
+            self.logger.error(print_json(data=resp.json()))
+        else:
+            return_url = resp.json()['bulkActivationLink']
+            activation_id = int(return_url.split('?')[0].split('/')[-1])
+            if activation_id:
+                status = 'initial'
+                count = 0
+                while (status != 'COMPLETE') and count <= 5:
+                    count += 1
+                    _resp = super().list_bulk_activation(activation_id)
+                    status = _resp.json()['bulkActivationStatus']
+                    if count > 5:
+                        continue
+                resp = _resp
+            else:
+                self.logger.error('bulk_id not found in the URL')
+        self.logger.critical(f'bulkActivationId: {activation_id}')
+        return resp
+
     # GROUPS
     def group_url(self, group_id: int) -> str:
         return f'https://control.akamai.com/apps/property-manager/#/groups/{group_id}/properties'

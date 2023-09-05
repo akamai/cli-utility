@@ -90,46 +90,105 @@ class Papi(AkamaiSession):
             return resp.json()
 
     # BULK
-    def bulk_search_properties(self):
-
-        url = '/bulk/rules-search-requests'
+    def build_query_params(self) -> dict:
+        query_params = {}
         if self.contract_id:
-            query_params = f'contractId={self.contract_id}'
+            query_params['contractId'] = self.contract_id
         if self.group_id:
-            query_params = f'?{query_params}&groupId={self.group_id}' if query_params else f'?groupId={self.group_id}'
-        url = self.form_url(f'{self.MODULE}{url}{query_params}')
+            query_params['groupId'] = self.group_id
+        return query_params
 
-        search_query = {'bulkSearchQuery': {'syntax': 'JSONPATH', 'match': '$.name'}}
+    def list_bulk_search(self, id: int):
+        url = self.form_url(f'{self.MODULE}/bulk/rules-search-requests/{id}')
+        resp = self.session.get(url, params=self.build_query_params(), headers=self.headers)
+        return resp
 
-        resp = self.session.post(url, json=search_query, headers=self.headers)
-        self.logger.info(resp.status_code)
-        self.logger.info(print_json(data=resp.json()))
+    def list_bulk_patch(self, id: int):
+        url = self.form_url(f'{self.MODULE}/bulk/rules-patch-requests/{id}')
+        resp = self.session.get(url, params=self.build_query_params(), headers=self.headers)
+        return resp
 
-    def bulk_activate_properties(self, emails: list,
-                                 contract_id: str,
-                                 group_id: int,
-                                 network: str,
-                                 note: str,
-                                 property_id: str,
-                                 version: str):
+    def list_bulk_activation(self, id: int):
+        url = self.form_url(f'{self.MODULE}/bulk/activations/{id}')
+        resp = self.session.get(url, params=self.build_query_params(), headers=self.headers)
+        return resp
 
-        url = f'{self.MODULE}/bulk/activations'
-        params = f'?contractId={contract_id}&groupId={group_id}'
-        url = self.form_url(f'{url}{params}')
-        payload = {'activatePropertyVersions': [{'network': network.upper(),
-                                                 'note': note,
-                                                 'propertyId': property_id,
-                                                 'propertyVersion': version
-                                                }
-                                               ],
-                   'defaultActivationSettings': {'notifyEmails': emails,
-                                                 'acknowledgeAllWarnings': True,
-                                                 'fastPush': True,
-                                                 'useFastFallback': True
-                                                }
-                  }
-        resp = self.session.post(url, json=payload, headers=self.headers)
-        return resp.status_code, resp.json()
+    def list_bulk_create(self, id: int):
+        url = self.form_url(f'{self.MODULE}/bulk/property-version-creations/{id}')
+        resp = self.session.get(url, params=self.build_query_params(), headers=self.headers)
+        return resp
+
+    def bulk_search_properties(self, query: dict):
+        url = '/bulk/rules-search-requests'
+        url = self.form_url(f'{self.MODULE}{url}')
+        resp = self.session.post(url, json=query, params=self.build_query_params(), headers=self.headers)
+        return resp
+
+    def bulk_update_behavior(self, properties: list[str, int, list[str]], patch_json: dict) -> list:
+        url = self.form_url(f'{self.MODULE}/bulk/rules-patch-requests')
+        all_properties = []
+        for property in properties:
+            prop = {}
+            prop['propertyId'] = f'prp_{property[0]}'
+            prop['propertyVersion'] = property[1]
+
+            for each_path in property[2]:
+                # Create a new patch dictionary for each property
+                elements = []
+                for patch in patch_json['patches']:
+                    new_patch = patch.copy()
+                    new_patch['path'] = f'{each_path}/options'
+                    elements.append(new_patch)
+                    prop['patches'] = elements
+            all_properties.append(prop)
+
+        payload = {}
+        payload['patchPropertyVersions'] = all_properties
+        self.logger.debug(all_properties)
+        # print_json(data=payload)
+        resp = self.session.post(url, json=payload, params=self.build_query_params(), headers=self.headers)
+        return resp
+
+    def bulk_create_properties(self, properties: list[str, int]):
+        url = '/bulk/property-version-creations'
+        url = self.form_url(f'{self.MODULE}{url}')
+        property_list = []
+        for each_property in properties:
+            property = {}
+            property['propertyId'] = each_property[0]
+            property['createFromVersion'] = each_property[1]
+            property_list.append(property)
+        payload = {'createPropertyVersions': property_list}
+        resp = self.session.post(url, json=payload, params=self.build_query_params(), headers=self.headers)
+        return resp
+
+    def bulk_activate_properties(self, network: str, email: list, pr_email: str, note: str, properties: list):
+        url = self.form_url(f'{self.MODULE}/bulk/activations')
+        payload = {}
+        property_list = []
+        for property in properties:
+            prop = {}
+            prop['propertyId'] = f'prp_{property[0]}'
+            prop['propertyVersion'] = property[1]
+            prop['network'] = network.upper()
+            prop['note'] = note
+            prop['acknowledgeAllWarnings']: True
+            prop['fastPush'] = True
+            prop['ignoreHttpErrors']: True
+            property_list.append(prop)
+        payload['activatePropertyVersions'] = property_list
+        payload['defaultActivationSettings'] = {'notifyEmails': email,
+                                                'acknowledgeAllWarnings': True}
+        if network == 'production':
+            payload['defaultActivationSettings']['complianceRecord'] = {
+                'nonComplianceReason': 'EMERGENCY',
+                'peerReviewedBy': pr_email,
+                'customerEmail': email[0],
+                'unitTested': True
+            }
+        self.logger.debug(print_json(data=payload))
+        resp = self.session.post(url, json=payload, params=self.build_query_params(), headers=self.headers)
+        return resp
 
     # GROUPS
     def get_groups(self) -> tuple:
