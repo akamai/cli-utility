@@ -248,9 +248,10 @@ class Papi(AkamaiSession):
         }
         '''
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}')
-        response = self.session.get(url)
+        response = self.session.get(url, headers=self.headers)
         self.logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
+            # print_json(data=response.json())
             return response.json()
         else:
             return response.json()
@@ -281,12 +282,12 @@ class Papi(AkamaiSession):
         }
         '''
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}')
-        response = self.session.get(url)
+        response = self.session.get(url, headers=self.headers)
         self.logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
         if response.status_code == 200:
             propertyName = response.json()['propertyName']
-            assetId = response.json()['assetId'][4:]
-            gid = response.json()['groupId'][4:]
+            assetId = response.json()['assetId']
+            gid = response.json()['groupId']
             acc_url = f'https://control.akamai.com/apps/property-manager/#/property-version/{assetId}/{version}/edit?gid={gid}'
             self.logger.debug(f'{propertyName:<46} {acc_url}')
             return response.json()
@@ -355,16 +356,13 @@ class Papi(AkamaiSession):
     def update_property_ruletree(self, property_id: int, version: int,
                                  rule_format: str,
                                  rules: dict,
-                                 version_notes: str) -> tuple:
+                                 version_note: str) -> tuple:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
-
         headers = {'Content-Type': 'application/vnd.akamai.papirules.latest+json'}
         if rule_format != 'latest':
-            headers['Content-Type'] = f'application/vnd.akamai.papirules.{rule_format}json'
-
+            headers['Content-Type'] = f'application/vnd.akamai.papirules.{rule_format}+json'
         payload = {'rules': rules}
-        payload['comments'] = version_notes
-
+        payload['comments'] = version_note
         resp = self.session.put(url, json=payload, headers=headers)
         return resp.status_code, resp.text
 
@@ -434,7 +432,7 @@ class Papi(AkamaiSession):
             self.contract_id = self.get_property_version_full_detail(property_id, version, 'contractId')
         except:
             try:
-                self.contract_id = self.get_property_version_full_detail(property_id, version)['contractId'][4:]
+                self.contract_id = self.get_property_version_full_detail(property_id, version)['contractId']
             except:
                 version_json = self.get_property_version_detail(property_id, version)
                 if version_json['status'] == 404:
@@ -442,7 +440,7 @@ class Papi(AkamaiSession):
         try:
             self.group_id = self.get_property_version_full_detail(property_id, version, 'groupId')
         except:
-            self.group_id = self.get_property_version_full_detail(property_id, version)['groupId'][4:]
+            self.group_id = self.get_property_version_full_detail(property_id, version)['groupId']
 
         self.logger.debug(f'{self.contract_id=} {self.group_id=}')
 
@@ -480,7 +478,7 @@ class Papi(AkamaiSession):
                   'groupId': self.group_id}
         resp = self.session.get(url, headers=self.headers, params=params)
         self.logger.debug(f'{resp.status_code} {resp.text}')
-        # print_json(data=resp.json()['rules'])
+        # print_json(data=resp.json())
         chidren = len(resp.json()['rules']['children'])
         self.logger.debug(f'original {chidren}')
         return resp
@@ -504,46 +502,46 @@ class Papi(AkamaiSession):
     def activate_property_version(self, property_id: int, version: int,
                                   network: str,
                                   note: str,
-                                  emails: list,
-                                  reviewed_email: str,
-                                  ticketId: str):
+                                  email: list,
+                                  reviewed_email: str | None = None):
 
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/activations')
+        payload = {'acknowledgeAllWarnings': True,
+                   'activationType': 'ACTIVATE',
+                   'ignoreHttpErrors': True
+                   }
         if network == 'production':
-            payload = {'acknowledgeAllWarnings': True,
-                       'activationType': 'ACTIVATE',
-                       'ignoreHttpErrors': True,
-                       'complianceRecord': {'noncomplianceReason': 'EMERGENCY',
-                                            'peerReviewedBy': reviewed_email,
-                                            'unitTested': True,
-                                            'ticketId': ticketId
-                                            }
-                      }
-        else:
-            payload = {}
+            payload['complianceRecord'] = {'noncomplianceReason': 'EMERGENCY',
+                                           'peerReviewedBy': reviewed_email,
+                                           'unitTested': True
+                                          }
 
         payload['network'] = network.upper()
         payload['propertyVersion'] = version
         payload['note'] = note
-        payload['notifyEmails'] = emails
-        self.logger.debug(payload)
-        self.logger.debug(self.headers)
+        payload['notifyEmails'] = email
 
         resp = self.session.post(url, json=payload, headers=self.headers)
-        self.logger.debug(resp.url)
-        if resp.status_code == 201:
-            return resp.status_code, resp.json()['activationLink']
-        elif resp.status_code == 422:  # pending activation or deactivation.
-            self.logger.critical(resp.json()['detail'])
-            return resp.status_code, resp.json()['detail']
-        elif resp.status_code == 429:  # Hit rate limit
-            return resp.status_code, resp.json()['title']
+        self.logger.debug(f'{resp.url}\n{payload}')
+        status = resp.status_code
+
+        if status == 201:
+            return status, resp.json()['activationLink']
+        elif status == 422:
+            # pending activation or deactivation
+            self.logger.critical(f"{status} {resp.json()['detail']}")
+            return status, resp.json()['detail']
+        elif status == 429:
+            # Hit rate limit
+            self.logger.critical(f"{status} {resp.json()['title']}")
+            return status, resp.json()['title']
         else:
-            return resp.status_code, resp.json()
+            self.logger.critical(f'{status} {resp.text}')
+            return status, resp.json()
 
     def activation_status(self, property_id: int, activation_id: int):
         url = f'{self.MODULE}/properties/{property_id}/activations/{activation_id}'
-        resp = self.session.get(self.form_url(url))
+        resp = self.session.get(self.form_url(url), headers=self.headers)
         if resp.status_code == 200:
             return 200, resp.json()['activations']['items']
         else:

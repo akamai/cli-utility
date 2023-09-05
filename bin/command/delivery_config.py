@@ -223,7 +223,7 @@ def main(args, account_folder, logger):
                     prop1 = perf_counter()
                     msg = 'collecting properties'
                     logger.critical(f'{msg:<40} finished  {prop1 - prop0:.2f} seconds')
-                    columns = ['accountId', 'groupId', 'groupName', 'propertyName', 'propertyId',
+                    columns = ['accountId', 'contractId', 'groupId', 'groupName', 'propertyName', 'propertyId',
                                'latestVersion', 'stagingVersion', 'productionVersion', 'updatedDate',
                                'productId', 'ruleFormat', 'hostname_count', 'hostname', 'ruletree',
                                'property_with_version', 'env']
@@ -265,7 +265,7 @@ def main(args, account_folder, logger):
                                                         if len(x[0]) > 0 else '', axis=1)
 
                     generic_columns = df.columns
-                    main = ['accountId', 'groupId', 'propertyId', 'groupName', 'property_with_version',
+                    main = ['accountId', 'contractId', 'groupId', 'propertyId', 'groupName', 'property_with_version',
                             'latestVersion', 'stagingVersion', 'productionVersion',
                             'updatedDate', 'productId', 'ruleFormat',
                             'propertyName', 'env']
@@ -274,10 +274,13 @@ def main(args, account_folder, logger):
                     noncount_columns = sorted([col for col in properties_columns if not col.endswith('_count')])
                     columns_to_remove = ['propertyName(hyperlink)', 'ruletree']
                     noncount_columns = [col for col in noncount_columns if col not in columns_to_remove]
-                    properties_columns = ['propertyName(hyperlink)'] + count_columns + noncount_columns
+                    properties_columns = ['propertyName', 'productionVersion'] + count_columns + noncount_columns + ['propertyName(hyperlink)']
 
                     if args.behavior or args.criteria:
+                        df = df.query('productionVersion > 0')
+                        df = df.sort_values(by='propertyName')
                         sheet['properties'] = df[properties_columns]
+                        all_props = df.propertyName.unique().tolist()
 
                     main_with_link = list(map(lambda x: x.replace('property_with_version', 'propertyName(hyperlink)'), main))
                     try:
@@ -291,6 +294,11 @@ def main(args, account_folder, logger):
                     properties_df = properties_df.query('productionVersion > 0')
                     properties_df = properties_df.sort_values(by=['env', 'propertyName'])
                     sheet['generic'] = properties_df
+
+                    if args.behavior or args.criteria:
+                        all_generic_props = properties_df.propertyName.unique().tolist()
+                        if len(all_props) != len(all_generic_props):
+                            logger.critical(f'{len(all_props)} {len(all_generic_props)}')
 
         # add hyperlink to groupName column
         print()
@@ -778,10 +786,9 @@ def jsonpath(args, account_folder, logger):
                 sys.exit(logger.error(f'{ruletree.json()["title"]}. please provide correct version'))
             else:
                 ruletree = ruletree.json()['rules']
-                keys_to_remove = ['variables', 'options', 'uuid', 'comments']
+                keys_to_remove = ['variables', 'options', 'uuid', 'comment']
                 for key in keys_to_remove:
                     ruletree.pop(key, None)
-                # print_json(data=ruletree)
 
                 for type in args.type:
                     if type == 'criteria':
@@ -1143,7 +1150,7 @@ def add_group_url(df: pd.DataFrame, papi) -> pd.DataFrame:
     del df['groupURL']
     del df['propertyCount']
     df = df.rename(columns={'groupName_url': 'propertyCount'})  # show column with hyperlink instead
-    summary_columns = ['accountId', 'contractId', 'groupId', 'group_structure', 'groupName']
+    summary_columns = ['accountId', 'contractId', 'groupId', 'group_structure']
     if 'parentGroupId' in df.columns.values.tolist():
         summary_columns.extend(['parentGroupId', 'propertyCount'])
     else:

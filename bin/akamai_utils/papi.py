@@ -5,6 +5,7 @@ import copy
 import json
 import logging
 import re
+import sys
 import time
 from pathlib import Path
 from time import perf_counter
@@ -169,7 +170,6 @@ class PapiWrapper(Papi):
         status, groups = super().get_groups()
         if status == 200:
             df = pd.DataFrame(groups)
-            df['groupId'] = df['groupId'].astype(int)
             df = df[df['groupId'] == group_id]
             self.logger.debug(f'Group Detail\n{df}')
             try:
@@ -364,14 +364,14 @@ class PapiWrapper(Papi):
                 propertyName = detail['propertyName']
             except:
                 print_json(data=detail)
-            assetId = detail['assetId'][4:]
-            gid = detail['groupId'][4:]
+            assetId = detail['assetId']
+            gid = detail['groupId']
             acc_url = f'https://control.akamai.com/apps/property-manager/#/property-version/{assetId}/{version}/edit?gid={gid}'
             self.logger.info(f'{propertyName:<40} {acc_url}')
         try:
             return detail['versions']['items'][0][dict_key]
         except:
-            print_json(data=detail)
+            # print_json(data=detail)
             return property_id
 
     def find_name_and_xml(self,
@@ -548,7 +548,7 @@ class PapiWrapper(Papi):
 
                 if not properties.empty:
                     properties['propertyId'] = properties['propertyId'].astype('Int64')
-                    properties['groupName'] = row['groupName']
+                    properties['groupName'] = row['group_structure']
 
                     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
                         # 'append _vXXX to propertyName
@@ -591,7 +591,7 @@ class PapiWrapper(Papi):
 
     def guestimate_env_type(self, name: str):
         lower = ['-qa', '-it', 'stg', 'test', '-stage.', 'stage-', 'staging', '.stage.', '-dev-', 'nonprod']
-        return 'lower' if any(substring in name for substring in lower) else 'prd'
+        return 'nonprd' if any(substring in name for substring in lower) else 'prd'
 
     # RULETREE
     def get_properties_ruletree_digest(self, property_id: int, version: int) -> dict:
@@ -616,11 +616,11 @@ class PapiWrapper(Papi):
     def get_property_full_ruletree(self, property_id: int, version: int):
         return super().get_property_full_ruletree(property_id, version)
 
-    def update_property_ruletree(self, property_id: int, version: int, payload: dict) -> str:
-        status, response = super().update_property_ruletree(property_id, version, payload)
+    def update_property_ruletree(self, property_id: int, version: int, rule_format: str, payload: dict, version_notes: str) -> str:
+        self.logger.debug(f'{property_id} {version} {rule_format=}')
+        status, resp = super().update_property_ruletree(property_id, version, rule_format, payload, version_notes)
         if status != 200:
-            self.logger.error(f'{property_id=} {version=}')
-            print_json(data=payload)
+            self.logger.error(f'{property_id=} {version=} {resp}')
         return status
 
     def build_new_ruletree(self, ruletree: dict, new_rule: dict) -> str:
@@ -1092,28 +1092,32 @@ class PapiWrapper(Papi):
 
     # ACTIVATION
     def activate_property_version(self, property_id: int, version: int,
-                                  network: str, note: str, emails: list[str]) -> int:
-        status, response = super().activate_property_version(property_id, version, network, note, emails)
+                                  network: str,
+                                  note: str,
+                                  email: list[str],
+                                  review_email: str) -> int:
+        status, response = super().activate_property_version(property_id, version,
+                                                             network,
+                                                             note,
+                                                             email,
+                                                             review_email)
         if status == 201:
             try:
                 activation_id = int(response.split('?')[0].split('/')[-1])
                 return activation_id
             except:
+                print_json(data=response)
                 self.logger.warning(activation_id)
                 return 0
-        return status
+        return 0
 
-    def activation_status(self, property_id: int, activation_id: int, version: int) -> str:
-        if activation_id > 0 and version > 0:
+    def activation_status(self, property_id: int, activation_id: str, version: int) -> tuple:
+        if activation_id != '0' and version > 0:
             status, response = super().activation_status(property_id, activation_id)
-            self.logger.debug(f'{activation_id=} {version=} {property_id=} {status}')
-            df = pd.DataFrame(response)
-            self.logger.debug(f'BEFORE\n{df}')
-            df = df[df['propertyVersion'] == version].copy()
-            self.logger.debug(f'FILTERED\n{df}')
-            return df.status.values[0]
-        else:
-            return ''
+            self.logger.debug(f'{activation_id=} {version=} {property_id=} {status=}')
+            if response[0]['propertyVersion'] == version:
+                return response[0]['network'], response[0]['status']
+        return '', ''
 
     # CUSTOM BEHAVIOR
     def list_custom_behaviors(self) -> tuple[int, list[str]]:
