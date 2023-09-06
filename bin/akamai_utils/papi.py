@@ -703,7 +703,7 @@ class PapiWrapper(Papi):
         return account_properties
 
     def guestimate_env_type(self, name: str):
-        lower = ['-qa', '-it', 'stg', 'test', '-stage.', 'stage-', 'staging', '.stage.', '-dev-', 'nonprod']
+        lower = ['-qa', '-it', 'stg', 'test', '-stage.', 'stage-', 'staging', '.stage.', '-dev-', 'nonprod', '.dev.', '.qa.']
         return 'nonprd' if any(substring in name for substring in lower) else 'prd'
 
     # RULETREE
