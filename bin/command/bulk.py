@@ -189,14 +189,17 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
     df.loc[:, 'assetId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'assetId'), axis=1)
 
     result_df = check_filter_condition(args, df, logger).copy()
-    result_df.loc[:, 'groupName'] = result_df.parallel_apply(lambda row: papi.get_group_name(row['groupId']), axis=1)
-    result_df.loc[:, 'propertyURL'] = result_df.parallel_apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
-    result_df.loc[:, 'propertyName(hyperlink)'] = result_df.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
+    if result_df.empty:
+        sys.exit(logger.error('no property found with requested conditions'))
+    else:
+        result_df.loc[:, 'groupName'] = result_df.parallel_apply(lambda row: papi.get_group_name(row['groupId']), axis=1)
+        result_df.loc[:, 'propertyURL'] = result_df.parallel_apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
+        result_df.loc[:, 'propertyName(hyperlink)'] = result_df.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
 
-    result_df.loc[:, 'productId'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'productId'), axis=1)
-    result_df.loc[:, 'ruleFormat'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'ruleFormat'), axis=1)
-    result_df = result_df.sort_values(by=['env', 'groupId', 'propertyName'])
-    result_df = result_df.reset_index(drop=True)
+        result_df.loc[:, 'productId'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'productId'), axis=1)
+        result_df.loc[:, 'ruleFormat'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'ruleFormat'), axis=1)
+        result_df = result_df.sort_values(by=['env', 'groupId', 'propertyName'])
+        result_df = result_df.reset_index(drop=True)
 
     columns = ['bulkSearchId', 'contractId', 'groupId', 'groupName', 'propertyId', 'env',
                'propertyName(hyperlink)', 'propertyName', 'propertyVersion',
@@ -219,10 +222,11 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
     files.write_xlsx(filepath, sheet)
     files.open_excel_application(filepath, show=True, df=result_df[columns])
 
-    all_groups = result_df.groupId.unique().tolist()
-    modified_list = [word for word in all_groups]
-    all_groups = ' '.join(modified_list)
-    logger.warning(f'--group-id {all_groups}')
+    if args.group_id is None:
+        all_groups = result_df.groupId.unique().tolist()
+        modified_list = [word for word in all_groups]
+        all_groups = ' '.join(modified_list)
+        logger.warning(f'--group-id {all_groups}')
 
     return df
 
