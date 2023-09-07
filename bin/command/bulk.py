@@ -22,6 +22,10 @@ def patch_version_result(data: list, extract_columns: list) -> list:
     return [{col: version.get(col) for col in extract_columns} for version in data]
 
 
+def remove_string_from_list(object: list, string_to_remove: str):
+    return [item.replace(string_to_remove, '') if isinstance(item, str) else item for item in object]
+
+
 def check_filter_condition(args, df, logger) -> pd.DataFrame:
     print()
     msg = 'original count from bulk search: '
@@ -67,6 +71,7 @@ def check_filter_condition(args, df, logger) -> pd.DataFrame:
 
 def fetch_status_patch(papi: PapiWrapper, id: int, version_note: str, logger) -> pd.DataFrame:
     resp = papi.list_bulk_patch(id)
+    # print_json(data=resp.json())
     if resp.status_code != 200:
         logger.critical(resp.status_code)
         print_json(data=resp.json())
@@ -198,6 +203,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
 
         result_df.loc[:, 'productId'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'productId'), axis=1)
         result_df.loc[:, 'ruleFormat'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'ruleFormat'), axis=1)
+        result_df['matchLocations'] = df['matchLocations'].apply(lambda x: remove_string_from_list(x, '/options/strictMode'))
         result_df = result_df.sort_values(by=['env', 'groupId', 'propertyName'])
         result_df = result_df.reset_index(drop=True)
 
@@ -207,8 +213,8 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
                'productId', 'ruleFormat',
                'matchLocations']
 
-    console_columns = ['env', 'groupId', 'propertyId', 'propertyName', 'propertyVersion', 'productId', 'ruleFormat', 'matchLocations', 'propertyURL']
-    print(tabulate(result_df.head(5)[console_columns], headers=console_columns, tablefmt='simple', numalign='center'))
+    console_columns = ['env', 'groupId', 'propertyName', 'propertyVersion', 'productId', 'ruleFormat', 'matchLocations', 'propertyURL']
+    print(tabulate(result_df[console_columns], headers=console_columns, tablefmt='simple', numalign='center'))
     print()
 
     sheet = {}
@@ -233,7 +239,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
 
 def bulk_create(args, account_folder, logger):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
-
+    pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
     if args.id:
         # only show result from bulk create call
         id = int(args.id)
@@ -261,6 +267,7 @@ def bulk_create(args, account_folder, logger):
             bulk_search_result = resp.json()
             df = pd.DataFrame(bulk_search_result['results'])
             df['bulkSearchId'] = bulk_search_result['bulkSearchId']
+            df.loc[:, 'env'] = df.parallel_apply(lambda row: papi.guestimate_env_type(row['propertyName']), axis=1)
             result_df = check_filter_condition(args, df, logger)
             if result_df.empty:
                 sys.exit(logger.info('condition not found'))
@@ -288,9 +295,11 @@ def bulk_create(args, account_folder, logger):
         create_df['bulkCreateId'] = bulk_create_id
 
         merge = pd.merge(result_df, create_df, on='propertyId')
-        selected_columns = ['bulkCreateId', 'propertyName', 'propertyId', 'base_version', 'new_version', 'createVersionStatus', 'matchLocations']
+        merge['matchLocations'] = merge['matchLocations'].apply(lambda x: remove_string_from_list(x, '/options/strictMode'))
+        selected_columns = ['bulkCreateId', 'env', 'propertyName', 'propertyId', 'base_version', 'new_version', 'createVersionStatus', 'matchLocations']
         print()
         print(tabulate(merge[selected_columns], headers=selected_columns, tablefmt='simple'))
+        print()
 
         sheet = {}
         sheet['data'] = merge[selected_columns]
@@ -306,6 +315,7 @@ def bulk_update(args, account_folder, logger):
         # review result of the bulk update
         bulk_patch_id = int(args.id)
         update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
+        sys.exit()
     else:
         # read excel generated from bulk create command to pick up thew new version to update with the new rule
         df = pd.read_excel(args.input_excel)
@@ -353,7 +363,7 @@ def bulk_activate(args, account_folder, logger):
         total_properties = df.shape[0]
         original_columns = df.columns
         if 'activationId' not in original_columns:
-            if args.mode:
+            if args.normal:
                 with yaspin() as sp:
                     df['activationId'] = df.parallel_apply(lambda row: papi.activate_property_version(
                         row['propertyId'], row['new_version'], args.network, args.note, args.email, args.review_email), axis=1)
