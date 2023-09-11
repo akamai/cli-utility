@@ -5,7 +5,9 @@ import sys
 import numpy as np
 import pandas as pd
 from akamai_api.identity_access import IdentityAccessManagement
+from pandarallel import pandarallel
 from tabulate import tabulate
+from utils import files
 
 
 def homepage_url(account_id: str, contract_id: str) -> str:
@@ -27,9 +29,39 @@ def cleanup_arguments(value: str, logger=None):
         return value
 
 
+def remove_and_store_substrings(row):
+    """ Function to remove specific substrings and store them in a new column """
+    substrings_to_remove = ['_Akamai Internal',
+                            '_Indirect Customer', '_Direct Customer',
+                            '_Marketplace Prospect',
+                            '_NAP Master Agreement',
+                            '_NAP Master Agreement ',
+                            '_Value Added Reseller',
+                            '_Value Added Reseller ',
+                            '_Tier 1 Reseller',
+                            '_Tier 1 Reseller ',
+                            '_VAR Customer',
+                            '_ISP']
+
+    removed_substrings = []
+    for substring in substrings_to_remove:
+        if substring in row['Akamai_Account']:
+            removed_substrings.append(substring)
+            row['Akamai_Account'] = row['Akamai_Account'].replace(substring, '')
+    return pd.Series({'Akamai_Account': row['Akamai_Account'], 'Account_Type': ', '.join(removed_substrings)})
+
+
 def lookup_account(args, logger=None):
+
+    if args.account and args.input:
+        sys.exit(logger.error('Please provide either --account or --input, not both'))
+
     iam = IdentityAccessManagement(args.account_switch_key, args.section, logger=logger)
-    searches = sorted(args.account)
+    searches = sorted(args.account) if args.account else None
+
+    if args.input:
+        with open(args.input) as file:
+            searches = [line.rstrip('\n') for line in file.readlines()]
 
     # cleanup keywords
     print()
@@ -51,6 +83,7 @@ def lookup_account(args, logger=None):
     results = []
     longest = max(final_searches, key=len)
     length = len(longest)
+    all_accounts = []
     for value in final_searches:
         offset = length - len(value)
         PRESERVE_WHITESPACE = ' ' * offset
@@ -87,3 +120,44 @@ def lookup_account(args, logger=None):
         df = df.drop(['accountId', 'contractTypeId'], axis=1)
         columns = [index_header, accountSwitchKey, accountName, url]
         print(tabulate(df, headers=columns, showindex=False, tablefmt='github'))
+        all_accounts.append(df[['accountName', 'accountSwitchKey']])
+
+    df = pd.concat(all_accounts)
+    df = df.reset_index(drop=True)
+    new_column_names = ['Akamai_Account', 'Account_SwitchKey']
+    df.columns = new_column_names
+    df.index = df.index + 1
+    df = df.replace('', np.nan)
+    df = df.dropna()
+
+    if df.empty:
+        sys.exit()
+    else:
+        if args.xlsx:
+            pandarallel.initialize(progress_bar=False, verbose=0)
+
+            df['accountId'] = df['Account_SwitchKey'].parallel_apply(lambda x: x.split(':')[0])
+            df['contractTypeId'] = df['Account_SwitchKey'].parallel_apply(lambda x: x.split(':')[1])
+            url = 'https://control.akamai.com/apps/home-page/#/manage-account?'
+            df['url_1'] = df.parallel_apply(lambda row: f'{url}accountId={row["accountId"]}&contractTypeId={row["contractTypeId"]}&targetUrl=', axis=1)
+
+            # Apply the function to each row
+            columns = ['no.', 'Akamai_Account', 'Account_SwitchKey', 'Account_Type']
+            df[['Akamai_Account', 'Account_Type']] = df.parallel_apply(remove_and_store_substrings, axis=1)
+            df['Account(Hyperlink)'] = df.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['url_1'], row['Akamai_Account']), axis=1)
+
+            df = df.sort_values(by=['Akamai_Account', 'Account_Type'], key=lambda x: x.str.lower())
+            df = df.reset_index(drop=True)
+            df.index = df.index + 1
+
+            df['no.'] = df.groupby('Akamai_Account').cumcount() + 1
+            console_df = df[['no.', 'Akamai_Account', 'Account_SwitchKey']].copy()
+            # logger.warning(f'\n{console_df}')
+            print(tabulate(console_df, headers=['no.', 'Akamai_Account', 'Account_SwitchKey'], showindex=True, tablefmt='github'))
+            df['Akamai_Account'] = df['Account(Hyperlink)']
+
+            sheet = {}
+            sheet['Account_SwitchKey'] = df[columns]
+            filepath = 'account_switchkey_summary.xlsx'
+            files.write_xlsx(filepath, sheet, freeze_column=3) if not df.empty else None
+            files.open_excel_application(filepath, True, df[columns])
