@@ -249,6 +249,14 @@ def bulk_create(args, account_folder, logger):
             df = pd.DataFrame(bulk_create_result['createPropertyVersions'])
             df['bulkCreateId'] = id
             print(tabulate(df, headers=df.columns, tablefmt='simple', numalign='center'))
+            sheet = {}
+            sheet['data'] = df
+            if args.tag:
+                filepath = f'{account_folder}/bulk/bulk_create_{id}_{args.tag}.xlsx'
+            else:
+                filepath = f'{account_folder}/bulk/bulk_create_{id}.xlsx'
+            files.write_xlsx(filepath, sheet)
+            files.open_excel_application(filepath, True, df)
             sys.exit()
         else:
             sys.exit(logger.error(resp.text))
