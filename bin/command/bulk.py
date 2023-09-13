@@ -313,8 +313,10 @@ def bulk_update(args, account_folder, logger):
     version_note = args.version_note
     if args.id:
         # review result of the bulk update
+        pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
         bulk_patch_id = int(args.id)
         update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
+        print(tabulate(update_df, headers=update_df.columns, tablefmt='simple', numalign='center'))
         sys.exit()
     else:
         # read excel generated from bulk create command to pick up thew new version to update with the new rule
