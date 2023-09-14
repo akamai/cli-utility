@@ -89,16 +89,12 @@ class PapiWrapper(Papi):
         else:
             self.logger.error(print_json(data=resp.json()))
 
-        if len(resp.json()['results']) == 0:
-            self.logger.critical(f'bulkSearchId: {bulk_id}   no property found')
-        else:
-            self.logger.critical(f'bulkSearchId: {bulk_id}')
-        # print_json(data=resp.json())
+        self.logger.critical(f'bulkSearchId: {bulk_id}')
         return resp
 
     def bulk_create_properties(self, property: list[str, int]):
         resp = super().bulk_create_properties(property)
-        if resp.status_code == 202:
+        if resp.ok:
             return_url = resp.json()['bulkCreateVersionLink']
             pattern = r'\/papi\/v1\/bulk\/property-version-creations\/(\d+)'
             match = re.search(pattern, return_url)
@@ -111,7 +107,7 @@ class PapiWrapper(Papi):
                     count += 1
                     _resp = super().list_bulk_create(bulk_id)
                     status = _resp.json()['bulkCreateVersionsStatus']
-                    if count > 5:
+                    if count > 20:
                         break
                 resp = _resp
             else:
@@ -147,7 +143,7 @@ class PapiWrapper(Papi):
     def bulk_activate_properties(self, network: str, email: list, pr_email: str, note: str, properties: list):
         resp = super().bulk_activate_properties(network, email, pr_email, note, properties)
         self.logger.debug(f'{resp.status_code} {resp.url}')
-        if resp.status_code != 202:
+        if not resp.ok:
             self.logger.error(print_json(data=resp.json()))
         else:
             return_url = resp.json()['bulkActivationLink']

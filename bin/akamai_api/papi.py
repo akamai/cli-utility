@@ -155,11 +155,16 @@ class Papi(AkamaiSession):
         property_list = []
         for each_property in properties:
             property = {}
-            property['propertyId'] = each_property[0]
+            property['propertyId'] = f'prp_{each_property[0]}'
             property['createFromVersion'] = each_property[1]
             property_list.append(property)
+        self.logger.critical(property_list)
         payload = {'createPropertyVersions': property_list}
         resp = self.session.post(url, json=payload, params=self.build_query_params(), headers=self.headers)
+        self.logger.debug(resp.url)
+        self.logger.debug(self.build_query_params())
+        # print_json(data=payload)
+        # print_json(data=self.headers)
         return resp
 
     def bulk_activate_properties(self, network: str, email: list, pr_email: str, note: str, properties: list):
