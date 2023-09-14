@@ -385,12 +385,36 @@ def bulk_activate(args, account_folder, logger):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
     if args.id:
-        id = int(args.id)
-        activation = fetch_status_activation(papi, id, logger=logger)
-        print(tabulate(activation, tablefmt='simple', numalign='center'))
-        activation = fetch_status_activation(papi, id, logger=logger)
+        ids = [int(x) for x in args.id]
+        combined_activation_result = []
+        for activation_id in ids:
+            activation = fetch_status_activation(papi, activation_id, logger=logger)
+            combined_activation_result.append(activation)
+        if combined_activation_result == 0:
+            sys.exit(logger.info('found nothing'))
+        else:
+            activation = pd.concat(combined_activation_result)
+            columns = activation.columns.tolist()
+            columns.remove('fatalError')
+        activation = activation.sort_values(by=['fatalError', 'propertyName'], ascending=[False, True])
+        pending = activation.query("(taskStatus != 'COMPLETE')").copy()
+        pending = pending.reset_index(drop=True)
+        print()
+        print(tabulate(pending[columns], headers=columns, tablefmt='simple', numalign='center'))
+
+        summary = activation.groupby(['bulkActivationId', 'network', 'taskStatus'])[['propertyId', 'fatalError']].count()
+        logger.info(f'\n\n{summary}')
+        sys.exit()
     elif args.input_excel:
-        df = pd.read_excel(args.input_excel, dtype=str)
+        if args.network is None:
+            sys.exit(logger.error('--network is required.'))
+
+        try:
+            df = pd.read_excel(args.input_excel, dtype=str)
+        except FileNotFoundError as err:
+            print()
+            sys.exit(logger.error(err, exc_info=False))
+
         total_properties = df.shape[0]
         original_columns = df.columns
         if 'activationId' not in original_columns:
