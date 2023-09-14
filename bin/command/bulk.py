@@ -89,15 +89,17 @@ def fetch_status_patch(papi: PapiWrapper, id: int, version_note: str, logger) ->
         columns_to_extract.append('status')
         update_df = df[columns_to_extract].copy()
 
-        update_df['ruleFormat'] = update_df.apply(lambda row: papi.get_property_version_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'ruleFormat'), axis=1)
-        update_df['assetId'] = update_df.apply(lambda row: papi.get_property_version_full_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'assetId'), axis=1)
-        update_df['groupId'] = update_df.apply(lambda row: papi.get_property_version_full_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'groupId'), axis=1)
-        update_df['url'] = update_df.apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
+        pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
+
+        update_df['ruleFormat'] = update_df.parallel_apply(lambda row: papi.get_property_version_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'ruleFormat'), axis=1)
+        update_df['assetId'] = update_df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'assetId'), axis=1)
+        update_df['groupId'] = update_df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'groupId'), axis=1)
+        update_df['url'] = update_df.parallel_apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
         columns_to_extract = update_df.columns.tolist()
         columns_to_extract.extend(['ruleFormat', 'url'])
         if version_note:
-            update_df['current_rule'] = update_df.apply(lambda row: papi.get_property_full_ruletree(row['patchPropertyId'], row['patchPropertyVersion']).json(), axis=1)
-            update_df['version_status'] = update_df.apply(lambda row: papi.update_property_ruletree(row['patchPropertyId'],
+            update_df['current_rule'] = update_df.parallel_apply(lambda row: papi.get_property_full_ruletree(row['patchPropertyId'], row['patchPropertyVersion']).json(), axis=1)
+            update_df['version_status'] = update_df.parallel_apply(lambda row: papi.update_property_ruletree(row['patchPropertyId'],
                                                                                             row['patchPropertyVersion'],
                                                                                             row['ruleFormat'],
                                                                                             row['current_rule']['rules'],
