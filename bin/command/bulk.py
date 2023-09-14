@@ -155,7 +155,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
         if args.contract_id:
             papi.contract_id = args.contract_id
             resp = papi.bulk_search(query)
-            if resp.status_code == 200:
+            if resp.ok == 200:
                 bulk_result = resp.json()
                 df = pd.DataFrame(bulk_result['results'])
                 bulk_search_id = bulk_result['bulkSearchId']
@@ -168,19 +168,28 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
             for group_id in args.group_id:
                 papi.group_id = group_id
                 resp = papi.bulk_search(query)
-                if resp.status_code == 200:
+                if resp.ok:
                     bulk_result = resp.json()
                     df = pd.DataFrame(bulk_result['results'])
-                    bulk_search_id = bulk_result['bulkSearchId']
-                    df['bulkSearchId'] = bulk_search_id
-                    df.loc[:, 'contractId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'contractId'), axis=1)
-                    df['groupId'] = group_id
-                    all_df.append(df)
+                    if df.empty:
+                        logger.warning(f'{group_id:<30}       no property found\n')
+                        # print_json(data=bulk_result)
+                    else:
+                        bulk_search_id = bulk_result['bulkSearchId']
+                        df['bulkSearchId'] = bulk_search_id
+                        df.loc[:, 'contractId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'contractId'), axis=1)
+                        df['groupId'] = group_id
+                        logger.warning(f'{group_id:<30} {df.shape[0]:<5} properties\n')
+                        all_df.append(df)
+                else:
+                    logger.debug(f'{resp.status_code} {resp.url}')
+            if len(all_df) == 0:
+                sys.exit()
 
         if not args.contract_id and not args.group_id:
             # lookup whole account
             resp = papi.bulk_search(query)
-            if resp.status_code == 200:
+            if resp.ok == 200:
                 bulk_result = resp.json()
                 df = pd.DataFrame(bulk_result['results'])
                 bulk_search_id = bulk_result['bulkSearchId']
@@ -189,7 +198,13 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
                 df.loc[:, 'groupId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'groupId'), axis=1)
                 all_df.append(df)
 
+    if len(all_df) == 0:
+        sys.exit()
+
     df = pd.concat(all_df)
+
+    if df.empty:
+        sys.exit(logger.info('found nothing'))
     df.loc[:, 'env'] = df.parallel_apply(lambda row: papi.guestimate_env_type(row['propertyName']), axis=1)
     df.loc[:, 'assetId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'assetId'), axis=1)
 
@@ -203,8 +218,11 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
 
         result_df.loc[:, 'productId'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'productId'), axis=1)
         result_df.loc[:, 'ruleFormat'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'ruleFormat'), axis=1)
-        result_df['matchLocations'] = df['matchLocations'].apply(lambda x: remove_string_from_list(x, '/options/strictMode'))
+        result_df.loc[:, 'matchLocations'] = df['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode'))
         result_df = result_df.sort_values(by=['env', 'groupId', 'propertyName'])
+
+        # print(tabulate(result_df, headers=result_df.columns, tablefmt='simple', numalign='center'))
+        logger.info(result_df.dtypes)
         result_df = result_df.reset_index(drop=True)
 
     columns = ['bulkSearchId', 'contractId', 'groupId', 'groupName', 'propertyId', 'env',
@@ -213,7 +231,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
                'productId', 'ruleFormat',
                'matchLocations']
 
-    console_columns = ['env', 'groupId', 'propertyName', 'propertyVersion', 'productId', 'ruleFormat', 'matchLocations', 'propertyURL']
+    console_columns = ['env', 'groupId', 'propertyName', 'propertyVersion', 'matchLocations', 'propertyURL']
     print(tabulate(result_df[console_columns], headers=console_columns, tablefmt='simple', numalign='center'))
     print()
 
@@ -221,6 +239,8 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
     sheet['search_results'] = result_df[columns]
     if args.output:
         filepath = f'{account_folder}/bulk/{args.output}'
+    elif args.tag:
+        filepath = f'{account_folder}/bulk/bulk_{args.tag}_search_{bulk_search_id}.xlsx'
     elif bulk_search_id != 0:
         filepath = f'{account_folder}/bulk/bulk_search_{bulk_search_id}.xlsx'
     else:
