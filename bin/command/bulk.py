@@ -263,28 +263,31 @@ def bulk_create(args, account_folder, logger):
     pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
     if args.id:
         # only show result from bulk create call
-        id = int(args.id)
-        resp = papi.list_bulk_create(id)
+        bulk_create_id = int(args.id)
+        resp = papi.list_bulk_create(bulk_create_id)
         if resp.status_code == 200:
             bulk_create_result = resp.json()
             df = pd.DataFrame(bulk_create_result['createPropertyVersions'])
-            df['bulkCreateId'] = id
+            df['bulkCreateId'] = bulk_create_id
+            df = df.rename(columns={'createFromVersion': 'base_version',
+                                    'propertyVersion': 'new_version'})
             print(tabulate(df, headers=df.columns, tablefmt='simple', numalign='center'))
             sheet = {}
             sheet['data'] = df
             if args.tag:
-                filepath = f'{account_folder}/bulk/bulk_create_{id}_{args.tag}.xlsx'
+                filepath = f'{account_folder}/bulk/bulk_{args.tag}_create_{bulk_create_id}.xlsx'
             else:
-                filepath = f'{account_folder}/bulk/bulk_create_{id}.xlsx'
+                filepath = f'{account_folder}/bulk/bulk_create_{bulk_create_id}.xlsx'
             files.write_xlsx(filepath, sheet)
             files.open_excel_application(filepath, True, df)
             sys.exit()
         else:
             sys.exit(logger.error(resp.text))
     elif args.input_excel:
-        result_df = pd.read_excel(args.input_excel)
-        result_df['propertyId'] = result_df['propertyId'].astype(str)
-
+        df = pd.read_excel(args.input_excel)
+        df['propertyId'] = df['propertyId'].astype(str)
+        if df.empty:
+            sys.exit(logger.error('Properties not found'))
     elif args.bulksearchid:
         if args.version is None:
             sys.exit(logger.error('--version must be provided'))
@@ -297,44 +300,76 @@ def bulk_create(args, account_folder, logger):
             df = pd.DataFrame(bulk_search_result['results'])
             df['bulkSearchId'] = bulk_search_result['bulkSearchId']
             df.loc[:, 'env'] = df.parallel_apply(lambda row: papi.guestimate_env_type(row['propertyName']), axis=1)
-            result_df = check_filter_condition(args, df, logger)
-            if result_df.empty:
-                sys.exit(logger.info('condition not found'))
-            else:
-                columns = ['propertyId', 'propertyVersion', 'propertyName', 'productionStatus',
-                           'stagingStatus', 'isLatest', 'matchLocations', 'bulkSearchId']
-                if 'groupId' in result_df.columns:
-                    columns.insert(1, 'groupId')
-                print()
-                print(tabulate(result_df[columns], headers=columns, tablefmt='simple', numalign='center'))
+            if df.empty:
+                sys.exit(logger.error('Properties not found'))
 
-    result_df['property_list'] = result_df.apply(lambda row: (row['propertyId'], row['propertyVersion']), axis=1)
+    result_df = check_filter_condition(args, df, logger)
+    if result_df.empty:
+        sys.exit(logger.info('condition not found'))
+    else:
+        columns = ['propertyId', 'propertyVersion', 'propertyName', 'productionStatus',
+                    'stagingStatus', 'isLatest', 'matchLocations', 'bulkSearchId']
+        if 'groupId' in result_df.columns:
+            columns.insert(1, 'groupId')
+        print()
+        logger.info('xxxx')
+        print(tabulate(result_df[columns], headers=columns, tablefmt='simple', numalign='center'))
+
+    result_df['property_list'] = result_df.parallel_apply(lambda row: (row['propertyId'], row['propertyVersion']), axis=1)
     result_df = result_df.rename(columns={'propertyVersion': 'old_version'})
+    print()
+    logger.warning('Rename column propertyVersion to old_version')
+    print(tabulate(result_df, headers=result_df.columns, tablefmt='simple', numalign='center'))
     properties = result_df['property_list'].values.tolist()
     logger.debug(properties)
 
     create_resp = papi.bulk_create_properties(properties)
-    if create_resp.status_code != 200:
+    if not create_resp.ok:
         sys.exit(logger.error(print_json(data=create_resp.json())))
-    else:
-        bulk_create_id = create_resp.json()['bulkCreateId']
-        create_df = pd.DataFrame(create_resp.json()['createPropertyVersions'])
-        create_df = create_df.rename(columns={'propertyVersion': 'new_version'})
-        create_df = create_df.rename(columns={'createFromVersion': 'base_version'})
-        create_df['bulkCreateId'] = bulk_create_id
 
-        merge = pd.merge(result_df, create_df, on='propertyId')
-        merge['matchLocations'] = merge['matchLocations'].apply(lambda x: remove_string_from_list(x, '/options/strictMode'))
-        selected_columns = ['bulkCreateId', 'env', 'propertyName', 'propertyId', 'base_version', 'new_version', 'createVersionStatus', 'matchLocations']
+    bulk_create_id = create_resp.json()['bulkCreateId']
+    create_df = pd.DataFrame(create_resp.json()['createPropertyVersions'])
+    create_df['bulkCreateId'] = bulk_create_id
+
+    print(tabulate(create_df, headers=create_df.columns, tablefmt='simple', numalign='center'))
+    create_df = create_df.rename(columns={'createFromVersion': 'base_version'})
+    try:
+        create_df = create_df.rename(columns={'propertyVersion': 'new_version'})
+    except:
+        logger.error('Fail to rename column new_version')
+
+    logger.debug(f'result_df \n {result_df.dtypes}')
+    logger.debug(f'create_df \n {create_df.dtypes}')
+
+    merge = pd.merge(result_df, create_df, on='propertyId')
+    try:
+        merge['matchLocations'] = merge['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode'))
+        selected_columns = ['bulkCreateId', 'env', 'propertyName', 'propertyId', 'base_version',
+                        'new_version',
+                        'createVersionStatus', 'matchLocations']
+    except:
+        pass
+
+    if merge.empty:
+        print_json(data=create_resp.json())
+        sys.exit(logger.error('Merge result_df and create_df fail'))
+
+    try:
         print()
         print(tabulate(merge[selected_columns], headers=selected_columns, tablefmt='simple'))
-        print()
+    except KeyError as err:
+        logger.critical(f"'{err}' not found in merge_df")
+        print(tabulate(merge, headers=merge.columns, tablefmt='simple'))
+        selected_columns = merge.columns.tolist()
 
-        sheet = {}
-        sheet['data'] = merge[selected_columns]
+    sheet = {}
+    sheet['data'] = merge[selected_columns]
+    if args.tag:
+        filepath = f'{account_folder}/bulk/bulk_{args.tag}_create_{bulk_create_id}.xlsx'
+    else:
         filepath = f'{account_folder}/bulk/bulk_create_{bulk_create_id}.xlsx'
-        files.write_xlsx(filepath, sheet)
-        files.open_excel_application(filepath, False, merge[selected_columns])
+    files.write_xlsx(filepath, sheet)
+    files.open_excel_application(filepath, True, merge[selected_columns])
 
 
 def bulk_update(args, account_folder, logger):
