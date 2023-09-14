@@ -380,25 +380,42 @@ def bulk_update(args, account_folder, logger):
         pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
         bulk_patch_id = int(args.id)
         update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
+        update_df = update_df.sort_values(by=['status', 'propertyName'])
+        update_df = update_df.reset_index(drop=True)
         print(tabulate(update_df, headers=update_df.columns, tablefmt='simple', numalign='center'))
         sys.exit()
-    else:
-        # read excel generated from bulk create command to pick up thew new version to update with the new rule
-        df = pd.read_excel(args.input_excel)
-        df['matchLocations'] = df['matchLocations'].apply(ast.literal_eval)
-        print(tabulate(df, headers=df.columns, tablefmt='simple', numalign='center'))
 
-        df['property_list'] = df.apply(lambda row: (row['propertyId'], row['new_version'], row['matchLocations']), axis=1)
+    if args.input_excel:
+        # read excel generated from bulk create command to pick up thew new version to update with the new rule
+        try:
+            df = pd.read_excel(args.input_excel)
+        except FileNotFoundError as err:
+            print()
+            sys.exit(logger.error(err, exc_info=False))
+
+        df['matchLocations'] = df['matchLocations'].apply(ast.literal_eval)
+        load_columns = ['propertyId', 'propertyName', 'new_version', 'matchLocations']
+        print(tabulate(df[load_columns], headers=load_columns, tablefmt='simple', numalign='center'))
+        pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
+        df['property_list'] = df.parallel_apply(lambda row: (row['propertyId'], row['new_version'], row['matchLocations']), axis=1)
         properties = df['property_list'].values.tolist()
         logger.debug(properties)
         query = files.load_json(args.jsonpath)
         resp = papi.bulk_update_behavior(properties, query)
-        bulk_patch_id = resp.json()['bulkPatchId']
-        update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
 
+        if not resp.ok:
+            print_json(data=resp.json())
+        else:
+            bulk_patch_id = resp.json()['bulkPatchId']
+            update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
+            print()
+            logger.critical(f'Fetch_status_patch {bulk_patch_id=} {update_df.shape[0]=}')
+            columns = ['bulkPatchId', 'patchPropertyId', 'url', 'status', 'patchPropertyVersion', 'propertyName']
+            print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
+            sys.exit()
     total_properties = update_df.shape[0]
     row_count = update_df.query("(status == 'COMPLETE') | (status == 'SUBMISSION_ERROR')").shape[0]
-    columns = ['bulkPatchId', 'propertyName', 'patchPropertyId', 'patchPropertyVersion', 'status', 'url', 'version_status']
+    columns = ['bulkPatchId', 'patchPropertyId', 'url', 'resp_status', 'status', 'patchPropertyVersion', 'propertyName']
 
     while row_count < total_properties and not update_df.empty:
         print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
@@ -411,9 +428,12 @@ def bulk_update(args, account_folder, logger):
     if update_df.empty:
         sheet = {}
         sheet['update'] = update_df
-        filepath = f'{account_folder}/bulk/bulk_update_{bulk_patch_id}.xlsx'
+        if args.tag:
+            filepath = f'{account_folder}/bulk/bulk_{args.tag}_update_{bulk_patch_id}.xlsx'
+        else:
+            filepath = f'{account_folder}/bulk/bulk_update_{bulk_patch_id}.xlsx'
         files.write_xlsx(filepath, sheet)
-        files.open_excel_application(filepath, False, update_df)
+        files.open_excel_application(filepath, True, update_df)
 
 
 def bulk_activate(args, account_folder, logger):
