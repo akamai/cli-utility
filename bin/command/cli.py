@@ -44,7 +44,8 @@ bulk = [{'name': 'search',
                                 {'name': 'review-email', 'help': 'peer review email [Required for activation on the production network]'},
                                 {'name': 'note', 'help': 'activation note'},
                                 {'name': 'normal', 'help': 'not using bulk', 'action': 'store_true'},
-                                {'name': 'id', 'help': 'check progress based on bulk activate command'}],
+                                {'name': 'id', 'help': 'check progress based on bulk activate command', 'nargs': '+'},
+                                {'name': 'tag', 'help': 'tag output'}],
          'optional_arguments': [{'name': 'output', 'help': '.xlsx output file'}]},
         ]
 

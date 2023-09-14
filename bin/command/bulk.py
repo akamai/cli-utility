@@ -122,7 +122,6 @@ def fetch_status_activation(papi: PapiWrapper, id: int, logger) -> pd.DataFrame:
         df['bulkActivationId'] = id
         columns_to_extract.insert(0, 'bulkActivationId')
         columns_to_extract.append('activationId')
-        print()
         activation_df = df[columns_to_extract].copy()
     return activation_df
 
@@ -401,11 +400,14 @@ def bulk_activate(args, account_folder, logger):
                         row['propertyId'], row['activationId'], int(row['new_version']))), axis=1)
 
                     columns = ['propertyName', 'propertyId', 'base_version', 'new_version',
-                            'activationId', 'network', 'activation_status']
+                               'activationId', 'network', 'activation_status']
 
                     sheet = {}
                     sheet['activation'] = df[columns]
-                    filepath = f'{account_folder}/bulk/bulk_activation_{args.network}.xlsx'
+                    if args.tag:
+                        filepath = f'{account_folder}/bulk/bulk_{args.tag}_activation_{args.network}_normal.xlsx'
+                    else:
+                        filepath = f'{account_folder}/bulk/bulk_activation_{args.network}_normal.xlsx'
                     files.write_xlsx(filepath, sheet)
                     files.open_excel_application(filepath, False, df[columns])
 
@@ -438,9 +440,8 @@ def bulk_activate(args, account_folder, logger):
                 activation = fetch_status_activation(papi, id, logger=logger)
         else:
             df[['network', 'activation_status']] = df.parallel_apply(lambda row: pd.Series(papi.activation_status(
-                        row['propertyId'], row['activationId'], int(row['new_version']))), axis=1)
-            columns = ['propertyName', 'propertyId', 'base_version', 'new_version',
-                       'activationId', 'network', 'activation_status']
+                                                                     row['propertyId'], row['activationId'], int(row['new_version']))), axis=1)
+            columns = ['propertyName', 'propertyId', 'base_version', 'new_version', 'activationId', 'network', 'activation_status']
             with yaspin(Spinners.star, timer=True) as sp:
                 row_count = df.query("activation_status == 'ACTIVE'").shape[0]
                 count = 0
@@ -453,8 +454,8 @@ def bulk_activate(args, account_folder, logger):
                     print()
                     logger.critical(count)
                     print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
-                    df[['network', 'activation_status']] = df.parallel_apply(lambda row: pd.Series(papi.activation_status(
-                        row['propertyId'], row['activationId'], row['new_version'])), axis=1)
+                    df[['network', 'activation_status']] = df.parallel_apply(lambda row: pd.Series(
+                        papi.activation_status(row['propertyId'], row['activationId'], row['new_version'])), axis=1)
                     row_count = df.query("activation_status == 'ACTIVE'").shape[0]
 
             print()
@@ -463,8 +464,8 @@ def bulk_activate(args, account_folder, logger):
 
     total_properties = activation.shape[0]
     row_count = activation.query("(taskStatus == 'COMPLETE') | (taskStatus == 'SUBMISSION_ERROR')").shape[0]
-    columns = ['bulkActivationId', 'propertyName', 'propertyId', 'propertyVersion', 'network',
-               'activationStatus', 'taskStatus', 'activationId']
+    columns = ['bulkActivationId', 'propertyId', 'propertyVersion', 'network',
+               'activationStatus', 'taskStatus', 'activationId', 'propertyName']
     count = 0
     while row_count < total_properties and not activation.empty:
         if args.network == 'staging':
@@ -479,8 +480,8 @@ def bulk_activate(args, account_folder, logger):
         row_count = activation.query("(taskStatus == 'COMPLETE') | (taskStatus == 'SUBMISSION_ERROR')").shape[0]
 
     activation = activation.rename(columns={'propertyVersion': 'new_version'})
-    columns = ['bulkActivationId', 'propertyName', 'propertyId', 'new_version', 'network',
-               'activationId', 'activation_status']
+    columns = ['bulkActivationId', 'propertyId', 'new_version', 'network',
+               'activationId', 'activation_status', 'propertyName']
     activation[['network', 'activation_status']] = activation.parallel_apply(lambda row: pd.Series(papi.activation_status(
         row['propertyId'], row['activationId'], row['new_version'])), axis=1)
     row_count = activation.query("activation_status == 'ACTIVE'").shape[0]
@@ -504,7 +505,10 @@ def bulk_activate(args, account_folder, logger):
     if not activation.empty:
         sheet = {}
         sheet['activation'] = activation[columns]
-        filepath = f'{account_folder}/bulk/bulk_activation_{id}.xlsx'
+        if args.tag:
+            filepath = f'{account_folder}/bulk/bulk_{args.tag}_activation_{args.network}_{id}.xlsx'
+        else:
+            filepath = f'{account_folder}/bulk/bulk_activation_{args.network}_{id}.xlsx'
         files.write_xlsx(filepath, sheet)
         files.open_excel_application(filepath, False, activation[columns])
     return 0
