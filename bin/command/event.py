@@ -111,13 +111,12 @@ def create_event(args, logger):
     account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
     event = ec.EventCenterWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
     resp = event.create_event(payload)
-    if resp.status_code == 200:
+    if resp.ok == 200:
         logger.debug(resp.json()[0].keys())
         event_name = resp.json()[0]['name']
         event_id = resp.json()[0]['id']
-        logger.info(f'Event: {event_name} [{event_id}] created successfully')
+        logger.critical(f'Event: {event_name} [{event_id}] created successfully')
     else:
-        # print_json(data=resp.json())
-        # print_json(data=payload)
         logger.error(resp.status_code)
-        logger.error(resp.text)
+        print_json(data=payload)
+        print_json(data=resp.json())
