@@ -388,15 +388,26 @@ def bulk_create(args, account_folder, logger):
 
 def bulk_update(args, account_folder, logger):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+    pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
     version_note = args.version_note
     if args.id:
         # review result of the bulk update
-        pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
         bulk_patch_id = int(args.id)
         update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
         update_df = update_df.sort_values(by=['status', 'propertyName'])
         update_df = update_df.reset_index(drop=True)
         print(tabulate(update_df, headers=update_df.columns, tablefmt='simple', numalign='center'))
+
+        if update_df.empty:
+            sheet = {}
+            sheet['update'] = update_df
+            if args.tag:
+                filepath = f'{account_folder}/bulk/bulk_{args.tag}_update_{bulk_patch_id}.xlsx'
+            else:
+                filepath = f'{account_folder}/bulk/bulk_update_{bulk_patch_id}.xlsx'
+            files.write_xlsx(filepath, sheet)
+            files.open_excel_application(filepath, True, update_df)
+
         sys.exit()
 
     if args.input_excel:
@@ -410,10 +421,9 @@ def bulk_update(args, account_folder, logger):
         df['matchLocations'] = df['matchLocations'].apply(ast.literal_eval)
         load_columns = ['propertyId', 'propertyName', 'new_version', 'matchLocations']
         print(tabulate(df[load_columns], headers=load_columns, tablefmt='simple', numalign='center'))
-        pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
+
         df['property_list'] = df.parallel_apply(lambda row: (row['propertyId'], row['new_version'], row['matchLocations']), axis=1)
         properties = df['property_list'].values.tolist()
-        logger.debug(properties)
         query = files.load_json(args.jsonpath)
         resp = papi.bulk_update_behavior(properties, query)
 
@@ -426,28 +436,21 @@ def bulk_update(args, account_folder, logger):
             logger.critical(f'Fetch_status_patch {bulk_patch_id=} {update_df.shape[0]=}')
             columns = ['bulkPatchId', 'patchPropertyId', 'url', 'status', 'patchPropertyVersion', 'propertyName']
             print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
-            sys.exit()
-    total_properties = update_df.shape[0]
-    row_count = update_df.query("(status == 'COMPLETE') | (status == 'SUBMISSION_ERROR')").shape[0]
-    columns = ['bulkPatchId', 'patchPropertyId', 'url', 'resp_status', 'status', 'patchPropertyVersion', 'propertyName']
 
-    while row_count < total_properties and not update_df.empty:
-        print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
-        update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
-        row_count = update_df.query("(status == 'COMPLETE') | (status == 'SUBMISSION_ERROR')").shape[0]
-        print()
+            logger.critical(f'\n>> run akamai onboard bulk update --id {bulk_patch_id} to change status of update')
 
-    print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
-
-    if update_df.empty:
-        sheet = {}
-        sheet['update'] = update_df
-        if args.tag:
-            filepath = f'{account_folder}/bulk/bulk_{args.tag}_update_{bulk_patch_id}.xlsx'
-        else:
-            filepath = f'{account_folder}/bulk/bulk_update_{bulk_patch_id}.xlsx'
-        files.write_xlsx(filepath, sheet)
-        files.open_excel_application(filepath, True, update_df)
+            '''
+            # Too slow let using run bulk update --id instead
+            total_properties = update_df.shape[0]
+            row_count = update_df.query("(status == 'COMPLETE') | (status == 'SUBMISSION_ERROR')").shape[0]
+            columns = ['bulkPatchId', 'patchPropertyId', 'url', 'resp_status', 'status', 'patchPropertyVersion', 'propertyName']
+            while row_count < total_properties and not update_df.empty:
+                print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
+                update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
+                row_count = update_df.query("(status == 'COMPLETE') | (status == 'SUBMISSION_ERROR')").shape[0]
+                print()
+            print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
+            '''
 
 
 def bulk_activate(args, account_folder, logger):
