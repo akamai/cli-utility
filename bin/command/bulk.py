@@ -22,8 +22,11 @@ def patch_version_result(data: list, extract_columns: list) -> list:
     return [{col: version.get(col) for col in extract_columns} for version in data]
 
 
-def remove_string_from_list(object: list, string_to_remove: str):
-    return [item.replace(string_to_remove, '') if isinstance(item, str) else item for item in object]
+def remove_string_from_list(object: list, string_to_remove: str, logger: None):
+    if isinstance(object, list):
+        return [item.replace(string_to_remove, '') if isinstance(item, str) else item for item in object]
+    else:
+        logger.critical(f'Invalid data type.  Expect list, got {type(object)}')
 
 
 def check_filter_condition(args, df, logger) -> pd.DataFrame:
@@ -190,7 +193,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
         if not args.contract_id and not args.group_id:
             # lookup whole account
             resp = papi.bulk_search(query)
-            if resp.ok == 200:
+            if resp.ok:
                 bulk_result = resp.json()
                 df = pd.DataFrame(bulk_result['results'])
                 bulk_search_id = bulk_result['bulkSearchId']
@@ -219,11 +222,11 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
 
         result_df.loc[:, 'productId'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'productId'), axis=1)
         result_df.loc[:, 'ruleFormat'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'ruleFormat'), axis=1)
-        result_df.loc[:, 'matchLocations'] = df['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode'))
+        result_df.loc[:, 'matchLocations'] = df['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode', logger=logger))
         result_df = result_df.sort_values(by=['env', 'groupId', 'propertyName'])
 
         # print(tabulate(result_df, headers=result_df.columns, tablefmt='simple', numalign='center'))
-        logger.info(result_df.dtypes)
+        logger.debug(result_df.dtypes)
         result_df = result_df.reset_index(drop=True)
 
     columns = ['bulkSearchId', 'contractId', 'groupId', 'groupName', 'propertyId', 'env',
@@ -246,6 +249,8 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
         filepath = f'{account_folder}/bulk/bulk_search_{bulk_search_id}.xlsx'
     else:
         filepath = f'{account_folder}/bulk/bulk_search.xlsx'
+
+    logger.warning(filepath)
     files.write_xlsx(filepath, sheet)
     files.open_excel_application(filepath, show=True, df=result_df[columns])
 
@@ -263,9 +268,10 @@ def bulk_create(args, account_folder, logger):
     pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
     if args.id:
         # only show result from bulk create call
+        # !!! this option doesn't provide matchLocations, so output cannot be used for bulk update !!!
         bulk_create_id = int(args.id)
         resp = papi.list_bulk_create(bulk_create_id)
-        if resp.status_code == 200:
+        if resp.ok:
             bulk_create_result = resp.json()
             df = pd.DataFrame(bulk_create_result['createPropertyVersions'])
             df['bulkCreateId'] = bulk_create_id
@@ -286,6 +292,7 @@ def bulk_create(args, account_folder, logger):
     elif args.input_excel:
         df = pd.read_excel(args.input_excel)
         df['propertyId'] = df['propertyId'].astype(str)
+        df['matchLocations'] = df['matchLocations'].apply(ast.literal_eval)  # convert string to list
         if df.empty:
             sys.exit(logger.error('Properties not found'))
     elif args.bulksearchid:
@@ -312,7 +319,6 @@ def bulk_create(args, account_folder, logger):
         if 'groupId' in result_df.columns:
             columns.insert(1, 'groupId')
         print()
-        logger.info('xxxx')
         print(tabulate(result_df[columns], headers=columns, tablefmt='simple', numalign='center'))
 
     result_df['property_list'] = result_df.parallel_apply(lambda row: (row['propertyId'], row['propertyVersion']), axis=1)
@@ -342,8 +348,11 @@ def bulk_create(args, account_folder, logger):
     logger.debug(f'create_df \n {create_df.dtypes}')
 
     merge = pd.merge(result_df, create_df, on='propertyId')
+    logger.info(merge.dtypes)
+    logger.info(f'\n{merge}')
+
     try:
-        merge['matchLocations'] = merge['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode'))
+        merge['matchLocations'] = merge['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode', logger))
         selected_columns = ['bulkCreateId', 'env', 'propertyName', 'propertyId', 'base_version',
                         'new_version',
                         'createVersionStatus', 'matchLocations']
