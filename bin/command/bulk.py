@@ -135,18 +135,20 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     all_df = []
     if not args.id and not args.jsonpath:
-        sys.exit(logger.error('please provide either --bulk-id or --jsonpath'))
+        sys.exit(logger.error('please provide either --id or --jsonpath'))
     pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
     if args.id:
         bulk_search_id = int(args.id)
         resp = papi.list_bulk_search(bulk_search_id)
-        if resp.status_code != 200:
+        if not resp.ok:
             sys.exit(logger.error(f'bulkSearchId {bulk_search_id} not found'))
         else:
-            bulk_result = resp.json()
-            bulk_search_id = bulk_result['bulkSearchId']
+            bulk_search_result = resp.json()
+            logger.info('bulkSearchQuery:')
+            print_json(data=bulk_search_result['bulkSearchQuery'])
+            bulk_search_id = bulk_search_result['bulkSearchId']
             logger.critical(f'bulkSearchId: {bulk_search_id}')
-            df = pd.DataFrame(bulk_result['results'])
+            df = pd.DataFrame(bulk_search_result['results'])
             df['bulkSearchId'] = bulk_search_id
             df['contractId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'contractId'), axis=1)
             df['groupId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'groupId'), axis=1)
@@ -159,7 +161,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
         if args.contract_id:
             papi.contract_id = args.contract_id
             resp = papi.bulk_search(query)
-            if resp.ok == 200:
+            if resp.ok:
                 bulk_result = resp.json()
                 df = pd.DataFrame(bulk_result['results'])
                 bulk_search_id = bulk_result['bulkSearchId']
@@ -183,7 +185,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
                         df['bulkSearchId'] = bulk_search_id
                         df.loc[:, 'contractId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'contractId'), axis=1)
                         df['groupId'] = group_id
-                        logger.warning(f'{group_id:<30} {df.shape[0]:<5} properties\n')
+                        logger.debug(f'{group_id:<30} {df.shape[0]:<5} properties\n')
                         all_df.append(df)
                 else:
                     logger.debug(f'{resp.status_code} {resp.url}')
@@ -222,10 +224,11 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
 
         result_df.loc[:, 'productId'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'productId'), axis=1)
         result_df.loc[:, 'ruleFormat'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'ruleFormat'), axis=1)
+
+        # TODO need to make this fleixble and not hardcode '/options/strictMode'
         result_df.loc[:, 'matchLocations'] = df['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode', logger=logger))
         result_df = result_df.sort_values(by=['env', 'groupId', 'propertyName'])
 
-        # print(tabulate(result_df, headers=result_df.columns, tablefmt='simple', numalign='center'))
         logger.debug(result_df.dtypes)
         result_df = result_df.reset_index(drop=True)
 
@@ -250,7 +253,6 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
     else:
         filepath = f'{account_folder}/bulk/bulk_search.xlsx'
 
-    logger.warning(filepath)
     files.write_xlsx(filepath, sheet)
     files.open_excel_application(filepath, show=True, df=result_df[columns])
 
@@ -300,10 +302,12 @@ def bulk_create(args, account_folder, logger):
             sys.exit(logger.error('--version must be provided'))
         bulk_search_id = int(args.bulksearchid)
         resp = papi.list_bulk_search(bulk_search_id)
-        if resp.status_code != 200:
+        if not resp.ok:
             sys.exit(logger.error(resp.text))
         else:
             bulk_search_result = resp.json()
+            logger.info('bulkSearchQuery:')
+            print_json(data=bulk_search_result['bulkSearchQuery'])
             df = pd.DataFrame(bulk_search_result['results'])
             df['bulkSearchId'] = bulk_search_result['bulkSearchId']
             df.loc[:, 'env'] = df.parallel_apply(lambda row: papi.guestimate_env_type(row['propertyName']), axis=1)
@@ -348,14 +352,15 @@ def bulk_create(args, account_folder, logger):
     logger.debug(f'create_df \n {create_df.dtypes}')
 
     merge = pd.merge(result_df, create_df, on='propertyId')
-    logger.info(merge.dtypes)
-    logger.info(f'\n{merge}')
+    logger.debug(merge.dtypes)
+    logger.debug(f'\n{merge}')
 
     try:
+        # TODO need to make this fleixble and not hardcode '/options/strictMode'
         merge['matchLocations'] = merge['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode', logger))
         selected_columns = ['bulkCreateId', 'env', 'propertyName', 'propertyId', 'base_version',
-                        'new_version',
-                        'createVersionStatus', 'matchLocations']
+                            'new_version',
+                            'createVersionStatus', 'matchLocations']
     except:
         pass
 
