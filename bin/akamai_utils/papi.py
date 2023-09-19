@@ -423,6 +423,9 @@ class PapiWrapper(Papi):
     def property_url(self, asset_id: int, group_id: int) -> str:
         return f'https://control.akamai.com/apps/property-manager/#/property/{asset_id}?gid={group_id}'
 
+    def property_url_edit_version(self, asset_id: int, version: int, group_id: int) -> str:
+        return f'https://control.akamai.com/apps/property-manager/#/property-version/{asset_id}/{version}/edit?gid={group_id}'
+
     def build_propertyname_with_version(self, row) -> str:
         property_name = row.propertyName
         production_version = int(row.productionVersion) if not pd.isna(row.productionVersion) else None

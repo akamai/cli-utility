@@ -97,7 +97,7 @@ def fetch_status_patch(papi: PapiWrapper, id: int, version_note: str, logger) ->
         update_df['ruleFormat'] = update_df.parallel_apply(lambda row: papi.get_property_version_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'ruleFormat'), axis=1)
         update_df['assetId'] = update_df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'assetId'), axis=1)
         update_df['groupId'] = update_df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'groupId'), axis=1)
-        update_df['url'] = update_df.parallel_apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
+        update_df['url'] = update_df.parallel_apply(lambda row: papi.property_url_edit_version(row['assetId'], row['patchPropertyVersion'], row['groupId']), axis=1)
         columns_to_extract = update_df.columns.tolist()
         columns_to_extract.extend(['ruleFormat', 'url'])
         if version_note:
@@ -217,7 +217,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
         sys.exit(logger.error('no property found with requested conditions'))
     else:
         result_df.loc[:, 'groupName'] = result_df.parallel_apply(lambda row: papi.get_group_name(row['groupId']), axis=1)
-        result_df.loc[:, 'propertyURL'] = result_df.parallel_apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
+        result_df.loc[:, 'propertyURL'] = result_df.parallel_apply(lambda row: papi.property_url_edit_version(row['assetId'], row['propertyVersion'], row['groupId']), axis=1)
         result_df.loc[:, 'propertyName(hyperlink)'] = result_df.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['propertyURL'], row['propertyName']), axis=1)
 
         result_df.loc[:, 'productId'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'productId'), axis=1)
