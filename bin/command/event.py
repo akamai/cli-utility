@@ -14,7 +14,7 @@ from utils import files
 def list_events(args, logger):
     event = ec.EventCenterWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc)
     resp = event.list_events()
-    if resp.status_code != 200:
+    if not resp.ok:
         logger.error(resp.status_code)
         logger.error(resp.json())
     else:
@@ -42,11 +42,11 @@ def list_events(args, logger):
 def remove_event(args, logger):
     event = ec.EventCenterWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc)
     for id in args.id:
-        x = event.remove_event(id)
-        if x.status_code == 204:
+        remove_resp = event.remove_event(id)
+        if remove_resp.ok:
             logger.info(f'{id} removed successfully')
         else:
-            print_json(data=x.json())
+            print_json(data=remove_resp.json())
 
 
 def get_event(args, account_folder, logger):
@@ -58,18 +58,19 @@ def get_event(args, account_folder, logger):
     all_data = []
     for id in args.id:
         resp = event.get_event(id)
-        if resp.status_code == 200:
+        if not resp.ok:
+            logger.error(resp.text)
+        else:
             df = pd.DataFrame(resp.json()['objects'])
             df['eventcenter_id'] = resp.json()['id']
             df['event_name'] = resp.json()['name']
             all_data.append(df)
-        else:
-            logger.error(resp.text)
+
     df = pd.concat(all_data)
 
     df['cpcode_name'] = df['cpCode'].parallel_apply(lambda x: cpc.get_cpcode_name(x))
     df['cpCode'] = df['cpCode'].astype(str)
-    df = df.sort_values(by='cpcode_name')
+    df = df.sort_values(by=['event_name', 'cpcode_name'], key=lambda x: x.str.lower())
     df = df.reset_index(drop=True)
     print()
     columns = ['eventcenter_id', 'event_name', 'cpCode', 'cpcode_name']
@@ -111,12 +112,14 @@ def create_event(args, logger):
     account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
     event = ec.EventCenterWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
     resp = event.create_event(payload)
-    if resp.ok == 200:
+    if resp.ok:
         logger.debug(resp.json()[0].keys())
         event_name = resp.json()[0]['name']
         event_id = resp.json()[0]['id']
         logger.critical(f'Event: {event_name} [{event_id}] created successfully')
     else:
         logger.error(resp.status_code)
+        logger.info('Payload:-')
         print_json(data=payload)
+        logger.info('Response:-')
         print_json(data=resp.json())
