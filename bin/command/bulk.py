@@ -389,7 +389,7 @@ def bulk_create(args, account_folder, logger):
 def bulk_update(args, account_folder, logger):
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
-    version_note = args.version_note
+    version_note = args.note
     if args.id:
         # review result of the bulk update
         bulk_patch_id = int(args.id)
