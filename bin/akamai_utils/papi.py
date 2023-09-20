@@ -163,6 +163,29 @@ class PapiWrapper(Papi):
         self.logger.critical(f'bulkActivationId: {activation_id}')
         return resp
 
+    def bulk_add_rule(self, property: list[str, int], patch_json: dict):
+        resp = super().bulk_add_rule(property, patch_json)
+        if not resp.ok:
+            self.logger.error(print_json(data=resp.json()))
+        else:
+            return_url = resp.json()['bulkPatchLink']
+            bulk_id = int(return_url.split('?')[0].split('/')[-1])
+            if bulk_id:
+                count = 0
+                status = 'initial'
+                self.logger.critical(f'bulkPatchId: {bulk_id}')
+                while (status != 'COMPLETE'):
+                    count += 1
+                    _resp = super().list_bulk_patch(bulk_id)
+                    status = _resp.json()['bulkPatchStatus']
+                    if count > 5:
+                        continue
+                resp = _resp
+            else:
+                self.logger.error('bulk_id not found in the URL')
+
+        return resp
+
     # GROUPS
     def group_url(self, group_id: int) -> str:
         return f'https://control.akamai.com/apps/property-manager/#/groups/{group_id}/properties'
@@ -457,6 +480,7 @@ class PapiWrapper(Papi):
         return super().get_property_version_hostnames(property_id, version)
 
     def get_property_version_full_detail(self, property_id: int, version: int, dict_key: str | None = None):
+        self.logger.debug(f'{property_id} {version}')
         data = super().get_property_version_full_detail(property_id, version)
         return data[dict_key]
 

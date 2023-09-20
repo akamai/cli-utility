@@ -195,6 +195,21 @@ class Papi(AkamaiSession):
         resp = self.session.post(url, json=payload, params=self.build_query_params(), headers=self.headers)
         return resp
 
+    def bulk_add_rule(self, properties: list[str, int], patch_json: dict):
+        url = '/bulk/rules-patch-requests'
+        url = self.form_url(f'{self.MODULE}{url}')
+        all_properties = []
+        for property in properties:
+            prop = {}
+            prop['propertyId'] = f'prp_{property[0]}'
+            prop['propertyVersion'] = property[1]
+            prop['patches'] = patch_json
+            all_properties.append(prop)
+        payload = {'patchPropertyVersions': all_properties}
+        self.logger.warning(payload)
+        resp = self.session.post(url, json=payload, params=self.build_query_params(), headers=self.headers)
+        return resp
+
     # GROUPS
     def get_groups(self) -> tuple:
         response = self.session.get(f'{self.MODULE}/groups', params=self.params, headers=self.headers)
