@@ -362,8 +362,8 @@ class Papi(AkamaiSession):
         '''
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}')
         response = self.session.get(url, headers=self.headers)
-        self.logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
-        if response.status_code == 200:
+        self.logger.info(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
+        if response.ok:
             propertyName = response.json()['propertyName']
             assetId = response.json()['assetId']
             gid = response.json()['groupId']
@@ -497,8 +497,7 @@ class Papi(AkamaiSession):
 
         ruletree_response = self.session.get(url, headers=self.headers)
         self.logger.debug(f'{urlparse(resp.url).path:<30} {resp.status_code}')
-        if resp.status_code == 200:
-
+        if resp.ok:
             self.property_name = ruletree_response.json()['propertyName']
             # https://github.com/psf/requests/issues/1380
             # rate_limiting_dict = json.loads(response.headers)
@@ -507,31 +506,13 @@ class Papi(AkamaiSession):
     # RULETREE
     def property_ruletree(self, property_id: int, version: int, remove_tags: list | None = None):
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
-        try:
-            self.contract_id = self.get_property_version_full_detail(property_id, version, 'contractId')
-        except:
-            try:
-                self.contract_id = self.get_property_version_full_detail(property_id, version)['contractId']
-            except:
-                version_json = self.get_property_version_detail(property_id, version)
-                if version_json['status'] == 404:
-                    return version_json['status'], version_json
-        try:
-            self.group_id = self.get_property_version_full_detail(property_id, version, 'groupId')
-        except:
-            self.group_id = self.get_property_version_full_detail(property_id, version)['groupId']
-
-        self.logger.debug(f'{self.contract_id=} {self.group_id=}')
-
-        params = {'contractId': self.contract_id,
-                  'groupId': self.group_id,
+        params = {
                   'validateRules': 'true',
                   'validateMode': 'full',
                  }
-
         resp = self.session.get(url, headers=self.headers, params=params)
 
-        if resp.status_code == 200:
+        if resp.ok:
             # tags we are not interested to compare
             self.property_name = resp.json()['propertyName']
             ignore_keys = ['etag', 'errors', 'warnings', 'ruleFormat', 'comments',
@@ -621,7 +602,7 @@ class Papi(AkamaiSession):
     def activation_status(self, property_id: int, activation_id: int):
         url = f'{self.MODULE}/properties/{property_id}/activations/{activation_id}'
         resp = self.session.get(self.form_url(url), headers=self.headers)
-        if resp.status_code == 200:
+        if resp.ok:
             return 200, resp.json()['activations']['items']
         else:
             return resp.status_code, resp.json()

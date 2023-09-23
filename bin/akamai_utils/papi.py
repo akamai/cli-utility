@@ -119,7 +119,9 @@ class PapiWrapper(Papi):
     def bulk_update_behavior(self, property: list, patch_json: dict):
         resp = super().bulk_update_behavior(property, patch_json)
         self.logger.debug(resp.status_code)
-        if resp.status_code == 202:
+        if not resp.ok:
+            self.logger.error(print_json(data=resp.json()))
+        else:
             return_url = resp.json()['bulkPatchLink']
             bulk_id = int(return_url.split('?')[0].split('/')[-1])
             if bulk_id:
@@ -134,9 +136,7 @@ class PapiWrapper(Papi):
                 resp = _resp
             else:
                 self.logger.error('bulk_id not found in the URL')
-        else:
-            self.logger.error(print_json(data=resp.json()))
-            print_json(data=_resp.json())
+
         self.logger.critical(f'bulkPatchId: {bulk_id}')
         return resp
 
@@ -468,13 +468,14 @@ class PapiWrapper(Papi):
         df['hostname_count'] = df['hostname'].str.len()
         '''
         data = super().get_property_hostnames(property_id)
-        df = pd.DataFrame(data)
-
-        if 'cnameFrom' not in df.columns:
-            # logger.info(f'propertyId {property_id} without cName')
-            return []
-        else:
-            return df['cnameFrom'].unique().tolist()
+        if len(data) > 0:
+            df = pd.DataFrame(data)
+            if 'cnameFrom' not in df.columns:
+                # logger.info(f'propertyId {property_id} without cName')
+                return []
+            else:
+                return df['cnameFrom'].unique().tolist()
+        return []
 
     def get_property_version_hostnames(self, property_id: int, version: int) -> dict:
         return super().get_property_version_hostnames(property_id, version)
@@ -505,9 +506,10 @@ class PapiWrapper(Papi):
             acc_url = f'https://control.akamai.com/apps/property-manager/#/property-version/{assetId}/{version}/edit?gid={gid}'
             self.logger.info(f'{propertyName:<40} {acc_url}')
         try:
+
             return detail['versions']['items'][0][dict_key]
         except:
-            # print_json(data=detail)
+            print_json(data=detail)
             return property_id
 
     def find_name_and_xml(self,
@@ -1252,8 +1254,8 @@ class PapiWrapper(Papi):
             status, response = super().activation_status(property_id, activation_id)
             self.logger.debug(f'{activation_id=} {version=} {property_id=} {status=}')
             if response[0]['propertyVersion'] == version:
-                return response[0]['network'], response[0]['status']
-        return '', ''
+                return (response[0]['network'], response[0]['status'])
+        return ('', '')
 
     # CUSTOM BEHAVIOR
     def list_custom_behaviors(self) -> tuple[int, list[str]]:
