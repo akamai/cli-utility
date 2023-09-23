@@ -403,11 +403,12 @@ def bulk_update(args, account_folder, logger):
         update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
         update_df = update_df.sort_values(by=['status', 'propertyName'])
         update_df = update_df.reset_index(drop=True)
-        print(tabulate(update_df, headers=update_df.columns, tablefmt='simple', numalign='center'))
+        print()
+        columns = ['bulkPatchId', 'patchPropertyId', 'propertyName', 'patchPropertyVersion', 'url', 'status']
+        print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
 
-        if update_df.empty:
-            sheet = {}
-            sheet['update'] = update_df
+        if not update_df.empty:
+            sheet = {'update': update_df}
             if args.tag:
                 filepath = f'{account_folder}/bulk/bulk_{args.tag}_update_{bulk_patch_id}.xlsx'
             else:
@@ -426,8 +427,8 @@ def bulk_update(args, account_folder, logger):
             sys.exit(logger.error(err, exc_info=False))
 
         df['matchLocations'] = df['matchLocations'].apply(ast.literal_eval)
-        load_columns = ['propertyId', 'propertyName', 'new_version', 'matchLocations']
-        print(tabulate(df[load_columns], headers=load_columns, tablefmt='simple', numalign='center'))
+        # load_columns = ['propertyId', 'propertyName', 'new_version', 'matchLocations']
+        # print(tabulate(df[load_columns], headers=load_columns, tablefmt='simple', numalign='center'))
 
         df['property_list'] = df.parallel_apply(lambda row: (row['propertyId'], row['new_version'], row['matchLocations']), axis=1)
         properties = df['property_list'].values.tolist()
