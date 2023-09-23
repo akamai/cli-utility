@@ -74,8 +74,7 @@ def check_filter_condition(args, df, logger) -> pd.DataFrame:
 
 def fetch_status_patch(papi: PapiWrapper, id: int, version_note: str, logger) -> pd.DataFrame:
     resp = papi.list_bulk_patch(id)
-    # print_json(data=resp.json())
-    if resp.status_code != 200:
+    if not resp.ok:
         logger.critical(resp.status_code)
         print_json(data=resp.json())
     else:
@@ -114,7 +113,7 @@ def fetch_status_patch(papi: PapiWrapper, id: int, version_note: str, logger) ->
 
 def fetch_status_activation(papi: PapiWrapper, id: int, logger) -> pd.DataFrame:
     resp = papi.list_bulk_activation(id)
-    if resp.status_code != 200:
+    if not resp.ok:
         logger.critical(resp.status_code)
     else:
         # print_json(data=resp.json())
@@ -437,7 +436,7 @@ def bulk_update(args, account_folder, logger):
             columns = ['bulkPatchId', 'patchPropertyId', 'url', 'status', 'patchPropertyVersion', 'propertyName']
             print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
 
-            logger.critical(f'\n>> run akamai onboard bulk update --id {bulk_patch_id} to change status of update')
+            logger.critical(f'\n>> run akamai util bulk update --id {bulk_patch_id} to change status of update')
 
             '''
             # Too slow let using run bulk update --id instead
@@ -538,7 +537,7 @@ def bulk_activate(args, account_folder, logger):
                 else:
                     activation_id = int(resp.json()['bulkActivationId'])
                     activation = fetch_status_activation(papi, activation_id, logger=logger)
-                    logger.critical(f'\n>> run akamai onboard bulk activation --id {activation_id} to check progress of activation status')
+                    logger.critical(f'\n>> run akamai util bulk activation --id {activation_id} to check progress of activation status')
         else:
             df[['network', 'activation_status']] = df.parallel_apply(lambda row: pd.Series(papi.activation_status(
                                                                      row['propertyId'], row['activationId'], int(row['new_version']))), axis=1)
