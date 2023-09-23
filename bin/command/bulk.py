@@ -126,7 +126,15 @@ def fetch_status_activation(papi: PapiWrapper, id: int, logger) -> pd.DataFrame:
         df['bulkActivationId'] = id
         columns_to_extract.insert(0, 'bulkActivationId')
         columns_to_extract.append('activationId')
+        columns_to_extract.remove('propertyActivationsLink')
         activation_df = df[columns_to_extract].copy()
+        activation_df.loc[:, 'assetId'] = activation_df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'assetId'), axis=1)
+        activation_df.loc[:, 'groupId'] = activation_df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'groupId'), axis=1)
+        # show summary page instead of edit version page
+        activation_df.loc[:, 'url'] = activation_df.parallel_apply(lambda row: papi.property_url(row['assetId'], row['groupId']), axis=1)
+        activation_df.loc[:, 'activation_status'] = activation_df.parallel_apply(lambda row: papi.activation_status(row['propertyId'], row['activationId'], row['propertyVersion'])[1]
+                                                                   if row['activationId'] else '',
+                                                                   axis=1)
     return activation_df
 
 
@@ -466,14 +474,15 @@ def bulk_activate(args, account_folder, logger):
             sys.exit(logger.info('found nothing'))
         else:
             activation = pd.concat(combined_activation_result)
-            columns = activation.columns.tolist()
-            columns.remove('fatalError')
-        activation = activation.sort_values(by=['fatalError', 'propertyName'], ascending=[False, True])
+        activation = activation.sort_values(by=['taskStatus', 'activation_status', 'propertyName'], ascending=[False, False, True])
         activation = activation.reset_index(drop=True)
         print()
+        columns = ['bulkActivationId', 'activationId', 'activation_status',
+                   'propertyName', 'propertyId', 'propertyVersion',
+                   'network', 'taskStatus', 'url']
         print(tabulate(activation[columns], headers=columns, tablefmt='simple', numalign='center'))
 
-        summary = activation.groupby(['bulkActivationId', 'network', 'taskStatus'])[['propertyId', 'fatalError']].count()
+        summary = activation.groupby(['bulkActivationId', 'network', 'taskStatus', 'activation_status'])[['propertyId']].count()
         logger.info(f'\n\n{summary}')
         sys.exit()
     elif args.input_excel:
