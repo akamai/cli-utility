@@ -329,14 +329,14 @@ def bulk_create(args, account_folder, logger):
                     'stagingStatus', 'isLatest', 'matchLocations', 'bulkSearchId']
         if 'groupId' in result_df.columns:
             columns.insert(1, 'groupId')
-        print()
-        print(tabulate(result_df[columns], headers=columns, tablefmt='simple', numalign='center'))
+        # print()
+        # print(tabulate(result_df[columns], headers=columns, tablefmt='simple', numalign='center'))
 
     result_df['property_list'] = result_df.parallel_apply(lambda row: (row['propertyId'], row['propertyVersion']), axis=1)
     result_df = result_df.rename(columns={'propertyVersion': 'old_version'})
     print()
     logger.warning('Rename column propertyVersion to old_version')
-    print(tabulate(result_df, headers=result_df.columns, tablefmt='simple', numalign='center'))
+    # print(tabulate(result_df, headers=result_df.columns, tablefmt='simple', numalign='center'))
     properties = result_df['property_list'].values.tolist()
     logger.debug(properties)
 
@@ -348,7 +348,7 @@ def bulk_create(args, account_folder, logger):
     create_df = pd.DataFrame(create_resp.json()['createPropertyVersions'])
     create_df['bulkCreateId'] = bulk_create_id
 
-    print(tabulate(create_df, headers=create_df.columns, tablefmt='simple', numalign='center'))
+    # print(tabulate(create_df, headers=create_df.columns, tablefmt='simple', numalign='center'))
     create_df = create_df.rename(columns={'createFromVersion': 'base_version'})
     try:
         create_df = create_df.rename(columns={'propertyVersion': 'new_version'})
