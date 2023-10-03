@@ -73,18 +73,19 @@ class Appsec(AkamaiSession):
         self.headers['Cookie'] = f"AKASSO={self.cookies['AKASSO']}; XSRF-TOKEN={self.cookies['XSRF-TOKEN']}; AKATOKEN={self.cookies['AKATOKEN']};"
 
         response = self.session.get(url, headers=self.headers)
-        if response.status_code == 200:
+        if response.ok:
             filepaths = {}
+            directory = 'output/0_diff/xml/'
             portalWaf_str = response.json()['portalWaf']
 
-            filepath = f'output/diff/xml/{self.config_id}_{config_name}_portalWaf_v{version}.xml'
-            filepaths['portalWaf'] = f'output/diff/xml/{self.config_id}_{config_name}_portalWaf_v{version}.xml'
+            filepath = f'{directory}{self.config_id}_{config_name}_portalWaf_v{version}.xml'
+            filepaths['portalWaf'] = f'{directory}{self.config_id}_{config_name}_portalWaf_v{version}.xml'
             with open(filepath, 'w') as f:
                 f.write(portalWaf_str)
 
             wafAfter_str = response.json()['wafAfter']
-            filepath = f'output/diff/xml/{self.config_id}_{config_name}_wafAfter_v{version}.xml'
-            filepaths['wafAfter'] = f'output/diff/xml/{self.config_id}_{config_name}_wafAfter_v{version}.xml'
+            filepath = f'{directory}{self.config_id}_{config_name}_wafAfter_v{version}.xml'
+            filepaths['wafAfter'] = f'{directory}{self.config_id}_{config_name}_wafAfter_v{version}.xml'
             with open(filepath, 'w') as f:
                 f.write(wafAfter_str)
         elif response.status_code in [400, 401]:

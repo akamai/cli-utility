@@ -89,7 +89,7 @@ def compare_config(args, logger=None):
     appsec = a.AppsecWrapper(account_switch_key=args.account_switch_key, section=args.section, cookies=args.acc_cookies, logger=logger)
 
     if args.xml is True:
-        Path('output/o_diff/xml').mkdir(parents=True, exist_ok=True)
+        Path('output/0_diff/xml').mkdir(parents=True, exist_ok=True)
         papi.account_id = papi.get_account_id()
 
         # First check X-Xsrf-Token
