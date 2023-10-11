@@ -362,7 +362,7 @@ class Papi(AkamaiSession):
         '''
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}')
         response = self.session.get(url, headers=self.headers)
-        self.logger.info(f'Collecting properties version detail {urlparse(response.url).path:<30} {response.status_code}')
+        self.logger.debug(f'Collecting properties version detail {urlparse(response.url).path:<40} {response.status_code}')
         if response.ok:
             propertyName = response.json()['propertyName']
             assetId = response.json()['assetId']
