@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from akamai_api.identity_access import IdentityAccessManagement
 from pandarallel import pandarallel
+from rich import print_json
 from tabulate import tabulate
 from utils import files
 
@@ -52,7 +53,6 @@ def remove_and_store_substrings(row):
 
 
 def lookup_account(args, logger=None):
-
     if args.account and args.input:
         sys.exit(logger.error('Please provide either --account or --input, not both'))
 
@@ -145,6 +145,8 @@ def lookup_account(args, logger=None):
             columns = ['no.', 'Akamai_Account', 'Account_SwitchKey', 'Account_Type']
             df[['Akamai_Account', 'Account_Type']] = df.parallel_apply(remove_and_store_substrings, axis=1)
             df['Account(Hyperlink)'] = df.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['url_1'], row['Akamai_Account']), axis=1)
+            df['Account(Hyperlink)'] = df.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['url_1'], row['Akamai_Account']), axis=1)
+            df['sk'] = df.parallel_apply(lambda row: files.make_xlsx_hyperlink_to_external_link(row['url_1'], row['Account_SwitchKey']), axis=1)
 
             df = df.sort_values(by=['Akamai_Account', 'Account_Type'], key=lambda x: x.str.lower())
             df = df.reset_index(drop=True)
@@ -155,9 +157,65 @@ def lookup_account(args, logger=None):
             # logger.warning(f'\n{console_df}')
             print(tabulate(console_df, headers=['no.', 'Akamai_Account', 'Account_SwitchKey'], showindex=True, tablefmt='github'))
             df['Akamai_Account'] = df['Account(Hyperlink)']
+            df['Account_SwitchKey'] = df['sk']
 
             sheet = {}
             sheet['Account_SwitchKey'] = df[columns]
             filepath = 'account_switchkey_summary.xlsx'
             files.write_xlsx(filepath, sheet, freeze_column=3) if not df.empty else None
             files.open_excel_application(filepath, True, df[columns])
+
+
+def check_read_write_v1(access_levels):
+    return 'READ-WRITE' in [x['name'] for x in access_levels]
+
+
+def check_read_write_v3(access_levels):
+    return 'READ-WRITE' in access_levels
+
+
+def get_api_client(args, logger):
+    required = ['CPS',
+                'Property Manager (PAPI)',
+                'Edge Hostnames API (hapi)',
+                'CPcode and Reporting group (cprg)']
+    iam = IdentityAccessManagement(args.account_switch_key, args.section, logger=logger)
+    resp = iam.get_api_client()
+
+    if resp.ok:
+        access_token = resp.json()['accessToken']
+        resp_v1 = iam.access_apis_v1(access_token)
+
+        client_name = resp.json()['clientName']
+        resp_v3 = iam.access_apis_v3(client_name)
+
+        if not (resp_v1.ok and resp_v3.ok):
+            logger.error(print_json(data=resp_v1.json()))
+            logger.error(print_json(data=resp_v3.json()))
+            return False
+        else:
+            data_v1 = resp_v1.json()['authorization']['services']
+            df_v1 = pd.DataFrame(data_v1)
+            df_v1 = df_v1[df_v1['serviceName'].isin(required)].copy()
+            df_v1['RW'] = df_v1['grantScopes'].apply(check_read_write_v1)
+            all_true = df_v1['RW'].all()
+            cols = ['serviceName', 'grantScopes', 'RW']
+            logger.debug(f'{df_v1[cols]}')
+
+            data_v3 = resp_v3.json()
+            df_v3 = pd.DataFrame(data_v3)
+            df_v3 = df_v3[df_v3['apiName'].isin(required)].copy()
+            df_v3['RW'] = df_v3['accessLevels'].apply(check_read_write_v3)
+            cols = ['apiName', 'accessLevels', 'RW']
+            logger.debug(f'{df_v3[cols]}')
+
+    if len(df_v1) < len(df_v3):
+        apiName = df_v3['apiName'].values.tolist()
+        serviceName = df_v1['serviceName'].values.tolist()
+        diff = list(set(apiName) - set(serviceName))
+        print()
+        logger.error(f'Missing READ-WRITE to API named: {diff}')
+        return False
+    else:
+        logger.info('Valid API access')
+        return True

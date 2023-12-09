@@ -121,3 +121,20 @@ class IdentityAccessManagement(AkamaiSession):
             account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={self.account_id}&targetUrl='
         self.logger.warning(f'Akamai Control Center Homepage: {account_url}')
         return account
+
+    def get_api_client(self):
+        url = f'{self.MODULE}/api-clients/self'
+        resp = self.session.get(url, headers=self.headers)
+        return resp
+
+    def access_apis_v3(self, username: str):
+        url = f'{self.MODULE}/users/{username}/allowed-apis'
+        params = {'accountSwitchKey': self.account_switch_key,
+                   'clientType': 'USER_CLIENT'}
+        resp = self.session.get(url, headers=self.headers, params=params)
+        return resp
+
+    def access_apis_v1(self, access_token: str):
+        url = f'{self.base_url}/identity-management/v1/open-identities/tokens/{access_token}'
+        resp = self.session.get(url, headers=self.headers)
+        return resp

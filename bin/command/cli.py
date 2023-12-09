@@ -274,4 +274,5 @@ main_commands = [{'delivery': 'information detail about delivery configuration',
                                          {'name': 'input', 'help': '.txt file contains account key per line', 'required': False},
                                          {'name': 'xlsx', 'help': 'output to excel', 'action': 'store_true'},
                                          ]},
+                 {'self': 'verify api access'},
                 ]

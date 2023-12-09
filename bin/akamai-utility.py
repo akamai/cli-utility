@@ -30,7 +30,7 @@ if __name__ == '__main__':
     if args.command is None:
         sys.exit(logger.error('no valid command found'))
     else:
-        if args.command not in ['search', 'ruleformat', 'log']:
+        if args.command not in ['search', 'ruleformat', 'log', 'mpulse']:
             # display full account name
             if account_switch_key:
                 iam = IdentityAccessManagement(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
@@ -130,6 +130,9 @@ if __name__ == '__main__':
     if args.command == 'search':
         admin.lookup_account(args, logger)
 
-    if args.command not in ['search', 'ruleformat']:
+    if args.command == 'self':
+        admin.get_api_client(args, logger)
+
+    if args.command not in ['search', 'ruleformat', 'self']:
         end_time = lg.log_cli_timing(start_time)
         logger.info(end_time)
