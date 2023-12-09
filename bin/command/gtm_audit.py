@@ -1,12 +1,29 @@
 from __future__ import annotations
 
 import csv
+import ipaddress
 import sys
 
 import pandas as pd
 from akamai_api.gtm import GtmWrapper
 from rich import print_json
 from utils import files
+
+
+def get_nickname(x):
+    try:
+        return x[1]['nickname']
+    except (KeyError, IndexError):
+        return 0  #
+
+
+def validate_ip(x):
+    if pd.isna(x) or x == '0':
+        return None
+    try:
+        return ipaddress.ip_address(x)
+    except ValueError:
+        return None
 
 
 def audit(args, account_folder, logger):
@@ -38,6 +55,10 @@ def audit(args, account_folder, logger):
             df = pd.DataFrame(prop_dict)
             df['Domain'] = domain
             df['Properties'] = property_name
+
+            df['get_datacenter'] = df.apply(lambda row: gtm.get_datacenter(row['Domain'], row['datacenterId']), axis=1)
+            df['get_datacenter'] = df['get_datacenter'].apply(get_nickname)
+
             try:
                 df['Type'] = property[ind]['type']
             except:
@@ -47,8 +68,9 @@ def audit(args, account_folder, logger):
             combine_df.append(df)
 
     master_df = pd.concat(combine_df)
+    master_df['valid_ip'] = master_df['servers'].apply(validate_ip)
     sort_col_df = master_df[['Domain', 'Properties', 'Type', 'enabled',
-                             'weight', 'servers', 'name', 'handoutCName',
+                             'weight', 'servers', 'name', 'handoutCName', 'valid_ip'
                              ]]
     master_df = sort_col_df.sort_values(by=['Domain', 'Properties', 'weight', 'enabled'],
                                         ascending=[True, True, False, False],

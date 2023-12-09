@@ -43,6 +43,10 @@ class GtmWrapper(AkamaiSession):
         resp = self.session.delete(f'{self._base_url}/domains/{domain}/properties/{property}', params=self.params, headers=self.headers)
         return resp.status_code, resp.json()
 
+    def get_datacenter(self, domain: str, datacenter_id: int) -> tuple:
+        resp = self.session.get(f'{self._base_url}/domains/{domain}/datacenters/{datacenter_id}', params=self.params, headers=self.headers)
+        return resp.status_code, resp.json()
+
 
 if __name__ == '__main__':
     pass
