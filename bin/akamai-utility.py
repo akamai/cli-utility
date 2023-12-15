@@ -83,10 +83,12 @@ if __name__ == '__main__':
             bulk.bulk_search(args, account_folder, logger=logger)
         elif args.subcommand == 'create':
             bulk.bulk_create(args, account_folder, logger=logger)
-        elif args.subcommand == 'activate':
-            bulk.bulk_activate(args, account_folder, logger=logger)
         elif args.subcommand == 'update':
             bulk.bulk_update(args, account_folder, logger=logger)
+        elif args.subcommand == 'activate':
+            bulk.bulk_activate(args, account_folder, logger=logger)
+        elif args.subcommand == 'add':
+            bulk.bulk_add_behavior_default(args, account_folder, logger=logger)
 
     if args.command == 'certificate':
         ca.audit(args, account_folder, logger)

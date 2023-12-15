@@ -14,15 +14,18 @@ from typing import Dict
 from typing import Optional
 from typing import SupportsIndex
 
+import emojis
 import numpy as np
 import pandas as pd
 from akamai_api.papi import Papi
 from akamai_utils.cpcode import CpCodeWrapper
+from jsonpath_ng.ext import parse
 from pandarallel import pandarallel
 from pandas import DataFrame
 from rich import print_json
 from rich.console import Console
 from rich.syntax import Syntax
+from utils import _logging as lg
 from utils import dataframe
 from utils import files
 
@@ -68,29 +71,29 @@ class PapiWrapper(Papi):
 
     def bulk_search(self, query: dict):
         resp = super().bulk_search_properties(query)
-        if resp.status_code == 202:
+        if not resp.ok:
+            self.logger.error(print_json(data=resp.json()))
+        else:
             return_url = resp.json()['bulkSearchLink']
             pattern = r'\/papi\/v1\/bulk\/rules-search-requests\/(\d+)'
             match = re.search(pattern, return_url)
-            if match:
+            if match is None:
+                self.logger.error('bulk_id not found in the URL')
+            else:
                 bulk_id = match.group(1)
                 count = 0
                 status = 'initial'
                 while (status != 'COMPLETE'):
                     count += 1
                     _resp = super().list_bulk_search(bulk_id)
+                    # print_json(data=_resp.json())
                     status = _resp.json()['searchTargetStatus']
                     if count > 5:
                         continue
-                        self.logger.error('check --bulk-id later')
-                resp = _resp
-            else:
-                self.logger.error('bulk_id not found in the URL')
-        else:
-            self.logger.error(print_json(data=resp.json()))
 
-        self.logger.critical(f'bulkSearchId: {bulk_id}')
-        return resp
+            self.logger.critical(f'bulkSearchId: {bulk_id}')
+
+            return _resp
 
     def bulk_create_properties(self, property: list[str, int]):
         resp = super().bulk_create_properties(property)
@@ -434,7 +437,42 @@ class PapiWrapper(Papi):
         return super().property_version(json)
 
     def search_property_by_name(self, property_name: str) -> tuple[int, str]:
-        return super().search_property_by_name(property_name)
+
+        status_code, resp = super().search_property_by_name(property_name)
+        print_json(data=resp)
+        if status_code == 200:
+            try:
+                property_items = resp['versions']['items']
+                # print_json(data=property_items)
+                pid = property_items[0]['propertyId']
+                ver = property_items[0]['propertyVersion']
+                x = super().get_property_version_detail(pid, ver)
+                self.logger.debug(f'{pid} {ver} {x}')
+            except Exception as err:
+                self.logger.error(err)
+                self.logger.info(print_json(data=resp))
+
+            self.logger.debug(f'{property_name} {status_code} {property_items}')
+            if len(property_items) == 0:
+                self.logger.debug(f'Not found {property_name}')
+                return 400, f'Not found {property_name}'
+            else:
+                self.account_id = property_items[0]['accountId']
+                self.contract_id = property_items[0]['contractId']
+                self.asset_id = property_items[0]['assetId']
+                self.group_id = int(property_items[0]['groupId'])
+                self.property_id = int(property_items[0]['propertyId'])
+                return 200, property_items
+        elif status_code == 401:
+            self.logger.error(resp['title'])
+            sys.exit()
+        elif 'WAF deny rule IPBLOCK-BURST' in resp['detail']:
+            self.logger.error(resp['detail'])
+            lg.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)
+            sys.exit()
+        else:
+            self.logger.debug(f'{property_name:<40} {status_code}')
+            return resp.status_code, resp.json()
 
     def search_property_by_hostname(self, hostname: str) -> str:
         return super().search_property_by_hostname(hostname)
@@ -467,15 +505,17 @@ class PapiWrapper(Papi):
         df['hostname'] = df[['propertyId']].parallel_apply(lambda x: papi.get_property_hostnames(*x), axis=1)
         df['hostname_count'] = df['hostname'].str.len()
         '''
+        hostnames = []
         data = super().get_property_hostnames(property_id)
-        if len(data) > 0:
+        if data and len(data) > 0:
             df = pd.DataFrame(data)
             if 'cnameFrom' not in df.columns:
-                # logger.info(f'propertyId {property_id} without cName')
-                return []
+                self.logger.info(f'{property_id=} without cName')
             else:
-                return df['cnameFrom'].unique().tolist()
-        return []
+                hostnames = df['cnameFrom'].unique().tolist()
+        else:
+            self.logger.debug(f'{property_id=} no hostname')
+        return hostnames
 
     def get_property_version_hostnames(self, property_id: int, version: int) -> dict:
         return super().get_property_version_hostnames(property_id, version)
@@ -484,6 +524,9 @@ class PapiWrapper(Papi):
         self.logger.debug(f'{property_id} {version}')
         data = super().get_property_version_full_detail(property_id, version)
         return data[dict_key]
+
+    def get_property_version_detail_json(self, property_id: int, version: int):
+        return super().get_property_version_full_detail(property_id, version)
 
     def get_property_version_detail(self, property_id: int, version: int, dict_key: str) -> int:
         '''
@@ -494,23 +537,29 @@ class PapiWrapper(Papi):
             if pd.notnull(row['productionVersion']) else row['latestVersion'],
             'ruleFormat'), axis=1)
         '''
-        self.logger.debug(f'{property_id} {version} {dict_key}')
         detail = super().get_property_version_detail(property_id, int(version))
         if dict_key == 'updatedDate':
             try:
                 propertyName = detail['propertyName']
-            except:
+                assetId = detail['assetId']
+                gid = detail['groupId']
+                acc_url = f'https://control.akamai.com/apps/property-manager/#/property-version/{assetId}/{version}/edit?gid={gid}'
+                self.logger.debug(f'{propertyName:<40} {acc_url}')
+            except KeyError as e:
+                self.logger.error(f'{property_id} {version} {dict_key} missing {str(e)}')
                 print_json(data=detail)
-            assetId = detail['assetId']
-            gid = detail['groupId']
-            acc_url = f'https://control.akamai.com/apps/property-manager/#/property-version/{assetId}/{version}/edit?gid={gid}'
-            self.logger.info(f'{propertyName:<40} {acc_url}')
-        try:
 
+        try:
             return detail['versions']['items'][0][dict_key]
         except:
             print_json(data=detail)
             return property_id
+
+    def create_new_property_version(self, property_id: str, base_version: int) -> int:
+        return super().create_new_property_version(property_id, base_version)
+
+    def add_shared_ehn(self, property_id: str, version: int):
+        return super().add_shared_ehn(property_id, version)
 
     def find_name_and_xml(self,
                           json_data: dict[str, Any],
@@ -1080,9 +1129,12 @@ class PapiWrapper(Papi):
 
     def check_behavior(self, behaviors: list[str], df: pd.DataFrame, cpcode: CpCodeWrapper) -> DataFrame:
         for behavior in behaviors:
-            self.logger.debug(behavior)
             if behavior == 'origin':
                 df[behavior] = df.parallel_apply(lambda row: self.origin_value(row['propertyName'], row['ruletree']['rules']), axis=1)
+                df[f'{behavior}_count'] = df[behavior].str.len()
+                df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
+            elif behavior == 'setvariable':
+                df[behavior] = df.parallel_apply(lambda row: self.setvariable_value(row['propertyName'], row['ruletree']['rules']), axis=1)
                 df[f'{behavior}_count'] = df[behavior].str.len()
                 df[behavior] = df[[behavior]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
             elif behavior == 'edgeConnect':
@@ -1178,6 +1230,34 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return list(set(values))
 
+    def setvariable_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
+        values = []
+        if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
+            for behavior in rules['behaviors']:
+                if behavior['name'] == 'setVariable':
+                    # print_json(data=behavior)
+                    if 'variableName' in behavior['options']:
+                        variableName = behavior['options']['variableName']
+
+                    if 'variableValue' in behavior['options']:
+                        variableValue = behavior['options']['variableValue']
+                        x = f'{variableName}:{variableValue}'
+                        values.append(x)
+
+                    if 'extractLocation' in behavior['options']:
+                        extractLocation = behavior['options']['extractLocation']
+                        if 'headerName' in behavior['options']:
+                            headerName = behavior['options']['headerName']
+                            x = f'{variableName}:{extractLocation}:{headerName}'
+                        else:
+                            x = f'{variableName}:{extractLocation}'
+                        values.append(x)
+            if 'children' in rules and isinstance(rules['children'], list):
+                for child_rule in rules['children']:
+                    child_values = self.setvariable_value(property_name, child_rule)
+                    values.extend(child_values)
+        return sorted(list(set(values)))
+
     def origin_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
@@ -1232,8 +1312,8 @@ class PapiWrapper(Papi):
     def activate_property_version(self, property_id: int, version: int,
                                   network: str,
                                   note: str,
-                                  email: list[str],
-                                  review_email: str) -> int:
+                                  email: list,
+                                  review_email: str | None = None) -> int:
         status, response = super().activate_property_version(property_id, version,
                                                              network,
                                                              note,
@@ -1247,14 +1327,23 @@ class PapiWrapper(Papi):
                 print_json(data=response)
                 self.logger.warning(activation_id)
                 return 0
-        return 0
+        return -1
 
     def activation_status(self, property_id: int, activation_id: str, version: int) -> tuple:
-        if activation_id != '0' and version > 0:
+        if int(activation_id) == -1:
+            return ('', f"{emojis.encode(':x:')}")
+
+        if int(activation_id) != 0 and version > 0:
             status, response = super().activation_status(property_id, activation_id)
             self.logger.debug(f'{activation_id=} {version=} {property_id=} {status=}')
             if response[0]['propertyVersion'] == version:
-                return (response[0]['network'], response[0]['status'])
+                status = response[0]['status']
+                if status == 'ACTIVE':
+                    status = f"{emojis.encode(':white_check_mark:')} {status}"
+                elif status == 'PENDING':
+                    status = f"{emojis.encode(':hourglass_flowing_sand:')} {status}"
+
+                return (response[0]['network'], status)
         return ('', '')
 
     # CUSTOM BEHAVIOR

@@ -73,7 +73,7 @@ class IdentityAccessManagement(AkamaiSession):
                 accounts = self.search_account_name_without_colon(account)
                 account_name = []
                 for account in accounts:
-                    temp_account = re.sub(r'\s', '_', account['accountName'])
+                    temp_account = account['accountName']
                 account_name.append(temp_account)
             else:
                 for account in resp.json():
@@ -110,16 +110,32 @@ class IdentityAccessManagement(AkamaiSession):
         else:
             sys.exit(self.logger.error(resp.json()['detail']))
 
+    def remove_account_type(self, account_name: str):
+        substrings_to_remove = ['_Akamai Internal',
+                                '_Indirect Customer',
+                                '_Direct Customer',
+                                '_Marketplace Prospect',
+                                '_NAP Master Agreement',
+                                '_Value Added Reseller',
+                                '_Tier 1 Reseller',
+                                '_VAR Customer',
+                                '_ISP']
+
+        for substring in substrings_to_remove:
+            if substring in account_name:
+                return account_name.replace(substring, '')
+        return account_name
+
     def show_account_summary(self, account: str):
-        account = account.replace(' ', '_')
-        print()
-        self.logger.warning(f'Found account {account}')
-        account = re.sub(r'[.,]|(_Direct_Customer|_Indirect_Customer)|_', '', account)
+        account = self.remove_account_type(account)
+        account = account.replace(' - ', '_').replace(',', '').replace('.', '_')
+        account = account.translate(str.maketrans(' -', '__')).rstrip('_')
         try:
             account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={self.account_id}&contractTypeId={self.contract_type}&targetUrl='
         except:
             account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={self.account_id}&targetUrl='
-        self.logger.warning(f'Akamai Control Center Homepage: {account_url}')
+        print()
+        self.logger.warning(f'{account} {account_url}')
         return account
 
     def get_api_client(self):

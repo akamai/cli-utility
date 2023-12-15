@@ -39,6 +39,37 @@ class Papi(AkamaiSession):
         self.cookies = self.cookies
         self.logger = logger
 
+    def create_new_property_version(self, property_id: str, base_version: int) -> int:
+        payload = {'createFromVersion': base_version}
+        url = f'{self.MODULE}/properties/{property_id}/versions'
+
+        resp = self.session.post(url, headers=self.headers,
+                                    params=self.params,
+                                    json=payload)
+        if resp.ok:
+            new_version = resp.json()['versionLink'].split('?')[0].split('/')[-1]
+            return int(new_version)
+
+        return 0
+
+    def add_shared_ehn(self, property_id: str, version: int, ehn: str | None = 'whateverlumen-com.akamaized.net'):
+        url = f'{self.MODULE}/properties/{property_id}/versions/{version}/hostnames'
+
+        if ehn.endswith('.akamaized.net'):
+            cnameFrom = ehn.split('.akamaized.net')[0]
+            payload = {'add': [{
+                                'cnameFrom': ehn,
+                                'cnameTo': ehn,
+                               }]
+                      }
+            resp = self.session.patch(url, json=payload, params=self.params, headers=self.headers)
+            if not resp.ok:
+                print_json(data=resp.json())
+        else:
+            self.logger.error(f'Incorrect {ehn}')
+
+        return resp
+
     # BUILD/CATALOG
     def get_build_detail(self):
         resp = self.session.get(f'{self.MODULE}/build')
@@ -137,7 +168,7 @@ class Papi(AkamaiSession):
                 elements = []
                 for patch in patch_json['patches']:
                     new_patch = patch.copy()
-                    new_patch['path'] = f'{each_path}/options'
+                    # new_patch['path'] = f'{each_path}'
                     elements.append(new_patch)
                     prop['patches'] = elements
             all_properties.append(prop)
@@ -231,34 +262,7 @@ class Papi(AkamaiSession):
                    'Accept': 'application/json',
                    'Content-Type': 'application/json'}
         resp = self.session.post(url, json=payload, headers=headers)
-        if resp.status_code == 200:
-            try:
-                property_items = resp.json()['versions']['items']
-                # print_json(data=property_items)
-            except:
-                self.logger.info(print_json(resp.json()))
-            self.logger.debug(f'{property_name} {resp.status_code} {resp.url} {property_items}')
-            if len(property_items) == 0:
-                self.logger.debug(f'Not found {property_name}')
-                return 400, f'Not found {property_name}'
-            else:
-                self.account_id = property_items[0]['accountId']
-                self.contract_id = property_items[0]['contractId']
-                self.asset_id = property_items[0]['assetId']
-                self.group_id = int(property_items[0]['groupId'])
-                self.property_id = int(property_items[0]['propertyId'])
-                return 200, property_items
-        elif resp.status_code == 401:
-            self.logger.error(resp.json()['title'])
-            sys.exit()
-        elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
-            self.logger.error(resp.json()['detail'])
-            lg.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)
-            sys.exit()
-        else:
-            self.logger.info(f'{property_name:<40} {resp.status_code}')
-            print_json(data=resp.json())
-            return resp.status_code, resp.json()
+        return resp.status_code, resp.json()
 
     def search_property_by_hostname(self, hostname: str) -> tuple:
         url = self.form_url(f'{self.MODULE}/search/find-by-value')
@@ -287,7 +291,7 @@ class Papi(AkamaiSession):
         url = self.form_url(f'{self.MODULE}/properties?contractId={contract_id}&groupId={group_id}')
         response = self.session.get(url, headers=self.headers)
         self.logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
-        if response.status_code == 200:
+        if response.ok:
             return response.json()['properties']['items']
         else:
             return response.json()
@@ -373,6 +377,14 @@ class Papi(AkamaiSession):
         else:
             return response.json()
 
+    def get_property_version_detail_xml(self, property_id: int, version: int, contract_id: str, group_id: str):
+        url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}')
+        response = self.session.get(url, headers=self.headers)
+        header = {'PAPI-Use-Prefixes': 'false', 'accept': 'text/xml'}
+        param = {'contractId': contract_id, 'groupId': group_id}
+        response = self.session.get(url, headers=header, params=param)
+        return response.text
+
     def get_properties_version_metadata_xml(self,
                                             property_name: str,
                                             asset_id: int,
@@ -448,11 +460,15 @@ class Papi(AkamaiSession):
     def get_property_hostnames(self, property_id: int) -> list:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/hostnames')
         response = self.session.get(url, headers=self.headers)
-        self.logger.debug(f'Collecting hostname for a property {urlparse(response.url).path:<30} {response.status_code} {response.url}')
-        if response.status_code == 200:
-            return response.json()['hostnames']['items']
+        # self.logger.debug(f'Collecting hostname for a property {urlparse(response.url).path:<30} {response.status_code} {response.url}')
+        if response.ok:
+            try:
+                hostnames = response.json()['hostnames']['items']
+                return hostnames
+            except KeyError as e:
+                self.logger.warning(f'{property_id=} missing {str(e)}')
         else:
-            return response.json()
+            self.logger.error(f'{property_id=} error')
 
     def get_property_version_hostnames(self, property_id: int, version: int) -> list:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/hostnames?includeCertStatus=true')
@@ -472,8 +488,10 @@ class Papi(AkamaiSession):
         for item in items:
             if item['stagingStatus'] == 'ACTIVE':
                 stg_version = item['propertyVersion']
+                self.property_id = item['propertyId']
             if item['productionStatus'] == 'ACTIVE':
                 prd_version = item['propertyVersion']
+                self.property_id = item['propertyId']
 
         if len(items) == 1:
             stg_version = items[0]['propertyVersion']
@@ -579,10 +597,9 @@ class Papi(AkamaiSession):
         payload['network'] = network.upper()
         payload['propertyVersion'] = version
         payload['note'] = note
-        payload['notifyEmails'] = email
+        payload['notifyEmails'] = email if isinstance(email, list) else [email]
 
         resp = self.session.post(url, json=payload, headers=self.headers)
-        self.logger.debug(f'{resp.url}\n{payload}')
         status = resp.status_code
 
         if status == 201:
@@ -596,7 +613,11 @@ class Papi(AkamaiSession):
             self.logger.critical(f"{status} {resp.json()['title']}")
             return status, resp.json()['title']
         else:
-            self.logger.critical(f'{status} {resp.text}')
+            if 'errors' in resp.json().keys():
+                errors = []
+                for err in resp.json()['errors']:
+                    errors.append(err['detail'])
+                self.logger.critical(f'{property_id} {status} {errors}')
             return status, resp.json()
 
     def activation_status(self, property_id: int, activation_id: int):
@@ -605,7 +626,9 @@ class Papi(AkamaiSession):
         if resp.ok:
             return 200, resp.json()['activations']['items']
         else:
+            print_json(resp.json())
             return resp.status_code, resp.json()
+        return 0, ''
 
     # CUSTOM BEHAVIOR
     def list_custom_behaviors(self):

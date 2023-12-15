@@ -54,8 +54,8 @@ def check_filter_condition(args, df, logger) -> pd.DataFrame:
     try:
         if args.include:
             with open(args.include) as file:
-                propertyId = [line.strip() for line in file]
-            df = df[df['propertyId'].isin(propertyId)].copy()
+                propertyName = [line.strip() for line in file]
+            df = df[df['propertyName'].isin(propertyName)].copy()
     except:
         pass  # argument does not apply to the subcommand
 
@@ -139,11 +139,16 @@ def fetch_status_activation(papi: PapiWrapper, id: int, logger) -> pd.DataFrame:
 
 
 def bulk_search(args, account_folder, logger) -> pd.DataFrame:
+    """
+    bulk search --group-id 244000 --jsonpath digiteka/search.json --product Adaptive_Media_Delivery
+    """
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     all_df = []
     if not args.id and not args.jsonpath:
         sys.exit(logger.error('please provide either --id or --jsonpath'))
+
     pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
+
     if args.id:
         bulk_search_id = int(args.id)
         resp = papi.list_bulk_search(bulk_search_id)
@@ -162,31 +167,42 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
             all_df.append(df)
     else:
         query = files.load_json(args.jsonpath)
-        if args.contract_id and args.group_id:
-            sys.exit(logger.error('Please provide either contract-id or group-id, not both'))
 
-        if args.contract_id:
-            papi.contract_id = args.contract_id
+        if args.contract and args.group:
+            sys.exit(logger.error('Please provide either contract or group, not both'))
+
+        # search by single contract
+        if args.contract:
+            papi.contract_id = args.contract
             resp = papi.bulk_search(query)
             if resp.ok:
                 bulk_result = resp.json()
-                df = pd.DataFrame(bulk_result['results'])
+                dataset = bulk_result['results']
+                if len(dataset) == 0:
+                    logger.info('no property found criteria')
+                    print_json(data=query)
+                    return -1
+                else:
+                    df = pd.DataFrame(dataset)
+
                 bulk_search_id = bulk_result['bulkSearchId']
                 df['bulkSearchId'] = bulk_search_id
-                df['contractId'] = args.contract_id
+                df['contractId'] = args.contract
                 df.loc[:, 'groupId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'groupId'), axis=1)
                 all_df.append(df)
 
-        if args.group_id:
-            for group_id in args.group_id:
+        # search by at least one group
+        if args.group:
+            for group_id in args.group:
                 papi.group_id = group_id
                 resp = papi.bulk_search(query)
                 if resp.ok:
                     bulk_result = resp.json()
-                    df = pd.DataFrame(bulk_result['results'])
+                    dataset = bulk_result['results']
+                    df = pd.DataFrame(dataset)
                     if df.empty:
                         logger.warning(f'{group_id:<30}       no property found\n')
-                        # print_json(data=bulk_result)
+                        return -1
                     else:
                         bulk_search_id = bulk_result['bulkSearchId']
                         df['bulkSearchId'] = bulk_search_id
@@ -196,16 +212,14 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
                         all_df.append(df)
                 else:
                     logger.debug(f'{resp.status_code} {resp.url}')
-            if len(all_df) == 0:
-                sys.exit()
 
-        if not args.contract_id and not args.group_id:
+        if not args.contract and not args.group:
             # lookup whole account
             resp = papi.bulk_search(query)
             if resp.ok:
                 bulk_result = resp.json()
-                df = pd.DataFrame(bulk_result['results'])
                 bulk_search_id = bulk_result['bulkSearchId']
+                df = pd.DataFrame(bulk_result['results'])
                 df['bulkSearchId'] = bulk_search_id
                 df.loc[:, 'contractId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'contractId'), axis=1)
                 df.loc[:, 'groupId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'groupId'), axis=1)
@@ -218,6 +232,8 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
 
     if df.empty:
         sys.exit(logger.info('found nothing'))
+
+    # help columns
     df.loc[:, 'env'] = df.parallel_apply(lambda row: papi.guestimate_env_type(row['propertyName']), axis=1)
     df.loc[:, 'assetId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'assetId'), axis=1)
 
@@ -232,12 +248,16 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
         result_df.loc[:, 'productId'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'productId'), axis=1)
         result_df.loc[:, 'ruleFormat'] = result_df.parallel_apply(lambda row: papi.get_property_version_detail(row['propertyId'], row['propertyVersion'], 'ruleFormat'), axis=1)
 
-        # TODO need to make this fleixble and not hardcode '/options/strictMode'
-        result_df.loc[:, 'matchLocations'] = df['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode', logger=logger))
+        if args.product:
+            result_df = result_df.query(f"productId == '{args.product}'").copy()
+
+        # TODO need to make this flexible and not hardcode '/options/strictMode'
+        # result_df.loc[:, 'matchLocations'] = df['matchLocations'].parallel_apply(lambda x: remove_string_from_list(x, '/options/strictMode', logger=logger))
         result_df = result_df.sort_values(by=['env', 'groupId', 'propertyName'])
 
         logger.debug(result_df.dtypes)
         result_df = result_df.reset_index(drop=True)
+        result_df.index = result_df.index + 1
 
     columns = ['bulkSearchId', 'contractId', 'groupId', 'groupName', 'propertyId', 'env',
                'propertyName(hyperlink)', 'propertyName', 'propertyVersion',
@@ -263,7 +283,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
     files.write_xlsx(filepath, sheet)
     files.open_excel_application(filepath, show=True, df=result_df[columns])
 
-    if args.group_id is None:
+    if args.group is None:
         all_groups = result_df.groupId.unique().tolist()
         modified_list = [word for word in all_groups]
         all_groups = ' '.join(modified_list)
@@ -403,6 +423,7 @@ def bulk_update(args, account_folder, logger):
         update_df = fetch_status_patch(papi, bulk_patch_id, version_note, logger=logger)
         update_df = update_df.sort_values(by=['status', 'propertyName'])
         update_df = update_df.reset_index(drop=True)
+        update_df.index = update_df.index + 1
         print()
         columns = ['bulkPatchId', 'patchPropertyId', 'propertyName', 'patchPropertyVersion', 'url', 'status']
         print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
@@ -443,9 +464,12 @@ def bulk_update(args, account_folder, logger):
             print()
             logger.critical(f'Fetch_status_patch {bulk_patch_id=} {update_df.shape[0]=}')
             columns = ['bulkPatchId', 'patchPropertyId', 'url', 'status', 'patchPropertyVersion', 'propertyName']
+            update_df = update_df.sort_values(by=['status', 'propertyName'])
+            update_df = update_df.reset_index(drop=True)
+            update_df.index = update_df.index + 1
             print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
 
-            logger.critical(f'\n>> run akamai util bulk update --id {bulk_patch_id} to change status of update')
+            logger.critical(f'\n>> run akamai util bulk update --id {bulk_patch_id} to check status of update')
 
             '''
             # Too slow let using run bulk update --id instead
@@ -462,6 +486,9 @@ def bulk_update(args, account_folder, logger):
 
 
 def bulk_activate(args, account_folder, logger):
+    """
+    bulk activate --note "cli activation" --input-excel production.xlsx --network production --normal
+    """
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
 
@@ -497,46 +524,39 @@ def bulk_activate(args, account_folder, logger):
             sys.exit(logger.error(err, exc_info=False))
 
         original_columns = df.columns
+        if 'new_version' not in df.columns:
+            df['new_version'] = df['propertyVersion']
+        if 'base_version' not in df.columns:
+            df['base_version'] = df['propertyVersion']
+
         if 'activationId' not in original_columns:
             if args.normal:
+                print()
                 with yaspin() as sp:
-                    df['activationId'] = df.parallel_apply(lambda row: papi.activate_property_version(
-                        row['propertyId'], row['new_version'], args.network, args.note, args.email, args.review_email), axis=1)
-                    df[['network', 'activation_status']] = df.parallel_apply(lambda row: pd.Series(papi.activation_status(
-                        row['propertyId'], row['activationId'], int(row['new_version']))), axis=1)
+                    df['activationId'] = df.parallel_apply(lambda row: papi.activate_property_version(row['propertyId'],
+                                                                                                      row['new_version'],
+                                                                                                      args.network,
+                                                                                                      args.note,
+                                                                                                      args.email,
+                                                                                                      args.review_email), axis=1)
+
+                    df[['network', 'activation_status']] = df.parallel_apply(lambda row: papi.activation_status(row['propertyId'],
+                                                                                                                int(row['activationId']),
+                                                                                                                int(row['new_version'])),
+                                                                             axis=1).apply(pd.Series)
 
                     columns = ['propertyName', 'propertyId', 'base_version', 'new_version',
                                'activationId', 'network', 'activation_status']
-                    sheet = {'activation': df[columns]}
                     if args.tag:
-                        filepath = f'{account_folder}/bulk/bulk_{args.tag}_activation_{args.network}_normal.xlsx'
+                        filepath = f'{account_folder}/bulk/bulk_{args.tag}_activation_{args.network}.xlsx'
                     else:
-                        filepath = f'{account_folder}/bulk/bulk_activation_{args.network}_normal.xlsx'
+                        filepath = f'{account_folder}/bulk/bulk_activation_{args.network}.xlsx'
+                    print()
+                    sheet = {'activation': df[columns]}
                     files.write_xlsx(filepath, sheet)
-                    files.open_excel_application(filepath, False, df[columns])
-
-                '''
-                with yaspin(Spinners.star, timer=True) as sp:
-                    row_count = df.query("activation_status == 'ACTIVE'").shape[0]
-                    count = 0
-                    while row_count < total_properties and not df.empty:
-                        if args.network == 'staging':
-                            time.sleep(27)
-                        else:
-                            time.sleep(57)
-                        count += 1
-                        print()
-                        logger.critical(count)
-                        print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
-                        df[['network', 'activation_status']] = df.parallel_apply(lambda row: pd.Series(papi.activation_status(
-                            row['propertyId'], row['activationId'], row['new_version'])), axis=1)
-                        row_count = df.query("activation_status == 'ACTIVE'").shape[0]
-
-                print()
-                print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
-                '''
-                return 0
+                    files.open_excel_application(filepath, True, df[columns])
             else:
+                print()
                 df['property_list'] = df.parallel_apply(lambda row: (row['propertyId'], row['new_version']), axis=1)
                 properties = df['property_list'].values.tolist()
                 logger.debug(properties)
@@ -551,127 +571,179 @@ def bulk_activate(args, account_folder, logger):
         else:
             df[['network', 'activation_status']] = df.parallel_apply(lambda row: pd.Series(papi.activation_status(
                                                                      row['propertyId'], row['activationId'], int(row['new_version']))), axis=1)
-
-            print()
             columns = ['propertyName', 'propertyId', 'base_version', 'new_version', 'activationId', 'network', 'activation_status']
-            print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
-            return 0
-
-            '''
-            total_properties = df.shape[0]
-            columns = ['propertyName', 'propertyId', 'base_version', 'new_version', 'activationId', 'network', 'activation_status']
-            with yaspin(Spinners.star, timer=True) as sp:
-                row_count = df.query("activation_status == 'ACTIVE'").shape[0]
-                count = 0
-                while row_count < total_properties and not df.empty:
-                    if args.network == 'staging':
-                        time.sleep(27)
-                    else:
-                        time.sleep(57)
-                    count += 1
-                    print()
-                    logger.critical(count)
-                    print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
-                    df[['network', 'activation_status']] = df.parallel_apply(lambda row: pd.Series(
-                        papi.activation_status(row['propertyId'], row['activationId'], row['new_version'])), axis=1)
-                    row_count = df.query("activation_status == 'ACTIVE'").shape[0]
-
-            print()
-            print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
-            '''
-
-    '''
-    total_properties = activation.shape[0]
-    row_count = activation.query("(taskStatus == 'COMPLETE') | (taskStatus == 'SUBMISSION_ERROR')").shape[0]
-    columns = ['bulkActivationId', 'propertyId', 'propertyVersion', 'network',
-               'activationStatus', 'taskStatus', 'activationId', 'propertyName']
-    count = 0
-    while row_count < total_properties and not activation.empty:
-        if args.network == 'staging':
-            time.sleep(27)
-        else:
-            time.sleep(57)
-        count += 1
-        print()
-        logger.critical(count)
-        print(tabulate(activation[columns], headers=columns, tablefmt='simple', numalign='center'))
-        activation = fetch_status_activation(papi, id, logger=logger)
-        row_count = activation.query("(taskStatus == 'COMPLETE') | (taskStatus == 'SUBMISSION_ERROR')").shape[0]
-    '''
-
-    activation = activation.rename(columns={'propertyVersion': 'new_version'})
-    columns = ['bulkActivationId', 'propertyId', 'new_version', 'network',
-               'activationId', 'activation_status', 'propertyName']
-    activation[['network', 'activation_status']] = activation.parallel_apply(
-        lambda row: pd.Series(papi.activation_status(
-            row['propertyId'], row['activationId'], row['new_version'])), axis=1)
-    print()
-    print(tabulate(activation[columns], headers=columns, tablefmt='simple', numalign='center'))
-
-    '''
-    row_count = activation.query("activation_status == 'ACTIVE'").shape[0]
-    with yaspin(Spinners.star, timer=True) as sp:
-        while row_count < total_properties and not activation.empty:
-            if args.network == 'staging':
-                time.sleep(27)
+            sheet = {'activation': df[columns]}
+            if args.tag:
+                filepath = f'{account_folder}/bulk/bulk_{args.tag}_activation_{args.network}.xlsx'
             else:
-                time.sleep(57)
-            count += 1
+                filepath = f'{account_folder}/bulk/bulk_activation_{args.network}.xlsx'
             print()
-            logger.critical(count)
-            print(tabulate(activation[columns], headers=columns, tablefmt='simple', numalign='center'))
-            activation[['network', 'activation_status']] = activation.apply(lambda row: pd.Series(papi.activation_status(
-                row['propertyId'], row['activationId'], row['new_version'])), axis=1)
-            row_count = activation.query("activation_status == 'ACTIVE'").shape[0]
+            files.write_xlsx(filepath, sheet)
+            files.open_excel_application(filepath, False, df[columns])
 
-    print()
-    print(tabulate(activation[columns], headers=columns, tablefmt='simple', numalign='center'))
-    if not activation.empty:
-        sheet = {}
-        sheet['activation'] = activation[columns]
-        if args.tag:
-            filepath = f'{account_folder}/bulk/bulk_{args.tag}_activation_{args.network}_{id}.xlsx'
-        else:
-            filepath = f'{account_folder}/bulk/bulk_activation_{args.network}_{id}.xlsx'
-        files.write_xlsx(filepath, sheet)
-        files.open_excel_application(filepath, False, activation[columns])
-    '''
+    df.index = df.index + 1
+    table = tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center')
+    logger.debug(f'\n{df[columns]}')
+    print(f'\n{table}')
 
 
-def bulk_add(args, account_folder, logger):
+def add_behavior_default_rule(logger, config: str, rule: dict,
+                              desired_behavior: dict,
+                              behavior_name: str,
+                              current_value: bool,
+                              new_value: bool) -> dict:
+    behaviors = rule.get('behaviors', [])
+    # exist = bool(any(x['name'] for x in behaviors if x['name'] == behavior_name))
+    exist = bool(any([x['name'] for x in behaviors if x['name'] == behavior_name]))
+    if not exist:
+        logger.warning(f'add               {config}')
+        behaviors.append(desired_behavior)
+        rule['behaviors'] = behaviors
+    else:
+        new_behavior = []
+        for i, x in enumerate(behaviors):
+            if behaviors[i]['name'] == behavior_name:
+                logger.warning(f"{config:<30}{behaviors[i]['options']['enable']} > {new_value}")
+                if behaviors[i]['options']['enable'] == new_value:
+                    exist = True
+                    logger.debug('no change')
+                    new_behavior.append(x)
+                else:
+                    exist = False
+                    logger.debug(f'new        value {new_value}')
+                    behaviors[i]['options']['enable'] == new_value
+                    new_behavior.append(desired_behavior)
+            else:
+                new_behavior.append(x)
+        rule['behaviors'] = new_behavior
+    return (rule, exist)
+
+
+def update_version(papi, df):
+    df['new_version'] = df['propertyVersion']
+    df['mark'] = 'update'
+    df['resp'] = df.apply(lambda row: papi.get_property_version_detail_json(row['propertyId'], row['new_version']), axis=1)
+
+    if 'contractId' not in df.columns:
+        df['contractId'] = df['resp'].apply(lambda x: x['contractId'])
+    if 'groupId' not in df.columns:
+        df['groupId'] = df['resp'].apply(lambda x: x['groupId'])
+    if 'ruleFormat' not in df.columns:
+        df['ruleFormat'] = df['resp'].apply(lambda x: x['versions']['items'][0]['ruleFormat'])
+    return df
+
+
+def add_version(papi, df):
+    df['new_version'] = df.apply(lambda row: papi.create_new_property_version(row['propertyId'], row['propertyVersion']), axis=1)
+    df['mark'] = 'add'
+    return df
+
+
+def build_add_dataset(papi, df: pd.DataFrame):
+    # create new version
+    _temp = df[df['isLocked']].copy()
+    add_df = add_version(papi, _temp) if not _temp.empty else pd.DataFrame()
+
+    # update existing version
+    _temp = df[~df['isLocked']].copy()
+    update_df = update_version(papi, _temp) if not _temp.empty else pd.DataFrame()
+
+    df = pd.concat([add_df, update_df])
+    df = df.reset_index(drop=True)
+    df.index = df.index + 1
+    return df
+
+
+def bulk_add_behavior_default(args, account_folder, logger):
     """
-    add rules to newly create version
+    bulk add --input-json add.json --note "add behavior" --input-excel temp.xlsx
     """
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+    desired_behavior = files.load_json(args.input_json)
+
+    if args.bulk_id and args.input_excel:
+        logger.error('Either bulk-id or inpur-excel is accepted, not both')
+        sys.exit()
 
     if args.bulk_id:
         bulk_search_id = args.bulk_id
-        resp = papi.list_bulk_patch(int(bulk_search_id))
+        resp = papi.list_bulk_search(int(bulk_search_id))
+        df = pd.json_normalize(resp.json()['results'])
     else:
-        patch_json = files.load_json(args.input_json)
-        df = pd.read_excel(args.input_excel)
-        pandarallel.initialize(progress_bar=False, nb_workers=4, verbose=0)
-        df['latest_version'] = df.parallel_apply(lambda row: papi.get_property_version_latest(row['propertyId'])['latestVersion'], axis=1)
-        # activate
+        try:
+            df = pd.read_excel(args.input_excel)
+        except FileNotFoundError as err:
+            sys.exit(logger.error(err))
 
-        df['status'] = df.apply(lambda row:
-            papi.activate_property_version(row['propertyId'],
-                                           row['latest_version'],
-                                        args.network, args.note, args.emails
-                                            ), axis=1)
-        columns = ['propertyId', 'latest_version', 'status']
-        print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
-        # activate
+    logger.warning(f'\n{df}')
 
-        '''
-        # add rule
-        df['current_rule'] = df.apply(lambda row: papi.get_property_full_ruletree(row['propertyId'], row['latest_version']).json(), axis=1)
-        df['new_rule'] = df.apply(lambda row: papi.build_new_ruletree(row['current_rule'], patch_json), axis=1)
-        df['property_list'] = df.apply(lambda row: (row['propertyId'], row['latest_version']), axis=1)
+    if df.empty:
+        logger.info('No data to update')
+    else:
+        if args.base == 'production':
+            temp = df[df['productionStatus'] == 'ACTIVE'].copy()
+        elif args.base == 'latest':
+            temp = df[df['isLatest']].copy()
+        else:
+            temp = df[df['stagingStatus'] == 'ACTIVE'].copy()
 
-        df['status'] = df.apply(lambda row: papi.update_property_ruletree(row['propertyId'],
-                                                                                   row['latest_version'],
-                                                                                   row['new_rule']['rules']), axis=1)
-        columns = ['propertyId', 'latest_version', 'current_rule', 'status']
-        print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
-        '''
+        df = build_add_dataset(papi, temp)
+
+        if df.empty:
+            sys.exit(logger.info('no data to process'))
+        else:
+            columns = ['propertyName', 'propertyId', 'productionStatus', 'stagingStatus', 'isLatest', 'isLocked',
+                    'propertyVersion', 'new_version', 'mark']
+            table = tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center')
+            logger.debug(f'\n{df[columns]}')
+            print(f'\n{table}')
+
+            df['resp'] = df.apply(lambda row: papi.get_property_full_ruletree(row['propertyId'], row['new_version']), axis=1)
+            df['rt'] = df['resp'].apply(lambda x: x.json()['rules'])
+            df['before'] = df['rt'].apply(lambda x: len(x['behaviors']))
+
+            behavior_name = desired_behavior['name']
+            if args.current == 'true':
+                current = True
+            else:
+                current = False
+            if args.new == 'true':
+                new = True
+            else:
+                new = False
+
+            df[['rt', 'behavior_exist']] = df.apply(lambda row: add_behavior_default_rule(logger,
+                                                                                          row['propertyName'], row['rt'],
+                                                                                          desired_behavior,
+                                                                                          behavior_name,
+                                                                                          current,
+                                                                                          new),
+                                                    axis=1).apply(pd.Series)
+
+            df['after'] = df['rt'].apply(lambda x: len(x['behaviors']))
+
+            df['update_status'] = df.apply(lambda row: papi.update_property_ruletree(row['propertyId'],
+                                                                                     row['new_version'],
+                                                                                     row['ruleFormat'],
+                                                                                     row['rt'],
+                                                                                     args.note) if not row['behavior_exist'] else 0, axis=1)
+
+            columns = ['propertyName', 'propertyId', 'propertyVersion', 'new_version',
+                        'mark', 'behavior_exist', 'update_status']
+            table = tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center')
+            logger.debug(f'\n{df[columns]}')
+            print(f'\n{table}')
+
+        sheet = {}
+        sheet['add_results'] = df[columns]
+        if args.output:
+            filepath = f'{account_folder}/bulk/{args.output}'
+        elif args.tag:
+            filepath = f'{account_folder}/bulk/bulk_{args.tag}_add.xlsx'
+        elif args.bulk_id:
+            filepath = f'{account_folder}/bulk/bulk_add_{args.bulk_id}.xlsx'
+        else:
+            filepath = f'{account_folder}/bulk/bulk_add.xlsx'
+
+        files.write_xlsx(filepath, sheet)
+        files.open_excel_application(filepath, show=True, df=df[columns])
