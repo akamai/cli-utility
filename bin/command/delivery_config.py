@@ -838,10 +838,10 @@ def jsonpath(args, account_folder, logger):
                             df = df[df['name'].isin(args.behavior)].copy()
                         df['property'] = property_name
                         df['type'] = 'behavior'
-
                         alls.append(df)
 
                 result = papi.find_jsonpath_criteria_condition(ruletree)
+
                 df = pd.DataFrame(result, columns=['JSONPATH', 'rulename', 'name', 'json_options'])
                 df['property'] = property_name
                 df['type'] = 'criteria_condition'

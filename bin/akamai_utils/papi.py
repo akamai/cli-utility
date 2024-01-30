@@ -1420,9 +1420,9 @@ class PapiWrapper(Papi):
             for behavior_index, beh in enumerate(behaviors):
                 if behavior:
                     if beh['name'] == behavior:
-                        result.append((f'{path}/behaviors/{behavior_index}', node['name'], beh['options']))
+                        result.append((f'{path}/behaviors/{behavior_index}', node['name'], beh['name'], beh['options']))
                 else:
-                    result.append((f'{path}/behaviors/{behavior_index}', node['name'], beh['options']))
+                    result.append((f'{path}/behaviors/{behavior_index}', node['name'], beh['name'], beh['options']))
 
             children = node.get('children', [])
             for child_index, child in enumerate(children):
@@ -1483,9 +1483,9 @@ class PapiWrapper(Papi):
             for index, cri in enumerate(criteria):
                 if criterion:
                     if cri['name'] == criterion:
-                        result.append((f'{path}/criteria/{index}', node['name'], cri['options']))
+                        result.append((f'{path}/criteria/{index}', node['name'], cri['name'], cri['options']))
                 else:
-                    result.append((f'{path}/criteria/{index}', node['name'], cri['options']))
+                    result.append((f'{path}/criteria/{index}', node['name'], cri['name'], cri['options']))
 
             children = node.get('children', [])
             for child_index, child in enumerate(children):
