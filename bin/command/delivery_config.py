@@ -42,10 +42,10 @@ pd.set_option('display.max_rows', None)
 
 def main(args, account_folder, logger):
     '''
-    akamai util delivery --show --group-id 14803 163889 162428 90428 14805 82695
+    akamai util delivery --show --group 14803 163889 162428 90428 14805 82695
     '''
-    if args.group_id and args.property:
-        sys.exit(logger.error('Please use either --group-id or --property, not both'))
+    if args.group and args.property:
+        sys.exit(logger.error('Please use either --group or --property, not both'))
 
     concurrency = int(args.concurrency) if args.concurrency else None
     if concurrency > 10:
@@ -150,11 +150,11 @@ def main(args, account_folder, logger):
         # build group structure as displayed on control.akamai.com
         print()
         logger.warning('Collecting properties summary')
-        if args.group_id is None:
+        if args.group is None:
             logger.critical('  200 properties take ~  7 minutes')
             logger.critical('  800 properties take ~ 30 minutes')
             logger.critical('2,200 properties take ~ 80 minutes')
-            logger.critical('please consider using --group-id to reduce total properties')
+            logger.critical('please consider using --group to reduce total properties')
 
         with yaspin() as sp:
             allgroups_df, columns = papi.account_group_summary()
@@ -163,20 +163,20 @@ def main(args, account_folder, logger):
         else:
             allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)  # change groupId to str before load into excel
 
-        if args.group_id:
-            groups = args.group_id
+        if args.group:
+            groups = args.group
             group_df = allgroups_df[allgroups_df['groupId'].isin(groups)].copy()
-            group_df = group_df.reset_index(drop=True)
         else:
             group_df = allgroups_df[allgroups_df['propertyCount'] > 0].copy()
-            group_df = group_df.reset_index(drop=True)
         if not group_df.empty:
             print()
             columns.remove('groupName')
+            group_df = group_df.reset_index(drop=True)
+            group_df.index = group_df.index + 1
             print(tabulate(group_df[columns], headers=columns, showindex=True, tablefmt='github'))
 
         # warning for large account
-        if not args.group_id:
+        if not args.group:
             print()
             if group_df.shape[0] > 0:
                 total_property_count = group_df['propertyCount'].sum()
@@ -187,7 +187,7 @@ def main(args, account_folder, logger):
             all_groups = group_df['groupId'].unique().tolist()
             modified_list = [word for word in all_groups]
             all_groups = ' '.join(modified_list)
-            logger.warning(f'--group-id {all_groups}')
+            logger.warning(f'--group {all_groups}')
 
         if args.summary is True:
             sheet = {}
@@ -305,7 +305,7 @@ def main(args, account_folder, logger):
         t0 = perf_counter()
         msg = 'collecting group hyperlink'
         logger.critical(f'{msg} ...')
-        if args.group_id is not None:
+        if args.group is not None:
             sheet['group_filtered'] = add_group_url(group_df, papi)
         if not allgroups_df.empty:
             sheet['account_summary'] = add_group_url(allgroups_df, papi)
@@ -325,7 +325,12 @@ def main(args, account_folder, logger):
                     columns.remove(x)
                 sheet['custom_behavior'] = custom_behavior_df
 
-    filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/account_detail.xlsx'
+    if args.output:
+        filepath = f'{account_folder}/{args.output}'
+    elif args.group:
+        filepath = f'{account_folder}/account_detail_{args.group[0]}.xlsx'
+    else:
+        filepath = f'{account_folder}/account_detail.xlsx'
     files.write_xlsx(filepath, sheet, freeze_column=1) if not properties_df.empty else None
     files.open_excel_application(filepath, args.show, properties_df)
 
