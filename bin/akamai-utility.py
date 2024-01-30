@@ -75,6 +75,8 @@ if __name__ == '__main__':
             dc.hostnames_certificate(args, account_folder, logger=logger)
         elif args.subcommand == 'netstorage':
             dc.netstorage(args, account_folder, logger=logger)
+        # elif args.subcommand == 'shp':
+        #    dc.jsonpath_group(args, account_folder, logger=logger)
         elif args.subcommand == 'origin-cert':
             dc.origin_certificate(args, account_folder, logger=logger)
         elif args.subcommand == 'jsonpath':
