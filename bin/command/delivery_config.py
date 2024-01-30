@@ -66,7 +66,7 @@ def main(args, account_folder, logger):
                 break
             else:
                 logger.debug(f'{papi.group_id} {papi.contract_id} {papi.property_id}')
-                stg, prd = papi.property_version(resp)
+                _, stg, prd = papi.property_version(resp)
                 all_properties.append((papi.account_id, papi.contract_id, papi.group_id, property, papi.property_id, stg, prd))
 
         properties_df = pd.DataFrame(all_properties, columns=['accountId', 'contractId', 'groupId', 'propertyName', 'propertyId', 'stagingVersion', 'productionVersion'])
@@ -216,7 +216,9 @@ def main(args, account_folder, logger):
                         lambda row: papi.get_property_ruletree(int(row['propertyId']),
                                                                 int(row['productionVersion'])
                                                                 if pd.notnull(row['productionVersion'])
-                                                                else row['latestVersion']), axis=1)
+                                                                else row['latestVersion'],
+                                                                remove_tags=['uuid', 'templateLink']), axis=1)
+
                     df = df.rename(columns={'url': 'propertyName(hyperlink)'})  # show column with hyperlink instead
                     df = df.rename(columns={'groupName_url': 'groupName'})  # show column with hyperlink instead
                     df = df.sort_values(by=['groupName', 'propertyName'])
@@ -274,11 +276,14 @@ def main(args, account_folder, logger):
                     noncount_columns = sorted([col for col in properties_columns if not col.endswith('_count')])
                     columns_to_remove = ['propertyName(hyperlink)', 'ruletree']
                     noncount_columns = [col for col in noncount_columns if col not in columns_to_remove]
-                    properties_columns = ['propertyName', 'productionVersion'] + count_columns + noncount_columns + ['propertyName(hyperlink)']
+                    properties_columns = (['groupName', 'propertyName', 'productionVersion'] +
+                                            noncount_columns +
+                                          ['propertyName(hyperlink)'] +
+                                            count_columns)
 
                     if args.behavior or args.criteria:
-                        df = df.query('productionVersion > 0')
-                        df = df.sort_values(by='propertyName')
+                        # df = df.query('productionVersion > 0')  # include all configs
+                        df = df.sort_values(by=['groupName', 'propertyName'])
                         sheet['properties'] = df[properties_columns]
                         all_props = df.propertyName.unique().tolist()
 
@@ -291,7 +296,7 @@ def main(args, account_folder, logger):
                     except:
                         pass  # call from another function not require --behavior
                     properties_df = df[main_with_link]
-                    properties_df = properties_df.query('productionVersion > 0')
+                    # properties_df = properties_df.query('productionVersion > 0')
                     properties_df = properties_df.sort_values(by=['env', 'propertyName'])
                     sheet['generic'] = properties_df
 
@@ -642,8 +647,13 @@ def activation_status(args, logger):
 
 def get_property_ruletree(args, account_folder, logger):
     '''
-    akamai util delivery ruletree --property AAA BBB
+    akamai util delivery ruletree --property AAA BBB --version 2
+    akamai util delivery ruletree --property AAA BBB --network latest
+    akamai util delivery ruletree --property AAA BBB --version staging
+    akamai util delivery ruletree --input config.txt --version staging
     '''
+    if args.property and args.input:
+        sys.exit(logger.error('Please use either --property or --input, not both'))
 
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, only one property is supported'))
@@ -651,20 +661,31 @@ def get_property_ruletree(args, account_folder, logger):
     account_switch_key, section, edgerc = args.account_switch_key, args.section, args.edgerc
     papi = p.PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
 
-    for property in args.property:
+    if args.input:
+        with open(args.input) as file:
+            properties = sorted([line.rstrip('\n') for line in file.readlines()])
+
+    if args.property:
+        properties = sorted(args.property)
+
+    for property in properties:
         status, resp = papi.search_property_by_name(property)
         # print_json(data=resp)
         if status != 200:
             logger.info(f'property {property:<50} not found')
             break
         else:
-            stg, prd = papi.property_version(resp)
-            try:
-                version = prd
-            except:
-                version = stg
             if args.version:
                 version = int(args.version)
+            else:
+                latest, stg, prd = papi.property_version(resp)
+            if args.network == 'latest':
+                version = latest
+            elif args.network == 'staging':
+                version = stg
+            else:
+                version = prd
+
             logger.debug(f'{papi.group_id} {papi.contract_id} {papi.property_id}')
             status, _ = papi.property_ruletree(papi.property_id, version)
             if status != 200:
@@ -678,19 +699,18 @@ def get_property_ruletree(args, account_folder, logger):
         ruletree = papi.get_property_ruletree(papi.property_id, version)
         config, version = full_ruletree['propertyName'], full_ruletree['propertyVersion']
         title = f'{config}_v{version}'
+        files.write_json(f'{account_folder}/ruletree/limit/{title}_limit.json', limit)
 
-        files.write_json(f'{account_folder}/ruletree/{title}_limit.json', limit)
-        files.write_json(f'{account_folder}/ruletree/{title}_ruletree.json', ruletree)
-
-        with open(f'{account_folder}/ruletree/{title}_ruletree.json') as f:
+        files.write_json(f'{account_folder}/ruletree/{config}.json', ruletree)
+        with open(f'{account_folder}/ruletree/{config}.json') as f:
             json_object = json.load(f)
         ruletree_json = json_object['rules']
 
         # write tree structure to TXT file
         # https://stackoverflow.com/questions/19330089/writing-string-representation-of-class-instance-to-file
-        TREE_FILE = f'{account_folder}/ruletree/{title}_ruletree_summary.txt'
+        TREE_FILE = f'{account_folder}/ruletree/hierachy/{title}_ruletree_summary.txt'
         message = 'Rules tree depth'
-        logger.info(f'{message:<20} {TREE_FILE}')
+        logger.debug(f'{message:<20} {TREE_FILE}')
         with open(TREE_FILE, 'w') as file:
             print(files.tree_builder(ruletree_json, order=0, parent=0, level=0), file=file)
         files.remove_first_line_txt(TREE_FILE)
@@ -702,7 +722,7 @@ def get_property_ruletree(args, account_folder, logger):
             logger.debug('\n'.join(rules))
 
             if len(rules) == 1:
-                logger.info(f'No nested rule found for property {config}')
+                logger.warning(f'No nested rule found for property {config}')
                 file_object = Path(TREE_FILE).absolute()
                 file_object.unlink(missing_ok=False)
 
@@ -747,12 +767,15 @@ def get_property_ruletree(args, account_folder, logger):
                 pass
             else:
                 command = ['code', Path(TREE_FILE).absolute()]
-                try:
-                    Popen(command, stdout=os.open(os.devnull, os.O_RDWR), stderr=STDOUT)
-                except:
-                    subprocess.call(['open', '-a', 'TextEdit', Path(TREE_FILE).absolute()])
-    if args.show_depth is False:
+                if args.show:
+                    try:
+                        Popen(command, stdout=os.open(os.devnull, os.O_RDWR), stderr=STDOUT)
+                    except:
+                        subprocess.call(['open', '-a', 'TextEdit', Path(TREE_FILE).absolute()])
+    if not args.show_depth:
         logger.warning('To display max depth, add --show-depth')
+    if not args.show:
+        logger.info(f'ruletree and limit files are located at {account_folder}/ruletree')
 
 
 def jsonpath(args, account_folder, logger):
@@ -777,13 +800,17 @@ def jsonpath(args, account_folder, logger):
             logger.info(f'property {property:<50} not found')
             break
         else:
-            stg, prd = papi.property_version(resp)
-            try:
-                version = prd
-            except:
-                version = stg
             if args.version:
                 version = int(args.version)
+
+            latest, stg, prd = papi.property_version(resp)
+            if args.network == 'latest':
+                version = latest
+            elif args.network == 'staging':
+                version = stg
+            else:
+                version = prd
+
             logger.debug(f'{papi.group_id=}\t{papi.contract_id=}\t{papi.property_id=}')
             ruletree = papi.get_property_full_ruletree(papi.property_id, version)
             property_name = f'{property}_v{version}'
@@ -914,7 +941,7 @@ def get_property_all_behaviors(args, logger):
     if status == 200:
         version = int(args.version) if args.version else None
         if version is None:
-            stg, prd = papi.property_version(resp)
+            latest, stg, prd = papi.property_version(resp)
             version = prd
     else:
         sys.exit(logger.error(resp))

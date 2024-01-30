@@ -40,6 +40,11 @@ def split_elements_newline_withcomma(elements):
     return ',\n'.join(elements)
 
 
+def flat_list(original_list):
+    unique_data = list({item for sublist in original_list for item in sublist})
+    return sorted(unique_data)
+
+
 def extract_keys(dicts):
     keys = set()
     for d in dicts:

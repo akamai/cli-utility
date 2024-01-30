@@ -55,6 +55,8 @@ if __name__ == '__main__':
             dc.get_property_advanced_behavior(args, account_folder, logger)
         elif args.subcommand == 'ruletree':
             Path(f'{account_folder}/ruletree').mkdir(parents=True, exist_ok=True)
+            Path(f'{account_folder}/ruletree/hierachy').mkdir(parents=True, exist_ok=True)
+            Path(f'{account_folder}/ruletree/limit').mkdir(parents=True, exist_ok=True)
             dc.get_property_ruletree(args, account_folder, logger=logger)
         elif args.subcommand == 'hostname-cert':
             dc.hostnames_certificate(args, account_folder, logger=logger)

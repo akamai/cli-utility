@@ -38,7 +38,9 @@ def collect_json(config_name: str, version: int, response_json, logger=None):
 def delivery_config_json(papi, config: str, version: int | None = None, exclude: list | None = None, logger=None):
     status, response = papi.search_property_by_name(config)
     if status == 200:
+        logger.info(f'{papi.property_id=} {version=}')
         json_tree_status, json_response = papi.property_ruletree(papi.property_id, version, exclude)
+
         _ = papi.get_property_version_detail(papi.property_id, version)
         if json_tree_status == 200:
             return collect_json(config, version, json_response, logger=logger)
@@ -118,7 +120,7 @@ def compare_config(args, logger=None):
                     sys.exit(logger.error('Same version, nothing to compare'))
             else:
                 if status == 200:
-                    stg_version, prd_version = papi.property_version(response)
+                    _, stg_version, prd_version = papi.property_version(response)
                     left = stg_version
                     right = prd_version
                 else:
@@ -264,6 +266,7 @@ def compare_config(args, logger=None):
 def compare_delivery_behaviors(args, logger):
     '''
     akamai util diff behavior --property AAA BBB CCC \
+        --network latest \
         --remove-tags advanced uuid variables templateUuid templateLink xml \
         --behavior allHttpInCacheHierarchy allowDelete allowOptions allowPatch allowPost
     '''
@@ -289,23 +292,32 @@ def compare_delivery_behaviors(args, logger):
         status, resp = papi.search_property_by_name(property)
         if status != 200:
             logger.error(f'{resp}')
-        else:
-            if not (left and right):
-                _, version = papi.property_version(resp)
-                ruletree_status, json = papi.property_ruletree(papi.property_id, version, args.remove_tag)
+
+        if not (left and right):
+            v_latest, v_staging, v_production = papi.property_version(resp)
+            if args.network == 'latest':
+                version = v_latest
+            elif args.network == 'staging':
+                version = v_staging
             else:
-                if left and i == 0:
-                    version = left
-                    ruletree_status, json = papi.property_ruletree(papi.property_id, version, args.remove_tags)
-                if right and i == 1:
-                    version = right
-                    ruletree_status, json = papi.property_ruletree(papi.property_id, version, args.remove_tags)
-            if ruletree_status == 200:
-                logger.debug(f'{property:<50} {papi.property_id}')
-                property_name = f'{property}_v{version}'
-                _ = papi.get_property_version_detail(papi.property_id, version)  # show direct url to config on ACC
-                all_properties.append(property_name)
-                prop[property_name] = json['rules']
+                version = v_production
+
+            logger.debug(f'{papi.property_id} {version}')
+            ruletree_status, json = papi.property_ruletree(papi.property_id, version, args.remove_tag)
+        else:
+            if left and i == 0:
+                version = left
+                ruletree_status, json = papi.property_ruletree(papi.property_id, version, args.remove_tags)
+            if right and i == 1:
+                version = right
+                ruletree_status, json = papi.property_ruletree(papi.property_id, version, args.remove_tags)
+
+        if ruletree_status == 200:
+            property_name = f'{property}_v{version}'
+            logger.debug(f'{property:<50} {papi.property_id} {property_name}')
+            _ = papi.get_property_version_detail(papi.property_id, version)  # show direct url to config on ACC
+            all_properties.append(property_name)
+            prop[property_name] = json['rules']
 
     all_behaviors = []
     all_criteria = []

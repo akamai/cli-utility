@@ -44,8 +44,8 @@ class Papi(AkamaiSession):
         url = f'{self.MODULE}/properties/{property_id}/versions'
 
         resp = self.session.post(url, headers=self.headers,
-                                    params=self.params,
-                                    json=payload)
+                                      params=self.params,
+                                      json=payload)
         if resp.ok:
             new_version = resp.json()['versionLink'].split('?')[0].split('/')[-1]
             return int(new_version)
@@ -262,7 +262,32 @@ class Papi(AkamaiSession):
                    'Accept': 'application/json',
                    'Content-Type': 'application/json'}
         resp = self.session.post(url, json=payload, headers=headers)
-        return resp.status_code, resp.json()
+        if resp.ok:
+            try:
+                property_items = resp.json()['versions']['items']
+            except:
+                self.logger.info(print_json(resp.json()))
+            self.logger.debug(f'{property_name} {resp.status_code} {resp.url} {property_items}')
+            if len(property_items) == 0:
+                self.logger.debug(f'Not found {property_name}')
+                return resp.status_code, f'Not found {property_name}'
+            else:
+                self.account_id = property_items[0]['accountId']
+                self.contract_id = property_items[0]['contractId']
+                self.asset_id = property_items[0]['assetId']
+                self.group_id = int(property_items[0]['groupId'])
+                self.property_id = int(property_items[0]['propertyId'])
+                return resp.status_code, resp.json()
+        elif resp.status_code == 401:
+            self.logger.error(resp['title'])
+            sys.exit()
+        elif 'WAF deny rule IPBLOCK-BURST' in resp['detail']:
+            self.logger.error(resp['detail'])
+            lg.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)
+            sys.exit()
+        else:
+            self.logger.debug(f'{property_name:<40} {resp.status_code}')
+            return resp.status_code, resp.json()
 
     def search_property_by_hostname(self, hostname: str) -> tuple:
         url = self.form_url(f'{self.MODULE}/search/find-by-value')
@@ -292,7 +317,10 @@ class Papi(AkamaiSession):
         response = self.session.get(url, headers=self.headers)
         self.logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
         if response.ok:
-            return response.json()['properties']['items']
+            items = response.json()['properties']['items']
+            self.logger.debug(f'{group_id} {len(items)}')
+            # print_json(data=items)
+            return items
         else:
             return response.json()
 
@@ -483,30 +511,37 @@ class Papi(AkamaiSession):
             return resp.json()
 
     def property_version(self, items: dict) -> tuple:
-        prd_version = 0
+
+        latest_version = 0
         stg_version = 0
-        for item in items:
+        prd_version = 0
+
+        try:
+            # print_json(data=items)
+            itemss = items['versions']['items']
+        except TypeError:
+            self.logger.error('invalid property')
+
+        for item in itemss:
+            self.property_id = item['propertyId']
             if item['stagingStatus'] == 'ACTIVE':
                 stg_version = item['propertyVersion']
-                self.property_id = item['propertyId']
             if item['productionStatus'] == 'ACTIVE':
                 prd_version = item['propertyVersion']
-                self.property_id = item['propertyId']
 
-        if len(items) == 1:
-            stg_version = items[0]['propertyVersion']
+        if len(itemss) == 1:
+            latest_version = itemss[0]['propertyVersion']
+            stg_version = latest_version
             prd_version = stg_version
         else:
             dd = defaultdict(list)
-            for d in items:
+            for d in itemss:
                 for k, v in d.items():
                     dd[k].append(v)
-            if stg_version == 0:
-                stg_version = max(dd['propertyVersion'])
-            if prd_version == 0:
-                prd_version = max(dd['propertyVersion'])
-        self.logger.info(f'{items[0]["propertyName"]:<40} staging:production    v{stg_version}:v{prd_version}')
-        return stg_version, prd_version
+            latest_version = max(dd['propertyVersion'])
+
+        self.logger.info(f'{itemss[0]["propertyName"]:<60} latest:stg:prd    v{latest_version}:v{stg_version}:v{prd_version}')
+        return latest_version, stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
