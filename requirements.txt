@@ -12,6 +12,8 @@ jsonschema==4.17.3
 lxml==4.9.2
 pandarallel==1.6.5
 pandas==2.0.3
+plotly==5.17.0
+polars==0.19.6
 pydig==0.4.0
 Pygments==2.15.0
 pyopenssl==23.2.0

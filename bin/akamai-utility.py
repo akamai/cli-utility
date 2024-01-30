@@ -46,6 +46,19 @@ if __name__ == '__main__':
             account_folder = f'output/{account}'
             Path(account_folder).mkdir(parents=True, exist_ok=True)
 
+    if args.command == 'mpulse':
+        if args.subcommand == 'token':
+            mp.generate_token(args, logger=logger)
+
+        if args.subcommand == 'list':
+            mp.list_available_account(args, logger=logger)
+
+        if args.subcommand == 'url':
+            mp.url(args, logger=logger)
+
+        if args.subcommand == 'pageload':
+            mp.pageload_overtime(args, logger=logger)
+
     if args.command == 'delivery':
         if args.subcommand == 'behavior':
             dc.get_property_all_behaviors(args, logger=logger)
