@@ -38,7 +38,7 @@ def collect_json(config_name: str, version: int, response_json, logger=None):
 def delivery_config_json(papi, config: str, version: int | None = None, exclude: list | None = None, logger=None):
     status, response = papi.search_property_by_name(config)
     if status == 200:
-        logger.info(f'{papi.property_id=} {version=}')
+        logger.debug(f'{papi.property_id=} {version=}')
         json_tree_status, json_response = papi.property_ruletree(papi.property_id, version, exclude)
 
         _ = papi.get_property_version_detail(papi.property_id, version)
@@ -66,20 +66,21 @@ def security_config_json(appsec, waf_config_name: str, config_id: int,
 
 
 def compare_versions(v1: str, v2: str, outputfile: str, args, logger=None):
-    print('\n\n')
     cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
-    subprocess.run(cmd_text, shell=True)
-
-    output_path = f'output/0_diff/{outputfile}.html'
-    compare.main(v1, v2, output_path, args)
-    location = f'{os.path.abspath(output_path)}'
-
-    print()
-    space = ' ' * 33
-    logger.info(f'left file:{space}{v1}')
-    space = ' ' * 32
-    logger.info(f'right file:{space}{v2}')
-    return location
+    diff = subprocess.run(cmd_text, shell=True, stdout=subprocess.PIPE)
+    if diff.stdout == b'':
+        logger.info('no difference')
+    else:
+        diff = subprocess.run(cmd_text, shell=True)
+        print()
+        output_path = f'output/0_diff/{outputfile}.html'
+        compare.main(v1, v2, output_path, args)
+        location = f'{os.path.abspath(output_path)}'
+        space = ' ' * 33
+        logger.info(f'left file:{space}{v1}')
+        space = ' ' * 32
+        logger.info(f'right file:{space}{v2}')
+        return location
 
 
 def compare_config(args, logger=None):
@@ -224,10 +225,11 @@ def compare_config(args, logger=None):
         print()
         logger.warning('Comparing JSON configuration')
         json_index_html = compare_versions(v1, v2, 'index_json', args, logger=logger)
-        if not args.no_show:
-            webbrowser.open(f'file://{os.path.abspath(json_index_html)}')
-        else:
-            logger.info(f'{title}{os.path.abspath(json_index_html)}')
+        if json_index_html:
+            if not args.no_show:
+                webbrowser.open(f'file://{os.path.abspath(json_index_html)}')
+            else:
+                logger.info(f'{title}{os.path.abspath(json_index_html)}')
 
     if args.xml is True:
         print()
@@ -237,10 +239,11 @@ def compare_config(args, logger=None):
             v1_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, left, args.remove_tag)
             v2_xml = papi.get_properties_version_metadata_xml(config1, papi.asset_id, papi.group_id, right, args.remove_tag)
             xml_index_html = compare_versions(v1_xml, v2_xml, 'index_delivery', args, logger=logger)
-            if not args.no_show:
-                webbrowser.open(f'file://{os.path.abspath(xml_index_html)}')
-            else:
-                logger.info(f'{title}{os.path.abspath(xml_index_html)}')
+            if xml_index_html:
+                if not args.no_show:
+                    webbrowser.open(f'file://{os.path.abspath(xml_index_html)}')
+                else:
+                    logger.info(f'{title}{os.path.abspath(xml_index_html)}')
 
         if args.security is True:
             v1_xml = appsec.get_config_version_metadata_xml(waf_config_name, left)
@@ -249,18 +252,20 @@ def compare_config(args, logger=None):
             v1 = v1_xml['portalWaf']
             v2 = v2_xml['portalWaf']
             xml_portalWaf_index_html = compare_versions(v1, v2, 'index_xml_portalWaf', args, logger=logger)
-            if not args.no_show:
-                webbrowser.open(f'file://{os.path.abspath(xml_portalWaf_index_html)}')
-            else:
-                logger.info(f'{title}{os.path.abspath(xml_portalWaf_index_html)}')
+            if xml_portalWaf_index_html:
+                if not args.no_show:
+                    webbrowser.open(f'file://{os.path.abspath(xml_portalWaf_index_html)}')
+                else:
+                    logger.info(f'{title}{os.path.abspath(xml_portalWaf_index_html)}')
 
             v1 = v1_xml['wafAfter']
             v2 = v2_xml['wafAfter']
             xml_wafAfter_index_html = compare_versions(v1, v2, 'index_xml_wafAfter', args, logger=logger)
-            if not args.no_show:
-                webbrowser.open(f'file://{os.path.abspath(xml_wafAfter_index_html)}')
-            else:
-                logger.info(f'{title}{os.path.abspath(xml_wafAfter_index_html)}')
+            if xml_wafAfter_index_html:
+                if not args.no_show:
+                    webbrowser.open(f'file://{os.path.abspath(xml_wafAfter_index_html)}')
+                else:
+                    logger.info(f'{title}{os.path.abspath(xml_wafAfter_index_html)}')
 
 
 def compare_delivery_behaviors(args, logger):
