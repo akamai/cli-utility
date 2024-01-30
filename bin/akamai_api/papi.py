@@ -270,7 +270,7 @@ class Papi(AkamaiSession):
             self.logger.debug(f'{property_name} {resp.status_code} {resp.url} {property_items}')
             if len(property_items) == 0:
                 self.logger.debug(f'Not found {property_name}')
-                return resp.status_code, f'Not found {property_name}'
+                return resp.status_code, 'Not found'
             else:
                 self.account_id = property_items[0]['accountId']
                 self.contract_id = property_items[0]['contractId']
@@ -518,9 +518,10 @@ class Papi(AkamaiSession):
 
         try:
             # print_json(data=items)
+            itemss = []
             itemss = items['versions']['items']
         except TypeError:
-            self.logger.error('invalid property')
+            self.logger.error(f'invalid property {items}')
 
         for item in itemss:
             self.property_id = item['propertyId']
@@ -533,14 +534,15 @@ class Papi(AkamaiSession):
             latest_version = itemss[0]['propertyVersion']
             stg_version = latest_version
             prd_version = stg_version
-        else:
+        elif len(itemss) > 1:
             dd = defaultdict(list)
             for d in itemss:
                 for k, v in d.items():
                     dd[k].append(v)
             latest_version = max(dd['propertyVersion'])
 
-        self.logger.info(f'{itemss[0]["propertyName"]:<60} latest:stg:prd    v{latest_version}:v{stg_version}:v{prd_version}')
+        if len(itemss) > 0:
+            self.logger.info(f'{itemss[0]["propertyName"]:<60} latest:stg:prd    v{latest_version}:v{stg_version}:v{prd_version}')
         return latest_version, stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):

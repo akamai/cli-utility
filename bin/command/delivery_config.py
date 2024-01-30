@@ -884,15 +884,19 @@ def hostnames_certificate(args, account_folder, logger):
     print()
     for property in sorted(args.property):
         status, resp = papi.search_property_by_name(property)
+
         if status != 200:
-            logger.critical(f'property {property:<50} not found')
-            break
+            logger.critical(f'{property:<50} not found')
+        elif resp == 'Not found':
+            logger.critical(f'{property:<60} not found')
         else:
-            stg, prd = papi.property_version(resp)
-            try:
-                version = prd
-            except:
+            latest, stg, prd = papi.property_version(resp)
+            if args.network == 'latest':
+                version = latest
+            elif args.network == 'staging':
                 version = stg
+            else:
+                version = prd
 
             hostname = papi.get_property_version_hostnames(papi.property_id, version)
             df = pd.json_normalize(hostname)
@@ -924,11 +928,13 @@ def hostnames_certificate(args, account_folder, logger):
             final_columns = ['propertyName'] + columns
             all_properties.append(df[final_columns])
 
-    all_properties_df = pd.concat(all_properties)
-    sheet['all_properties'] = all_properties_df
-    filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/hostname_certificate.xlsx'
-    files.write_xlsx(filepath, sheet, freeze_column=4, adjust_column_width=True)
-    files.open_excel_application(filepath, not args.no_show, all_properties_df)
+    if len(all_properties) > 0:
+        print()
+        all_properties_df = pd.concat(all_properties)
+        sheet['all_properties'] = all_properties_df
+        filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/hostname_certificate.xlsx'
+        files.write_xlsx(filepath, sheet, freeze_column=4, adjust_column_width=True)
+        files.open_excel_application(filepath, not args.no_show, all_properties_df)
 
 
 def get_property_all_behaviors(args, logger):
@@ -942,7 +948,12 @@ def get_property_all_behaviors(args, logger):
         version = int(args.version) if args.version else None
         if version is None:
             latest, stg, prd = papi.property_version(resp)
-            version = prd
+            if args.network == 'latest':
+                version = latest
+            elif args.network == 'staging':
+                version = stg
+            else:
+                version = prd
     else:
         sys.exit(logger.error(resp))
 
@@ -983,8 +994,13 @@ def get_property_advanced_behavior(args, account_folder, logger):
             logger.critical(f'property {property:<50} not found')
             break
         else:
-            stg, prd = papi.property_version(resp)
-            version = prd
+            latest, stg, prd = papi.property_version(resp)
+            if args.network == 'latest':
+                version = latest
+            elif args.network == 'staging':
+                version = stg
+            else:
+                version = prd
             if args.version:
                 version = args.version
                 logger.warning(f'lookup requested v{version}')
@@ -1011,7 +1027,7 @@ def get_property_advanced_behavior(args, account_folder, logger):
             dc = pd.DataFrame(criteria)
             dc = dc[dc['name'] == 'matchAdvanced'].copy()
         if dc.empty:
-            logger.info('advanced match    not found')
+            logger.critical('advanced match    not found')
         else:
             dc = dc.reset_index(drop=True)
             dc = dc.rename(columns={'json_or_xml': 'xml'})
@@ -1072,8 +1088,13 @@ def get_property_advanced_override(args, logger):
             logger.info(f'property {property:<50} not found')
             break
         else:
-            stg, prd = papi.property_version(resp)
-            version = prd
+            latest, stg, prd = papi.property_version(resp)
+            if args.network == 'latest':
+                version = latest
+            elif args.network == 'staging':
+                version = stg
+            else:
+                version = prd
             if args.version:
                 version = args.version
                 logger.critical(f'lookup requested v{version}')
