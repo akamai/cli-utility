@@ -1182,7 +1182,10 @@ class PapiWrapper(Papi):
                     parent_count += child_count
         return parent_count
 
-    def cpcode_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
+    def cpcode_value(self, property_name: str, rules: dict) -> list[str]:
+        """
+        Cover regular cpcode, visitorPrioritization, netstorage, and Image Manager
+        """
         values = []
 
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
@@ -1206,6 +1209,16 @@ class PapiWrapper(Papi):
                         pass
                     try:
                         values.append(behavior['options']['waitingRoomNetStorage']['cpCode'])
+                    except:
+                        pass
+
+                elif behavior['name'] == 'imageManager':
+                    try:
+                        values.append(behavior['options']['cpCodeOriginal']['id'])
+                    except:
+                        pass
+                    try:
+                        values.append(behavior['options']['cpCodeTransformed']['id'])
                     except:
                         pass
 

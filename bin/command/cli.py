@@ -231,6 +231,7 @@ main_commands = [{'delivery': 'information detail about delivery configuration',
                                          {'name': 'remove-tag', 'help': 'ignore JSON/XML tags from comparison', 'nargs': '+'}
                                          ]},
                  {'bulk': 'bulk operation on delivery configuration'},
+                 {'cpcode': 'content provider code'},
                  {'event': 'Configure events, reporting, and alerts in Event Center',
                   'optional_arguments': [{'name': 'name-contains', 'help': 'event name contains string'}]},
                  {'certificate': 'certificate report includes enrollmentId, slotId, SNI, hostname, commonName, cName, vendor, expirationDate',

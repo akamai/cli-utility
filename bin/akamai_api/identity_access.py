@@ -128,14 +128,20 @@ class IdentityAccessManagement(AkamaiSession):
 
     def show_account_summary(self, account: str):
         account = self.remove_account_type(account)
-        account = account.replace(' - ', '_').replace(',', '').replace('.', '_')
-        account = account.translate(str.maketrans(' -', '__')).rstrip('_')
+        # account = account.replace(' - ', '_').replace(',', '').replace('.', '_')
+        # account = account.translate(str.maketrans(' -', '__')).rstrip('_')
+        account = account.replace(' ', '_')  # replace empty space with underscore
+        account = account.replace(',', '')
+        account = account.replace('._', '_')
+        account = account.replace(',_', '_')
+        account = account.rstrip('.')
+        acc_url = 'https://control.akamai.com/apps/home-page/#/manage-account?accountId='
         try:
-            account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={self.account_id}&contractTypeId={self.contract_type}&targetUrl='
+            account_url = f'{acc_url}{self.account_id}&contractTypeId={self.contract_type}&targetUrl='
         except:
-            account_url = f'https://control.akamai.com/apps/home-page/#/manage-account?accountId={self.account_id}&targetUrl='
+            account_url = f'{acc_url}{self.account_id}&targetUrl='
         print()
-        self.logger.warning(f'{account} {account_url}')
+        self.logger.warning(f'{account}         {account_url}')
         return account
 
     def get_api_client(self):

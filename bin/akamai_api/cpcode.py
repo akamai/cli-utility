@@ -12,18 +12,16 @@ class CpCode(AkamaiSession):
     def __init__(self, account_switch_key: str | None = None,
                  section: str | None = None,
                  edgerc: str | None = None,
-                 contract_id: str | None = None,
-                 group_id: int | None = None,
                  logger: logging.Logger = None):
         super().__init__(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
-        self._base_url = f'{self.base_url}/cprg/v1/'
+        self.MODULE = f'{self.base_url}/cprg/v1'
         self.headers = {'Accept': 'application/json',
                         'Content-Type': 'application/json',
                         'PAPI-Use-Prefixes': 'false',
                         }
-        self.account_switch_key = account_switch_key
-        self.contract_id = contract_id
-        self.group_id = group_id
+        self.account_switch_key = account_switch_key if account_switch_key else None
+        self.contract_id = None
+        self.group_id = None
         self.logger = logger
 
     def list_cpcode(self,
@@ -43,12 +41,10 @@ class CpCode(AkamaiSession):
         if self.account_switch_key:
             params['accountSwitchKey'] = self.account_switch_key
 
-        resp = self.session.get(f'{self._base_url}/cpcodes', params=params, headers=self.headers)
-        return resp.status_code, resp.json()
+        return self.session.get(f'{self.MODULE}/cpcodes', params=params, headers=self.headers)
 
     def get_cpcode(self, cpcode: str) -> tuple:
-        resp = self.session.get(f'{self._base_url}cpcodes/{cpcode}', params=self.params, headers=self.headers)
-        return resp.status_code, resp.json()
+        return self.session.get(f'{self.MODULE}/cpcodes/{cpcode}', params=self.params, headers=self.headers)
 
 
 if __name__ == '__main__':
