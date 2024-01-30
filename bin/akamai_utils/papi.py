@@ -437,42 +437,7 @@ class PapiWrapper(Papi):
         return super().property_version(json)
 
     def search_property_by_name(self, property_name: str) -> tuple[int, str]:
-
-        status_code, resp = super().search_property_by_name(property_name)
-        print_json(data=resp)
-        if status_code == 200:
-            try:
-                property_items = resp['versions']['items']
-                # print_json(data=property_items)
-                pid = property_items[0]['propertyId']
-                ver = property_items[0]['propertyVersion']
-                x = super().get_property_version_detail(pid, ver)
-                self.logger.debug(f'{pid} {ver} {x}')
-            except Exception as err:
-                self.logger.error(err)
-                self.logger.info(print_json(data=resp))
-
-            self.logger.debug(f'{property_name} {status_code} {property_items}')
-            if len(property_items) == 0:
-                self.logger.debug(f'Not found {property_name}')
-                return 400, f'Not found {property_name}'
-            else:
-                self.account_id = property_items[0]['accountId']
-                self.contract_id = property_items[0]['contractId']
-                self.asset_id = property_items[0]['assetId']
-                self.group_id = int(property_items[0]['groupId'])
-                self.property_id = int(property_items[0]['propertyId'])
-                return 200, property_items
-        elif status_code == 401:
-            self.logger.error(resp['title'])
-            sys.exit()
-        elif 'WAF deny rule IPBLOCK-BURST' in resp['detail']:
-            self.logger.error(resp['detail'])
-            lg.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)
-            sys.exit()
-        else:
-            self.logger.debug(f'{property_name:<40} {status_code}')
-            return resp.status_code, resp.json()
+        return super().search_property_by_name(property_name)
 
     def search_property_by_hostname(self, hostname: str) -> str:
         return super().search_property_by_hostname(hostname)
@@ -896,7 +861,7 @@ class PapiWrapper(Papi):
             pass
         return advancedOverride
 
-    def get_property_path_n_behavior(self, json: dict[str, Any]) -> list[dict[str, Any]]:
+    def get_property_path_n_behavior(self, json: dict) -> list:
         navigation = []
         visited_paths = set()
 
@@ -920,7 +885,7 @@ class PapiWrapper(Papi):
         traverse_json(json)
         return navigation
 
-    def collect_property_behavior(self, property_name: str, json: dict[str, Any]) -> pd.DataFrame:
+    def collect_property_behavior(self, property_name: str, json: dict) -> pd.DataFrame:
         _behavior = self.get_property_path_n_behavior(json)
 
         flat = pd.json_normalize(_behavior)
@@ -949,11 +914,11 @@ class PapiWrapper(Papi):
         columns = ['property', 'path', 'jsonpath', 'type', 'name', 'json_or_xml', 'custom_behaviorId']
         return behavior[columns]
 
-    def get_property_path_n_criteria(self, json: dict[str, Any]) -> list[dict[str, Any]]:
+    def get_property_path_n_criteria(self, json: dict) -> list:
         navigation = []
         visited_paths = set()
 
-        def traverse_json(json: dict[str, Any], path: str | None = '') -> list[dict[str, Any]]:
+        def traverse_json(json: dict, path: str | None = '') -> list[dict]:
             if isinstance(json, dict):
                 if 'criteria' in json and len(json['criteria']) > 0:
                     current_path = f'{path} {json["name"]}'.strip()
@@ -975,7 +940,7 @@ class PapiWrapper(Papi):
         traverse_json(json)
         return navigation
 
-    def collect_property_criteria(self, property_name: str, json: dict[str, Any]) -> pd.DataFrame:
+    def collect_property_criteria(self, property_name: str, json: dict) -> pd.DataFrame:
         criteria_list = self.get_property_path_n_criteria(json)
         dx = pd.DataFrame()
         if len(criteria_list) > 0:
@@ -1008,7 +973,7 @@ class PapiWrapper(Papi):
             return criteria[columns]
         return criteria
 
-    def get_property_path_n_criteria_condition(self, json: dict[str, Any]) -> list[dict[str, Any]]:
+    def get_property_path_n_criteria_condition(self, json: dict) -> list[dict]:
         navigation = []
         visited_paths = set()
 
@@ -1033,7 +998,7 @@ class PapiWrapper(Papi):
         traverse_json(json)
         return navigation
 
-    def collect_property_criteria_condition(self, property_name: str, json: dict[str, Any]) -> pd.DataFrame:
+    def collect_property_criteria_condition(self, property_name: str, json: dict) -> pd.DataFrame:
         criteria_list = self.get_property_path_n_criteria_condition(json)
         dx = pd.DataFrame()
         if len(criteria_list) > 0:
@@ -1059,7 +1024,7 @@ class PapiWrapper(Papi):
             return criteria[columns]
         return criteria
 
-    def get_product_schema(self, product_id: str, format_version: str | None = 'latest') -> dict[str, Any]:
+    def get_product_schema(self, product_id: str, format_version: str | None = 'latest') -> dict:
         status, response = super().get_ruleformat_schema(product_id, format_version)
         if status == 200:
             return response
@@ -1067,7 +1032,7 @@ class PapiWrapper(Papi):
             return {}
 
     # BEHAVIORS
-    def get_behavior(self, rule_dict: dict[str, Any], behavior: str) -> dict[str, Any]:
+    def get_behavior(self, rule_dict: dict, behavior: str) -> dict:
         rule_dict = rule_dict['definitions']['catalog']['behaviors']
         matching = [key for key in rule_dict if behavior.lower() in key.lower()]
         if not matching:
@@ -1076,7 +1041,7 @@ class PapiWrapper(Papi):
         data = {key: rule_dict[key] for key in matching}
         return data
 
-    def get_behavior_option(self, behavior_dict: dict[str, Any], behavior: str) -> dict[str, Any]:
+    def get_behavior_option(self, behavior_dict: dict, behavior: str) -> dict:
         matching = [key for key in behavior_dict if behavior.lower() in key.lower()]
         if not matching:
             self.logger.critical(f'{behavior} not in catalog')
@@ -1101,24 +1066,55 @@ class PapiWrapper(Papi):
                 df[f'{criterion}_count'] = df[criterion].str.len()
                 df[criterion] = df[[criterion]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
                 self.logger.debug(f'\n{df}')
+            if criterion == 'path':
+                df[criterion] = df.apply(lambda row: self.path_value(row['ruletree']['rules']), axis=1)
+                df[criterion] = df[[criterion]].parallel_apply(lambda x: dataframe.flat_list(x[0]) if len(x[0]) > 0 else '', axis=1)
+                df[f'{criterion}_count'] = df[criterion].parallel_apply(lambda x: len(x))
+                self.logger.debug(f'\n{df}')
+                print(df[[criterion, f'{criterion}_count']])
+                df[criterion] = df[[criterion]].parallel_apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
         return df
 
-    def cloudlets_origin_value(self, json: dict[str, Any]) -> list[str]:
+    def cloudlets_origin_value(self, json: dict) -> list[str]:
         origins = []
 
-        def traverse_json(json: dict[str, Any]) -> list[str]:
+        def traverse_json(json: dict) -> list[str]:
             if isinstance(json, dict):
                 if 'criteria' in json and len(json['criteria']) > 0:
                     for x in json['criteria']:
                         try:
                             if x['name'] == 'cloudletsOrigin':
-                                origins.append(x['options']['originId'])
+                                origins.extend(x['options']['originId'])
                         except:
                             pass
                 for k, v in json.items():
                     if k in ['children', 'behaviors']:
                         traverse_json(v)
-            elif isinstance(json, list[Any]):
+            elif isinstance(json, list):
+                for i, item in enumerate(json):
+                    index = i + 1
+                    traverse_json(item)
+            return origins
+
+        traverse_json(json)
+        return origins
+
+    def path_value(self, json: dict) -> list[str]:
+        origins = []
+
+        def traverse_json(json: dict) -> list[str]:
+            if isinstance(json, dict):
+                if 'criteria' in json and len(json['criteria']) > 0:
+                    for x in json['criteria']:
+                        try:
+                            if x['name'] == 'path':
+                                origins.append(x['options']['values'])
+                        except:
+                            pass
+                for k, v in json.items():
+                    if k in ['children', 'behaviors']:
+                        traverse_json(v)
+            elif isinstance(json, list):
                 for i, item in enumerate(json):
                     index = i + 1
                     traverse_json(item)
@@ -1169,7 +1165,7 @@ class PapiWrapper(Papi):
         return df
 
     @staticmethod
-    def behavior_count(property_name: str, rules: dict[str, Any], target_behavior: str) -> int:
+    def behavior_count(property_name: str, rules: dict, target_behavior: str) -> int:
         parent_count = 0
 
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
@@ -1228,7 +1224,7 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return list(set(values))
 
-    def custom_behavior_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
+    def custom_behavior_value(self, property_name: str, rules: dict) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -1243,7 +1239,7 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return list(set(values))
 
-    def setvariable_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
+    def setvariable_value(self, property_name: str, rules: dict) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -1271,7 +1267,7 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return sorted(list(set(values)))
 
-    def origin_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
+    def origin_value(self, property_name: str, rules: dict) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -1291,7 +1287,7 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return sorted(list(set(values)))
 
-    def siteshield_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
+    def siteshield_value(self, property_name: str, rules: dict) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
@@ -1306,7 +1302,7 @@ class PapiWrapper(Papi):
                     values.extend(child_values)
         return sorted(list(set(values)))
 
-    def sureroute_value(self, property_name: str, rules: dict[str, Any]) -> list[str]:
+    def sureroute_value(self, property_name: str, rules: dict) -> list[str]:
         values = []
         if 'behaviors' in rules.keys() and isinstance(rules['behaviors'], list):
             for behavior in rules['behaviors']:
