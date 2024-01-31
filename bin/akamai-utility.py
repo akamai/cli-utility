@@ -85,6 +85,8 @@ if __name__ == '__main__':
             dc.main(args, account_folder, logger)
 
     if args.command == 'security':
+        account_folder = f'{account_folder}/security'
+        Path(f'{account_folder}').mkdir(parents=True, exist_ok=True)
         if args.subcommand == 'hostname':
             sec.audit_hostname(args, account_folder, logger)
         else:

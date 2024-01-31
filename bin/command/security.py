@@ -49,6 +49,7 @@ def list_config(args, account_folder, logger):
         if args.group:
             df = df[df['groupId'].isin(args.group)].copy()
             df = df.reset_index(drop=True)
+            df.index = df.index + 1
             all_configs = df['configName'].values.tolist()
 
         if 'description' in columns:
@@ -63,6 +64,7 @@ def list_config(args, account_folder, logger):
         if args.group:
             good_df = good_df[good_df['groupId'].isin(args.group)].copy()
             good_df = good_df.reset_index(drop=True)
+            good_df.index = good_df.index + 1
         if not good_df.empty:
             print(tabulate(good_df[columns], headers=columns, tablefmt='simple', numalign='center', showindex=True, maxcolwidths=50))
         else:
@@ -105,6 +107,7 @@ def list_config(args, account_folder, logger):
                 summary.remove('basedOn')
 
             df = pd.json_normalize(policy)
+            df.index = df.index + 1
             logger.debug(df.columns.values)
             print(tabulate(df[summary], headers=summary, tablefmt='simple', numalign='center', showindex=False, maxcolwidths=50))
 
@@ -232,6 +235,7 @@ def audit_hostname(args, account_folder, logger):
     df = df.rename(columns={'id': 'configId', 'name': 'configName'})
     df = df.sort_values(by=['groupId', 'configName'], na_position='first')
     df = df.reset_index(drop=True)
+    df.index = df.index + 1
     df['groupId'] = df['groupId'].apply(lambda x: str(int(x)) if pd.notna(x) else x)
     df = df.fillna('')
     df['stagingVersion'] = df['stagingVersion'].replace('', 0)
@@ -248,11 +252,13 @@ def audit_hostname(args, account_folder, logger):
         good_configs = list(set(all_configs).intersection(set(args.config)))
         good_df = df[df['configName'].isin(good_configs)].copy()
         good_df = good_df.reset_index(drop=True)
+        good_df.index = good_df.index + 1
 
     if len(good_configs) == 0:
         if args.group:
             df = df[df['groupId'].isin(args.group)].copy()
             df = df.reset_index(drop=True)
+            df.index = df.index + 1
             all_configs = df['configName'].values.tolist()
     df['productionHostnames_sorted'] = df['productionHostnames'].apply(sorted)
     del df['productionHostnames']
@@ -285,6 +291,9 @@ def audit_hostname(args, account_folder, logger):
     logger.warning('Security Configuration by GroupId')
     temp_columns = ['contractId', 'groupId', 'configId', 'configName', 'productionHostnames_count']
     if len(security_config_by_group.index) < len(waf_security_df.index):
+        security_config_by_group = security_config_by_group.reset_index(drop=True)
+        security_config_by_group.index = security_config_by_group.index + 1
+
         print(tabulate(security_config_by_group[temp_columns], headers=temp_columns, showindex=True,
                        numalign='center', tablefmt='grid', maxcolwidths=50))
 
@@ -328,20 +337,21 @@ def audit_hostname(args, account_folder, logger):
 
     # get property from group
     print()
-    logger.warning('Collecting hostnames from delivery configs from the same groups')
+    logger.warning('Collecting hostnames from delivery configs from the same groups\n')
 
     with yaspin():
         allgroups_df, columns = papi.account_group_summary()
-
     properties = df.query("groupId != ''")
     security_groups = properties['groupId'].unique().tolist()
     allgroups_df['groupId'] = allgroups_df['groupId'].astype(str)
     group_df = allgroups_df[allgroups_df['groupId'].isin(security_groups)].copy()
     group_df = group_df.reset_index(drop=True)
+    group_df.index = group_df.index + 1
     columns.remove('groupName')
     columns = ['contractId', 'groupId', 'parentGroupId', 'group_structure', 'propertyCount']
     if not group_df.empty:
-        print(tabulate(group_df[columns], headers=columns, showindex=True, tablefmt='github'))
+        print(tabulate(group_df[columns], headers=columns, showindex=True, tablefmt='github', numalign='center'))
+        print()
     else:
         print('no property found')
 
@@ -357,6 +367,7 @@ def audit_hostname(args, account_folder, logger):
             }
         staging = staging.groupby('groupId').agg(agg_dict)
         staging = staging.reset_index(drop=True)
+        staging.index = staging.index + 1
         staging['groupId'] = staging[['groupId']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
         staging['hostname_count'] = staging['hostname'].str.len()
         columns = ['groupId', 'propertyName', 'hostname', 'hostname_count']
@@ -369,7 +380,7 @@ def audit_hostname(args, account_folder, logger):
         if not staging.empty:
             print()
             logger.warning('Delivery configs activated on staging only')
-            print(tabulate(staging, headers=columns, showindex=True, tablefmt='grid', maxcolwidths=50))
+            print(tabulate(staging, headers=columns, showindex=True, tablefmt='grid',  numalign='center', maxcolwidths=50))
 
         # Merge the dataframes on 'groupId'
         '''
@@ -410,6 +421,7 @@ def audit_hostname(args, account_folder, logger):
             staging['propertyName'] = staging[['propertyName']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
             staging['hostname'] = staging[['hostname']].apply(lambda x: dataframe.split_elements_newline(x[0]) if len(x[0]) > 0 else '', axis=1)
             staging = staging.reset_index(drop=True)
+            staging.index = staging.index + 1
 
             sheet = {}
             sheet['compare'] = diff_df[columns]
