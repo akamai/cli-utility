@@ -46,8 +46,8 @@ def list_config(args, account_folder, logger):
         good_df = good_df.reset_index(drop=True)
 
     if len(good_configs) == 0:
-        if args.group_id:
-            df = df[df['groupId'].isin(args.group_id)].copy()
+        if args.group:
+            df = df[df['groupId'].isin(args.group)].copy()
             df = df.reset_index(drop=True)
             all_configs = df['configName'].values.tolist()
 
@@ -60,8 +60,8 @@ def list_config(args, account_folder, logger):
         all_configs_str = ' '.join(modified_list)
         logger.warning(f'--config {all_configs_str}')
     else:
-        if args.group_id:
-            good_df = good_df[good_df['groupId'].isin(args.group_id)].copy()
+        if args.group:
+            good_df = good_df[good_df['groupId'].isin(args.group)].copy()
             good_df = good_df.reset_index(drop=True)
         if not good_df.empty:
             print(tabulate(good_df[columns], headers=columns, tablefmt='simple', numalign='center', showindex=True, maxcolwidths=50))
@@ -250,8 +250,8 @@ def audit_hostname(args, account_folder, logger):
         good_df = good_df.reset_index(drop=True)
 
     if len(good_configs) == 0:
-        if args.group_id:
-            df = df[df['groupId'].isin(args.group_id)].copy()
+        if args.group:
+            df = df[df['groupId'].isin(args.group)].copy()
             df = df.reset_index(drop=True)
             all_configs = df['configName'].values.tolist()
     df['productionHostnames_sorted'] = df['productionHostnames'].apply(sorted)
