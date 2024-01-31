@@ -55,28 +55,39 @@ def get_event(args, account_folder, logger):
     cpc = cp.CpCodeWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc)
     pandarallel.initialize(progress_bar=False, verbose=0)
 
-    all_data = []
-    for id in args.id:
-        resp = event.get_event(id)
-        if not resp.ok:
-            logger.error(resp.text)
-        else:
-            df = pd.DataFrame(resp.json()['objects'])
-            df['eventcenter_id'] = resp.json()['id']
-            df['event_name'] = resp.json()['name']
-            all_data.append(df)
+    if args.id:
+        all_ids = args.id
+    else:
+        resp = event.list_events()
+        if resp.ok and len(resp.json()['data']) > 0:
+            print()
+            df = pd.DataFrame(resp.json()['data'])
+            all_ids = df.id.values.tolist()
+            args.id = all_ids
 
-    df = pd.concat(all_data)
+    logger.info(f'Processing total event id: {len(all_ids)}')
+
+    df = pd.DataFrame(all_ids, columns=['eventcenter_id'])
+    df['resp'] = df['eventcenter_id'].parallel_apply(lambda x: event.get_event(x))
+    df['objects'] = df['resp'].parallel_apply(lambda x: x.json()['objects'] if x.ok else '')
+
+    df_exploded = df.explode('objects').reset_index(drop=True)
+    df_exploded = pd.concat([df_exploded.drop(['objects'], axis=1), df_exploded['objects'].apply(pd.Series)], axis=1)
+    df_exploded = df_exploded[['eventcenter_id', 'name', 'cpCode']]
+    df = df_exploded.rename(columns={'name': 'event_name'})
+    logger.debug(f'\n{df}')
 
     df['cpcode_name'] = df['cpCode'].parallel_apply(lambda x: cpc.get_cpcode_name(x))
     df['cpCode'] = df['cpCode'].astype(str)
     df = df.sort_values(by=['event_name', 'cpcode_name'], key=lambda x: x.str.lower())
     df = df.reset_index(drop=True)
+    df.index = df.index + 1
     print()
     columns = ['eventcenter_id', 'event_name', 'cpCode', 'cpcode_name']
-    print(tabulate(df[columns], headers=columns, tablefmt='simple'))
+    print(tabulate(df[columns], headers=columns, tablefmt='simple', numalign='center'))
 
     sheet = {}
+    print()
     sheet['events'] = df[columns]
     filepath = f'{account_folder}/eventcenter.xlsx'
     files.write_xlsx(filepath, sheet, freeze_column=2) if not df.empty else None
