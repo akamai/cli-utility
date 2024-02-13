@@ -115,7 +115,19 @@ if __name__ == '__main__':
         ca.audit(args, account_folder, logger)
 
     if args.command == 'cpcode':
-        cp.list_cpcode(args, account_folder, logger=logger)
+        if args.subcommand == 'reporting':
+            if args.ops == 'create':
+                if not args.input:
+                    sys.exit('input excel file is required')
+                cp.create_reporting_group(args, logger=logger)
+            elif args.ops == 'update':
+                cp.update_reporting_group(args, logger=logger)
+            elif args.ops == 'delete':
+                cp.delete_reporting_group(args, logger=logger)
+            else:
+                cp.list_reporting_group(args, account_folder, logger=logger)
+        else:
+            cp.list_cpcode(args, account_folder, logger=logger)
 
     if args.command == 'event':
         Path(f'{account_folder}').mkdir(parents=True, exist_ok=True)
