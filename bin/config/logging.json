@@ -17,12 +17,14 @@
       "formatter": "short"
     },
     "file_handler": {
-      "class": "logging.FileHandler",
+      "class": "logging.handlers.TimedRotatingFileHandler",
       "level": "INFO",
       "filename": "logs/utility.log",
       "formatter": "long",
       "delay": true,
-      "mode": "w"
+      "when": "D",
+      "interval": 1,
+      "backupCount": 2
     }
   },
   "root": {

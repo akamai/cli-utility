@@ -36,9 +36,9 @@ def setup_logger(args):
 
     with open(origin_config) as f:
         log_cfg = json.load(f)
-
-    log_cfg['handlers']['file_handler']['filename'] = 'logs/utility.log'
+    # log_cfg['handlers']['file_handler']['()'] = 'utils.cli_formatter.MyTimedRotatingFileHandler'
     log_cfg['formatters']['long']['()'] = 'utils.cli_formatter.CLIFormatter'
+
     dictConfig(log_cfg)
     logging.Formatter.converter = time.gmtime
 
