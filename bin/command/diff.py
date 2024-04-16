@@ -66,8 +66,13 @@ def security_config_json(appsec, waf_config_name: str, config_id: int,
 
 
 def compare_versions(v1: str, v2: str, outputfile: str, args, logger=None):
+    if platform.system() != 'Darwin':
+        sys.exit(logger.info('diff command only support on non-Window OS'))
+
     cmd_text = f'diff -u {v1} {v2} | ydiff -s --wrap -p cat'
-    diff = subprocess.run(cmd_text, shell=True, stdout=subprocess.PIPE)
+
+    diff = subprocess.run(cmd_text, shell=True, capture_output=True)
+
     if diff.stdout == b'':
         logger.info('no difference')
     else:
