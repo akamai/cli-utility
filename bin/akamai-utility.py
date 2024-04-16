@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import platform
+import subprocess
 import sys
 from pathlib import Path
 from time import perf_counter
@@ -93,10 +95,30 @@ if __name__ == '__main__':
             sec.list_config(args, account_folder, logger)
 
     if args.command == 'diff':
-        if args.subcommand == 'behavior':
-            diff.compare_delivery_behaviors(args, logger=logger)
+        proceed = False
+        if platform.system() != 'Darwin':
+            sys.exit(logger.info('diff command only support on non-Window OS'))
         else:
-            diff.compare_config(args, logger=logger)
+            try:
+                cmd_text = 'pip list | grep ydiff'
+                grep = subprocess.run(cmd_text, shell=True, stdout=subprocess.PIPE)
+                if grep.stdout == b'':
+                    cmd_text = 'pip install ydiff'
+                    ydiff = subprocess.run(cmd_text, shell=True, stdout=subprocess.PIPE)
+                    if ydiff.stdout != b'':
+                        proceed = True
+                    else:
+                        logger.error('subprocess error for pip install ydiff')
+            except subprocess.CalledProcessError as e:
+                logger.error('subprocess error for pip install ydiff')
+                logger.error(e.stdout)
+                logger.error(e.stderr)
+
+        if proceed:
+            if args.subcommand == 'behavior':
+                diff.compare_delivery_behaviors(args, logger=logger)
+            else:
+                diff.compare_config(args, logger=logger)
 
     if args.command == 'bulk':
         Path(f'{account_folder}/bulk').mkdir(parents=True, exist_ok=True)
