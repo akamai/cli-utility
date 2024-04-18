@@ -205,6 +205,7 @@ def get_ruleformat_schema(args, logger):
                             behavior_sample['name'] = behavior
                             behavior_sample['options'] = options_data
                             print_json(data=behavior_sample)
+                            files.write_json(f'output/ruleformat/{behavior}.json', behavior_sample)
                             print()
 
                         updated_behavior = files.prepare_excel_sheetname(behavior)
