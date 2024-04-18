@@ -98,21 +98,23 @@ if __name__ == '__main__':
         proceed = False
         if platform.system() != 'Darwin':
             sys.exit(logger.info('diff command only support on non-Window OS'))
-        else:
-            try:
-                cmd_text = 'pip list | grep ydiff'
-                grep = subprocess.run(cmd_text, shell=True, stdout=subprocess.PIPE)
-                if grep.stdout == b'':
-                    cmd_text = 'pip install ydiff'
-                    ydiff = subprocess.run(cmd_text, shell=True, stdout=subprocess.PIPE)
-                    if ydiff.stdout != b'':
-                        proceed = True
-                    else:
-                        logger.error('subprocess error for pip install ydiff')
-            except subprocess.CalledProcessError as e:
-                logger.error('subprocess error for pip install ydiff')
-                logger.error(e.stdout)
-                logger.error(e.stderr)
+
+        try:
+            cmd_text = 'pip list | grep ydiff'
+            grep = subprocess.run(cmd_text, shell=True, stdout=subprocess.PIPE)
+            if grep.stdout != b'':
+                proceed = True
+            else:
+                cmd_text = 'pip install ydiff'
+                ydiff = subprocess.run(cmd_text, shell=True, stdout=subprocess.PIPE)
+                if ydiff.stdout != b'':
+                    proceed = True
+                else:
+                    logger.error('subprocess error for pip install ydiff')
+        except subprocess.CalledProcessError as e:
+            logger.error('subprocess error for pip install ydiff')
+            logger.error(e.stdout)
+            logger.error(e.stderr)
 
         if proceed:
             if args.subcommand == 'behavior':
