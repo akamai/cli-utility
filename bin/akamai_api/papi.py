@@ -542,7 +542,10 @@ class Papi(AkamaiSession):
             latest_version = max(dd['propertyVersion'])
 
         if len(itemss) > 0:
-            self.logger.info(f'{itemss[0]["propertyName"]:<60} latest:stg:prd    v{latest_version}:v{stg_version}:v{prd_version}')
+            if latest_version == stg_version and stg_version == prd_version:
+                self.logger.info(f'{itemss[0]["propertyName"]:<60}                     v{latest_version}')
+            else:
+                self.logger.info(f'{itemss[0]["propertyName"]:<60} latest_stg_prd      v{latest_version}_v{stg_version}_v{prd_version}')
         return latest_version, stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):

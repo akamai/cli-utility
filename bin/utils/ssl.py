@@ -52,7 +52,7 @@ def get_cert(hostname: str, port: int, sni: bool, retries=2, delay=1):
             count += 1
             time.sleep(delay)
         except Exception as e:
-            logger.error(f'{hostname:<80} Error occurred during connection: {str(e)}')
+            logger.error(f'{hostname:<80} {str(e)}')
             break
     if count > 0:
         logger.error(f'{hostname:<80} Failed to establish a connection')
