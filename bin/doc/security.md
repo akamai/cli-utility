@@ -2,7 +2,7 @@
 
 The security command facilitates the download of security configurations for the account. A list of CIDR and IP addresses are provided for configurations with network lists.
 
-![security](./bin/doc/help/security.jpg)
+![security](./help/security.jpg)
 
 ## security hostname
 

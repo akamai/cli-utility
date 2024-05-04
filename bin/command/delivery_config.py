@@ -348,14 +348,29 @@ def main(args, account_folder, logger):
 
 
 def netstorage(args, account_folder, logger):
+    '''
+    To get netstorage details utilized by properties on the account.  Optionally, you can filter by group or by property.
+
+    akamai util delivery netstorage --concurrency 10
+    akamai util delivery netstorage --group 11111 11112 11113 --concurrency 5
+    akamai util delivery netstorage --property A B C D
+    akamai util delivery netstorage --input config.txt
+    '''
+
+    if args.property and args.input:
+        sys.exit(logger.error('Please use either --property or --input, not both'))
+    if args.input:
+        with open(args.input) as file:
+            args.property = sorted([line.rstrip('\n') for line in file.readlines()])
+    if args.property:
+        properties = sorted(args.property)
 
     properties_df = main(args, account_folder, logger)
+
     if properties_df.empty:
         sys.exit()
-    if args.property:
-        print()
-        pandarallel.initialize(progress_bar=False, verbose=0)
-        print()
+
+    pandarallel.initialize(progress_bar=False, verbose=0)
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     if 'ruletree' not in properties_df.columns:
         properties_df['ruletree'] = properties_df.apply(lambda row: papi.get_property_ruletree(row['propertyId'], int(row['productionVersion'])
@@ -443,17 +458,22 @@ def netstorage(args, account_folder, logger):
 
 def origin_certificate(args, account_folder, logger):
 
+    if args.property and args.input:
+        sys.exit(logger.error('Please use either --property or --input, not both'))
+    if args.input:
+        with open(args.input) as file:
+            args.property = sorted([line.rstrip('\n') for line in file.readlines()])
+    if args.property:
+        properties = sorted(args.property)
+
     properties_df = main(args, account_folder, logger)
+
     if properties_df.empty:
         sys.exit()
 
+    pandarallel.initialize(progress_bar=False, verbose=0)
     properties = properties_df[['propertyName', 'propertyId', 'productionVersion', 'latestVersion']].copy()
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
-
-    if args.property:
-        print()
-        pandarallel.initialize(progress_bar=False, verbose=0)
-        print()
 
     properties['rules'] = properties.parallel_apply(
         lambda row: papi.get_property_ruletree(int(row['propertyId']),
@@ -782,8 +802,11 @@ def jsonpath(args, account_folder, logger):
     '''
     akamai util delivery jsonpath --property AAA BBB
     '''
-    if args.property is None:
-        sys.exit(logger.error('at least one property is required'))
+    if args.property and args.input:
+        sys.exit(logger.error('Please use either --property or --input, not both'))
+
+    if args.property and args.group:
+        sys.exit(logger.error('Please use either --property or --group, not both'))
 
     if args.version is not None and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, only one property is supported'))
@@ -794,7 +817,14 @@ def jsonpath(args, account_folder, logger):
     console_columns = ['property', 'rulename', 'type', 'name', 'JSONPATH']
     columns = ['property', 'JSONPATH', 'rulename', 'type', 'name', 'json_options']
 
-    for property in args.property:
+    if args.input:
+        with open(args.input) as file:
+            properties = sorted([line.rstrip('\n') for line in file.readlines()])
+
+    if args.property:
+        properties = sorted(args.property)
+
+    for property in properties:
         status, resp = papi.search_property_by_name(property)
         if status != 200:
             logger.info(f'property {property:<50} not found')
@@ -822,10 +852,11 @@ def jsonpath(args, account_folder, logger):
                 for key in keys_to_remove:
                     ruletree.pop(key, None)
 
+                cols = ['JSONPATH', 'rulename', 'name', 'json_options']
                 for type in args.type:
                     if type == 'criteria':
                         result = papi.find_jsonpath_criteria(ruletree)
-                        df = pd.DataFrame(result, columns=['JSONPATH', 'rulename', 'name', 'json_options'])
+                        df = pd.DataFrame(result, columns=cols)
                         if args.criteria:
                             df = df[df['name'].isin(args.criteria)].copy()
                         df['property'] = property_name
@@ -833,19 +864,19 @@ def jsonpath(args, account_folder, logger):
                         alls.append(df)
                     if type == 'behavior':
                         result = papi.find_jsonpath_behavior(ruletree)
-                        df = pd.DataFrame(result, columns=['JSONPATH', 'rulename', 'name', 'json_options'])
+                        df = pd.DataFrame(result, columns=cols)
                         if args.behavior:
                             df = df[df['name'].isin(args.behavior)].copy()
                         df['property'] = property_name
                         df['type'] = 'behavior'
                         alls.append(df)
-
-                result = papi.find_jsonpath_criteria_condition(ruletree)
-
-                df = pd.DataFrame(result, columns=['JSONPATH', 'rulename', 'name', 'json_options'])
-                df['property'] = property_name
-                df['type'] = 'criteria_condition'
-                alls.append(df)
+                    if type == 'condition':
+                        result = papi.find_jsonpath_criteria_condition(ruletree)
+                        df = pd.DataFrame(result, columns=cols)
+                        df = df[df['rulename'] != 'default'].copy()
+                        df['property'] = property_name
+                        df['type'] = 'criteria_condition'
+                        alls.append(df)
 
     df = pd.concat(alls)
     df = df.sort_values(by=['property', 'JSONPATH'])
@@ -872,8 +903,8 @@ def hostnames_certificate(args, account_folder, logger):
     akamai util delivery hostname-cert --property A --version 27
     akamai util delivery hostname-cert --property A B C D
     '''
-    if args.property is None:
-        sys.exit(logger.error('At least one property is required'))
+    if args.property and args.input:
+        sys.exit(logger.error('Please use either --property or --input, not both'))
 
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, only one property is supported'))
@@ -882,7 +913,15 @@ def hostnames_certificate(args, account_folder, logger):
     all_properties = []
     sheet = {}
     print()
-    for property in sorted(args.property):
+
+    if args.input:
+        with open(args.input) as file:
+            properties = sorted([line.rstrip('\n') for line in file.readlines()])
+
+    if args.property:
+        properties = sorted(args.property)
+
+    for property in properties:
         status, resp = papi.search_property_by_name(property)
 
         if status != 200:
@@ -976,18 +1015,24 @@ def get_property_advanced_behavior(args, account_folder, logger):
     '''
     akamai util delivery metadata --property xxx yyy
     '''
+    if args.property and args.input:
+        sys.exit(logger.error('Please use either --property or --input, not both'))
 
     if args.version and len(args.property) > 1:
         sys.exit(logger.error('If --version is specified, we can lookup one property'))
-
-    if args.property is None:
-        sys.exit(logger.error('at least one property is required'))
 
     papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
     sheet = {}
     options = []
     columns = ['property', 'type', 'xml', 'path']
-    for property in args.property:
+    if args.input:
+        with open(args.input) as file:
+            properties = sorted([line.rstrip('\n') for line in file.readlines()])
+
+    if args.property:
+        properties = sorted(args.property)
+
+    for property in properties:
         print()
         status, resp = papi.search_property_by_name(property)
         if status != 200:
