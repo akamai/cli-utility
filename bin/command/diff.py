@@ -341,13 +341,20 @@ def compare_delivery_behaviors(args, logger):
     if args.behavior:
         db = db[db['name'].isin(args.behavior)].copy()
         db = db.reset_index(drop=True)
-    # sheet['behavior'] = db
+    sheet['behavior'] = db
 
     dc = pd.concat(all_criteria)
     if args.criteria:
         dc = dc[dc['name'].isin(args.criteria)].copy()
         dc = dc.reset_index(drop=True)
-    # sheet['criteria'] = dc
+    sheet['criteria'] = dc
+
+    dcon = pd.concat(all_criteria)
+    if args.condition:
+        dcon['json_or_xml'] = dcon['json_or_xml'].apply(str)
+        dcon = dcon[dcon['json_or_xml'].str.contains(args.condition, na=False)].copy()
+        dcon = dcon.reset_index(drop=True)
+    sheet['condition'] = dcon
 
     dcc = pd.concat(all_criteria_condition)
 
