@@ -161,6 +161,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
             bulk_search_id = bulk_search_result['bulkSearchId']
             logger.critical(f'bulkSearchId: {bulk_search_id}')
             df = pd.DataFrame(bulk_search_result['results'])
+            df = check_filter_condition(args, df, logger).copy()
             df['bulkSearchId'] = bulk_search_id
             df['contractId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'contractId'), axis=1)
             df['groupId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'groupId'), axis=1)
@@ -220,6 +221,7 @@ def bulk_search(args, account_folder, logger) -> pd.DataFrame:
                 bulk_result = resp.json()
                 bulk_search_id = bulk_result['bulkSearchId']
                 df = pd.DataFrame(bulk_result['results'])
+                df = check_filter_condition(args, df, logger).copy()
                 df['bulkSearchId'] = bulk_search_id
                 df.loc[:, 'contractId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'contractId'), axis=1)
                 df.loc[:, 'groupId'] = df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['propertyId'], row['propertyVersion'], 'groupId'), axis=1)
