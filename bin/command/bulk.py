@@ -138,6 +138,36 @@ def fetch_status_activation(papi: PapiWrapper, id: int, logger) -> pd.DataFrame:
     return activation_df
 
 
+def combine(args, account_folder, logger):
+    origin = pd.read_excel(args.origin)
+    caching = pd.read_excel(args.caching)
+    shared_cols = ['propertyName', 'contractId', 'groupId', 'propertyId', 'propertyVersion',
+                   'ruleFormat', 'productionStatus', 'isLatest', 'isLocked', 'env']
+    print()
+    df = caching.merge(origin, on=shared_cols, how='outer')
+
+    # Function to convert potential string representations of lists
+    def convert_to_list(data):
+        if isinstance(data, list):
+            return data
+        elif pd.isna(data) or data == '':
+            return []
+        else:
+            try:
+                return ast.literal_eval(data)
+            except (ValueError, SyntaxError):
+                return []
+
+    df['CACHE_CONTROL_AND_EXPIRES'] = df['matchLocations_x'].apply(convert_to_list)
+    df['origin'] = df['matchLocations_y'].apply(convert_to_list)
+    df['matchLocations'] = df.apply(lambda row: row['CACHE_CONTROL_AND_EXPIRES'] + row['origin'], axis=1)
+    df = df.reset_index(drop=True)
+
+    merged_cols = shared_cols + ['CACHE_CONTROL_AND_EXPIRES', 'origin', 'matchLocations']
+    df[merged_cols].to_excel(f'{account_folder}/merge_search_result.xlsx', index=False)
+    logger.critical(f'{account_folder}/merge_search_result.xlsx')
+
+
 def bulk_search(args, account_folder, logger) -> pd.DataFrame:
     """
     bulk search --group-id 244000 --jsonpath digiteka/search.json --product Adaptive_Media_Delivery
