@@ -24,3 +24,4 @@ UliPlot==0.2.2
 xlsxwriter==3.0.8
 yaspin==2.3.0
 ydiff==1.2
+numpy==1.26.4
