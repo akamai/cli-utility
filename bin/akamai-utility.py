@@ -129,6 +129,8 @@ if __name__ == '__main__':
         Path(f'{account_folder}/bulk').mkdir(parents=True, exist_ok=True)
         if args.subcommand == 'search':
             bulk.bulk_search(args, account_folder, logger=logger)
+        elif args.subcommand == 'combine':
+            bulk.combine(args, account_folder, logger=logger)
         elif args.subcommand == 'create':
             bulk.bulk_create(args, account_folder, logger=logger)
         elif args.subcommand == 'update':
