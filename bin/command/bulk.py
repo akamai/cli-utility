@@ -79,7 +79,7 @@ def fetch_status_patch(papi: PapiWrapper, id: int, version_note: str, logger) ->
         print_json(data=resp.json())
     else:
         result = resp.json()['patchPropertyVersions']
-        columns_to_extract = ['propertyName', 'patchPropertyId', 'patchPropertyVersion', 'patchPropertyVersionStatus']
+        columns_to_extract = ['propertyName', 'patchPropertyId', 'patchPropertyVersion', 'patchPropertyVersionStatus', 'papiErrors']
         extract_result = patch_version_result(result, columns_to_extract)
         df = pd.DataFrame(extract_result)
 
@@ -97,6 +97,9 @@ def fetch_status_patch(papi: PapiWrapper, id: int, version_note: str, logger) ->
         update_df['assetId'] = update_df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'assetId'), axis=1)
         update_df['groupId'] = update_df.parallel_apply(lambda row: papi.get_property_version_full_detail(row['patchPropertyId'], row['patchPropertyVersion'], 'groupId'), axis=1)
         update_df['url'] = update_df.parallel_apply(lambda row: papi.property_url_edit_version(row['assetId'], row['patchPropertyVersion'], row['groupId']), axis=1)
+        if 'papiErrors' in update_df.columns:
+            update_df['papiErrors'] = update_df['papiErrors'].parallel_apply(lambda x: len(x) if isinstance(x, (list, str, dict)) else 0)
+
         columns_to_extract = update_df.columns.tolist()
         columns_to_extract.extend(['ruleFormat', 'url'])
         if version_note:
@@ -457,7 +460,8 @@ def bulk_update(args, account_folder, logger):
         update_df = update_df.reset_index(drop=True)
         update_df.index = update_df.index + 1
         print()
-        columns = ['bulkPatchId', 'patchPropertyId', 'propertyName', 'patchPropertyVersion', 'url', 'status']
+        columns = ['bulkPatchId', 'patchPropertyId', 'propertyName', 'patchPropertyVersion',
+                   'url', 'status', 'papiErrors']
         print(tabulate(update_df[columns], headers=columns, tablefmt='simple', numalign='center'))
 
         if not update_df.empty:
@@ -483,10 +487,14 @@ def bulk_update(args, account_folder, logger):
         # load_columns = ['propertyId', 'propertyName', 'new_version', 'matchLocations']
         # print(tabulate(df[load_columns], headers=load_columns, tablefmt='simple', numalign='center'))
 
-        df['property_list'] = df.parallel_apply(lambda row: (row['propertyId'], row['new_version'], row['matchLocations']), axis=1)
+        df['property_list'] = df.parallel_apply(lambda row: (row['propertyName'], row['propertyId'], row['new_version'], row['matchLocations']), axis=1)
         properties = df['property_list'].values.tolist()
-        query = files.load_json(args.jsonpath)
-        resp = papi.bulk_update_behavior(properties, query)
+
+        if args.jsonpath is None:
+            resp = papi.bulk_delete_add_behavior(properties)
+        else:
+            query = files.load_json(args.jsonpath)
+            resp = papi.bulk_update_behavior(properties, query)
 
         if not resp.ok:
             print_json(data=resp.json())

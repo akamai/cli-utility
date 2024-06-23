@@ -67,8 +67,9 @@ def main(args, account_folder, logger):
                 break
             else:
                 logger.debug(f'{papi.group_id} {papi.contract_id} {papi.property_id}')
-                _, stg, prd = papi.property_version(resp, order=i)
-                all_properties.append((papi.account_id, papi.contract_id, papi.group_id, property, papi.property_id, stg, prd))
+                latest, stg, prd = papi.property_version(resp, property_name=property, order=i)
+                if latest > 0:
+                    all_properties.append((papi.account_id, papi.contract_id, papi.group_id, property, papi.property_id, stg, prd))
 
         properties_df = pd.DataFrame(all_properties, columns=['accountId', 'contractId', 'groupId', 'propertyName', 'propertyId', 'stagingVersion', 'productionVersion'])
         properties_df['groupName'] = properties_df['groupId'].apply(lambda x: papi.get_group_name(x))
@@ -366,6 +367,7 @@ def netstorage(args, account_folder, logger):
     if args.property:
         properties = sorted(args.property)
 
+    logger.debug(args.property)
     properties_df = main(args, account_folder, logger)
 
     if properties_df.empty:
@@ -1033,14 +1035,14 @@ def get_property_advanced_behavior(args, account_folder, logger):
     if args.property:
         properties = sorted(args.property)
 
-    for property in properties:
-        print()
+    print()
+    for i, property in enumerate(properties, 1):
         status, resp = papi.search_property_by_name(property)
         if status != 200:
             logger.critical(f'property {property:<50} not found')
             break
         else:
-            latest, stg, prd = papi.property_version(resp)
+            latest, stg, prd = papi.property_version(resp, property_name=property, order=i)
             if args.network == 'latest':
                 version = latest
             elif args.network == 'staging':
@@ -1050,17 +1052,19 @@ def get_property_advanced_behavior(args, account_folder, logger):
             if args.version:
                 version = args.version
                 logger.warning(f'lookup requested v{version}')
-        property_name = f'{property}_v{version}'
-        status, json = papi.property_ruletree(papi.property_id, version)
-        if status != 200:
-            sys.exit(logger.error(f'{json["title"]}. please provide correct version'))
+
+        if version > 0:
+            property_name = f'{property}_v{version}'
+            status, json = papi.property_ruletree(papi.property_id, version)
+            if status != 200:
+                sys.exit(logger.error(f'{json["title"]}. please provide correct version'))
 
         behaviors = papi.collect_property_behavior(property_name, json['rules'])
         if len(behaviors) > 0:
             db = pd.DataFrame(behaviors)
             db = db[db['name'] == 'advanced'].copy()
         if db.empty:
-            logger.info('advanced behavior not found')
+            logger.debug('advanced behavior not found')
         else:
             db = db.reset_index(drop=True)
             db = db.rename(columns={'json_or_xml': 'xml'})
@@ -1073,7 +1077,7 @@ def get_property_advanced_behavior(args, account_folder, logger):
             dc = pd.DataFrame(criteria)
             dc = dc[dc['name'] == 'matchAdvanced'].copy()
         if dc.empty:
-            logger.critical('advanced match    not found')
+            logger.debug('advanced match    not found')
         else:
             dc = dc.reset_index(drop=True)
             dc = dc.rename(columns={'json_or_xml': 'xml'})
@@ -1081,7 +1085,8 @@ def get_property_advanced_behavior(args, account_folder, logger):
             dc = dc[columns]
             options.append(dc)
 
-        adv_override = papi.get_property_advanced_override(papi.property_id, version)
+        if version > 0:
+            adv_override = papi.get_property_advanced_override(papi.property_id, version)
         if adv_override is not None:
             do = pd.DataFrame.from_dict({property_name: adv_override}, orient='index', columns=['xml'])
             if do.empty:
@@ -1094,7 +1099,10 @@ def get_property_advanced_behavior(args, account_folder, logger):
                 do = do[columns]
                 options.append(do)
 
-    if len(options) > 0:
+    if len(options) == 0:
+        print()
+        logger.critical('advanced behvior/match not found')
+    else:
         df = pd.concat(options).reset_index(drop=True)
         if args.hidexml is True:
             for property, type, path, xml_string in df[['property', 'type', 'path', 'xml']].values:
@@ -1104,6 +1112,7 @@ def get_property_advanced_behavior(args, account_folder, logger):
                 console = Console()
                 console.print(syntax)
         sheet['advancedXML'] = df
+
     if sheet:
         print()
         filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/metadata.xlsx'
