@@ -143,6 +143,30 @@ class PapiWrapper(Papi):
         self.logger.critical(f'bulkPatchId: {bulk_id}')
         return resp
 
+    def bulk_delete_add_behavior(self, property: list):
+        resp = super().bulk_delete_add_behavior(property)
+        self.logger.debug(resp.status_code)
+        if not resp.ok:
+            self.logger.error(print_json(data=resp.json()))
+        else:
+            return_url = resp.json()['bulkPatchLink']
+            bulk_id = int(return_url.split('?')[0].split('/')[-1])
+            if bulk_id:
+                count = 0
+                status = 'initial'
+                while (status != 'COMPLETE'):
+                    count += 1
+                    _resp = super().list_bulk_patch(bulk_id)
+                    status = _resp.json()['bulkPatchStatus']
+                    if count > 5:
+                        break
+                resp = _resp
+            else:
+                self.logger.error('bulk_id not found in the URL')
+
+        self.logger.critical(f'bulkPatchId: {bulk_id}')
+        return resp
+
     def bulk_activate_properties(self, network: str, email: list, pr_email: str, note: str, properties: list):
         resp = super().bulk_activate_properties(network, email, pr_email, note, properties)
         self.logger.debug(f'{resp.status_code} {resp.url}')
@@ -763,7 +787,7 @@ class PapiWrapper(Papi):
             return ruletree
         else:
             self.logger.error(f'{property_id=} {version=}')
-            return {}
+            return {'rules': ''}
 
     def get_property_full_ruletree(self, property_id: int, version: int):
         return super().get_property_full_ruletree(property_id, version)
@@ -868,10 +892,9 @@ class PapiWrapper(Papi):
     def get_property_advanced_override(self, property_id: int, version: int) -> str:
         _, full_ruletree = super().property_rate_limiting(property_id, version)
         try:
-            advancedOverride = full_ruletree['rules']['advancedOverride']
-        except:
+            return full_ruletree['rules']['advancedOverride']
+        except KeyError:
             pass
-        return advancedOverride
 
     def get_property_path_n_behavior(self, json: dict) -> list:
         navigation = []

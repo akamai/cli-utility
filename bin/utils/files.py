@@ -17,6 +17,17 @@ from UliPlot.XLSX import auto_adjust_xlsx_column_width
 logger = logging.getLogger(__name__)
 
 
+def transform_to_jsonpath(path):
+    parts = path.strip('/').split('/')
+    jsonpath = '$'
+    for part in parts:
+        if part.isdigit():
+            jsonpath += f'[{part}]'
+        else:
+            jsonpath += f'.{part}'
+    return jsonpath
+
+
 def get_line_count(filename):
     with gzip.open(filename, 'rt') as file:
         count = sum(1 for _ in file)

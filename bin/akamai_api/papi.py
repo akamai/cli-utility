@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from urllib.parse import urlparse
 
 from akamai_api.edge_auth import AkamaiSession
 from boltons.iterutils import remap
+from jsonpath_ng import parse
 from requests.structures import CaseInsensitiveDict
 from rich import print_json
 from utils import _logging as lg
@@ -35,6 +37,10 @@ class Papi(AkamaiSession):
         self.account_id = None
         self.property_id = None
         self.property_name = None
+        self.version = 0
+        self.staging_version = 0
+        self.latest_version = 0
+        self.product_id = None
         self.asset_id = None
         self.cookies = self.cookies
         self.logger = logger
@@ -180,6 +186,106 @@ class Papi(AkamaiSession):
         resp = self.session.post(url, json=payload, params=self.build_query_params(), headers=self.headers)
         return resp
 
+    def bulk_delete_add_behavior(self, properties: list[str, int, list[str]]) -> list:
+        url = self.form_url(f'{self.MODULE}/bulk/rules-patch-requests')
+        all_del_properties = []
+        all_add_properties = []
+        for property in properties:
+            prop = {}
+            prop['propertyName'] = property[0]
+            prop['propertyId'] = f'prp_{property[1]}'
+            prop['propertyVersion'] = property[2]
+            self.logger.warning(prop['propertyName'])
+            add_prop = prop.copy()
+            del_prop = prop.copy()
+
+            rule_resp = self.get_property_full_ruletree(prop['propertyId'], prop['propertyVersion'])
+            if not rule_resp.ok:
+                continue
+            else:
+                property_rule = rule_resp.json()['rules']
+
+            elements_del = []
+            elements_add = []
+            for each_path in property[3]:
+                patch_del = {}
+                patch_add = {}
+
+                if each_path.endswith('/options'):
+                    behavior = each_path.replace('/options', '', 1)
+                    jsonpath = files.transform_to_jsonpath(behavior)
+                    jsonpath_expr = parse(jsonpath)
+                    matches = jsonpath_expr.find({'rules': property_rule})
+                    if len(matches) == 0:
+                        continue
+                    rule = matches[0].value
+
+                    if rule['name'] == 'origin':
+                        ops = rule['options']
+
+                        if 'useUniqueCacheKey' in ops.keys():
+                            elements_del.append({'op': 'remove',
+                                                'path': f'{each_path}/useUniqueCacheKey'
+                                                })
+
+                        if 'ipVersion' not in ops.keys():
+                            elements_del.append({'op': 'add',
+                                                'path': f'{each_path}/ipVersion',
+                                                'value': 'IPV4'
+                                                })
+
+                        if 'minTlsVersion' in ops.keys():
+                            elements_del.append({'op': 'replace',
+                                                    'path': f'{each_path}/minTlsVersion',
+                                                    'value': 'DYNAMIC'
+                                                    })
+                        else:
+                            elements_del.append({'op': 'add',
+                                                    'path': f'{each_path}/minTlsVersion',
+                                                    'value': 'DYNAMIC'
+                                                    })
+
+                        if 'tlsVersionTitle' not in ops.keys():
+                            elements_del.append({'op': 'add',
+                                                'path': f'{each_path}/tlsVersionTitle',
+                                                'value': ''
+                                                })
+
+                    else:
+                        patch_del['op'] = 'replace'
+                        patch_del['path'] = behavior
+
+                        ops = rule['options']
+                        ops['enhancedRfcSupport'] = True
+                        ops['honorPrivate'] = True
+                        ops['honorMustRevalidate'] = True
+                        ops['cacheabilitySettings'] = ''
+                        ops['honorNoStore'] = True
+                        ops['honorNoCache'] = True
+                        ops['expirationSettings'] = ''
+                        ops['honorMaxAge'] = True
+                        ops['honorSMaxage'] = False
+                        ops['revalidationSettings'] = ''
+                        ops['honorProxyRevalidate'] = True
+                        ops['cacheControlDirectives'] = ''
+
+                        patch_del['value'] = rule
+                        elements_del.append(patch_del)
+                        print()
+
+            del_prop['patches'] = elements_del
+            all_del_properties.append(del_prop)
+
+            add_prop['patches'] = elements_add
+            all_add_properties.append(add_prop)
+
+        payload = {}
+        payload['patchPropertyVersions'] = all_del_properties
+        resp = self.session.post(url, json=payload, params=self.build_query_params(), headers=self.headers)
+        self.logger.debug(f'{resp=}')
+        time.sleep(10)
+        return resp
+
     def bulk_create_properties(self, properties: list[str, int]):
         url = '/bulk/property-version-creations'
         url = self.form_url(f'{self.MODULE}{url}')
@@ -270,13 +376,27 @@ class Papi(AkamaiSession):
             self.logger.debug(f'{property_name} {resp.status_code} {resp.url} {property_items}')
             if len(property_items) == 0:
                 self.logger.debug(f'Not found {property_name}')
-                return resp.status_code, 'Not found'
+                return resp.status_code, property_name
             else:
                 self.account_id = property_items[0]['accountId']
                 self.contract_id = property_items[0]['contractId']
                 self.asset_id = property_items[0]['assetId']
                 self.group_id = int(property_items[0]['groupId'])
                 self.property_id = int(property_items[0]['propertyId'])
+                try:
+                    self.staging_version = [x['propertyVersion'] for x in property_items
+                                            if x['stagingStatus'] == 'ACTIVE'][0]
+                except (IndexError, KeyError):
+                    self.staging_version = 0
+
+                try:
+                    self.production_version = [x['propertyVersion'] for x in property_items
+                                               if x['productionStatus'] == 'ACTIVE'][0]
+                except (IndexError, KeyError):
+                    self.production_version = 0
+
+                self.logger.debug(f'{property_name} {self.staging_version} {self.production_version}')
+
                 return resp.status_code, resp.json()
         elif resp.status_code == 401:
             self.logger.error(resp['title'])
@@ -293,16 +413,16 @@ class Papi(AkamaiSession):
         url = self.form_url(f'{self.MODULE}/search/find-by-value')
         payload = {'hostname': hostname}
         response = self.session.post(url, json=payload, headers=self.headers)
-        if response.status_code == 200:
+        if response.ok:
             if hostname == 'Others':
                 self.logger.critical(f'{hostname=}')
                 files.write_json('output/error_others.json', response.json())
                 return 'ERROR_Others'
-            try:
 
+            try:
                 property_items = response.json()['versions']['items'][0]
                 property_name = property_items['propertyName']
-                self.logger.debug(property_name)
+                self.logger.debug(f'{property_name} {response.url}')
                 # print_json(data=response.json()['versions']['items']))
                 return property_items['propertyName']
             except:
@@ -328,8 +448,20 @@ class Papi(AkamaiSession):
         url = self.form_url(f'{self.MODULE}/properties/{property_id}')
         response = self.session.get(url, headers=self.headers)
         self.logger.debug(f'Collecting properties {urlparse(response.url).path:<30} {response.status_code} {response.url}')
-        if response.status_code == 200:
-            return response.json()['properties']['items'][0]
+
+        if response.ok:
+            property = response.json()['properties']['items'][0]
+            self.latest_version = int(property.get('latestVersion', 0))
+            try:
+                self.staging_version = int(property.get('stagingVersion', 0))
+            except TypeError:
+                self.staging_version = 0
+            try:
+                self.production_version = int(property.get('productionVersion', 0))
+            except TypeError:
+                self.production_version = 0
+
+            return property
         else:
             return response.json()
 
@@ -487,7 +619,10 @@ class Papi(AkamaiSession):
             headers['Content-Type'] = f'application/vnd.akamai.papirules.{rule_format}+json'
             headers['Accept'] = f'application/vnd.akamai.papirules.{rule_format}+json'
 
-        payload = {'rules': rules['rules']}
+        if 'rules' in rules.keys():
+            rules = rules['rules']
+
+        payload = {'rules': rules}
         payload['ruleFormat'] = rule_format
         payload['comments'] = version_note
 
@@ -526,18 +661,17 @@ class Papi(AkamaiSession):
         else:
             return resp.json()
 
-    def property_version(self, items: dict, order: int | None = None) -> tuple:
+    def property_version(self, items: dict, property_name: str | None = None, order: int | None = None) -> tuple:
 
         latest_version = 0
         stg_version = 0
         prd_version = 0
 
         try:
-            # print_json(data=items)
             itemss = []
             itemss = items['versions']['items']
         except TypeError:
-            self.logger.error(f'invalid property {items}')
+            self.logger.debug(f'      {property_name:<70}invalid')
 
         for item in itemss:
             self.property_id = item['propertyId']
@@ -557,11 +691,20 @@ class Papi(AkamaiSession):
                     dd[k].append(v)
             latest_version = max(dd['propertyVersion'])
 
-        if len(itemss) > 0:
-            if latest_version == stg_version and stg_version == prd_version:
-                self.logger.info(f'{order:<5} {itemss[0]["propertyName"]:<60}                     v{latest_version}')
+        if len(itemss) == 0:
+            config = f'{order:<5} {property_name}'
+            self.logger.error(f'{config:<70} invalid')
+        else:
+            if not order:
+                order = ''
+                config = f'{order:<5} {itemss[0]["propertyName"]}'
             else:
-                self.logger.info(f'{order:<5} {itemss[0]["propertyName"]:<60} latest_stg_prd      v{latest_version}_v{stg_version}_v{prd_version}')
+                config = f'{order:<5} {itemss[0]["propertyName"]}'
+            if latest_version == stg_version and stg_version == prd_version:
+                self.logger.info(f'{config:<70}                     v{latest_version}')
+            else:
+                self.logger.info(f'{config:<70} latest_stg_prd      v{latest_version}_v{stg_version}_v{prd_version}')
+
         return latest_version, stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):
@@ -611,16 +754,22 @@ class Papi(AkamaiSession):
         params = {'contractId': self.contract_id,
                   'groupId': self.group_id}
 
-        self.headers['Content-Type'] = 'application/vnd.akamai.papirules.latest+json'
-        self.headers['Accept'] = 'application/vnd.akamai.papirules.latest+json'
+        # self.headers['Content-Type'] = 'application/vnd.akamai.papirules.latest+json'
+        # self.headers['Accept'] = 'application/vnd.akamai.papirules.latest+json'
         # print_json(data=self.headers)
 
-        resp = self.session.get(url, headers=self.headers, params=params)
-        self.logger.debug(f'{resp.status_code} {resp.text}')
-        # print_json(data=resp.json())
-        chidren = len(resp.json()['rules']['children'])
-        self.logger.debug(f'original {chidren}')
-        return resp
+        if version > 0:
+            resp = self.session.get(url, headers=self.headers, params=params)
+            self.logger.debug(f'{resp.status_code} {resp.text}')
+            try:
+                chidren = len(resp.json()['rules']['children'])
+            except KeyError:
+                chidren = ''
+                print_json(data=resp.json())
+                self.logger.error(resp)
+            self.logger.debug(f'original {chidren}')
+            self.logger.debug(resp)
+            return resp
 
     def get_ruleformat_schema(self, product_id: str, format_version: str | None = 'latest'):
         url = self.form_url(f'{self.MODULE}/schemas/products/{product_id}/{format_version}')
