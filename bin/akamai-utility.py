@@ -83,6 +83,9 @@ if __name__ == '__main__':
             dc.origin_certificate(args, account_folder, logger=logger)
         elif args.subcommand == 'jsonpath':
             dc.jsonpath(args, account_folder, logger=logger)
+        elif args.subcommand == 'ruleformat':
+            Path(f'{account_folder}/ruleformat').mkdir(parents=True, exist_ok=True)
+            dc.upgrade_ruleformat(args, account_folder, logger=logger)
         else:
             dc.main(args, account_folder, logger)
 

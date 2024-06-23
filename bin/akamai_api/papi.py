@@ -281,7 +281,7 @@ class Papi(AkamaiSession):
         elif resp.status_code == 401:
             self.logger.error(resp['title'])
             sys.exit()
-        elif 'WAF deny rule IPBLOCK-BURST' in resp['detail']:
+        elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
             self.logger.error(resp['detail'])
             lg.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)
             sys.exit()
@@ -475,15 +475,31 @@ class Papi(AkamaiSession):
     def update_property_ruletree(self, property_id: int, version: int,
                                  rule_format: str,
                                  rules: dict,
-                                 version_note: str) -> tuple:
+                                 version_note: str,
+                                 group_id: str | None = None,
+                                 contract_id: str | None = None) -> tuple:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
+
         headers = {'Content-Type': 'application/vnd.akamai.papirules.latest+json'}
+        headers['Accept'] = 'application/vnd.akamai.papirules.latest+json'
+
         if rule_format != 'latest':
             headers['Content-Type'] = f'application/vnd.akamai.papirules.{rule_format}+json'
-        payload = {'rules': rules}
+            headers['Accept'] = f'application/vnd.akamai.papirules.{rule_format}+json'
+
+        payload = {'rules': rules['rules']}
+        payload['ruleFormat'] = rule_format
         payload['comments'] = version_note
-        resp = self.session.put(url, json=payload, headers=headers)
-        return resp.status_code, resp.text
+
+        params = {'validateRules': True,
+                  'validateMode': 'full'}
+        if group_id and contract_id:
+            params['groupId'] = group_id,
+            params['contractId'] = contract_id,
+
+        resp = self.session.put(url, json=payload, headers=headers, params=params)
+
+        return resp
 
     def get_property_hostnames(self, property_id: int) -> list:
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/hostnames')
@@ -510,7 +526,7 @@ class Papi(AkamaiSession):
         else:
             return resp.json()
 
-    def property_version(self, items: dict) -> tuple:
+    def property_version(self, items: dict, order: int | None = None) -> tuple:
 
         latest_version = 0
         stg_version = 0
@@ -543,9 +559,9 @@ class Papi(AkamaiSession):
 
         if len(itemss) > 0:
             if latest_version == stg_version and stg_version == prd_version:
-                self.logger.info(f'{itemss[0]["propertyName"]:<60}                     v{latest_version}')
+                self.logger.info(f'{order:<5} {itemss[0]["propertyName"]:<60}                     v{latest_version}')
             else:
-                self.logger.info(f'{itemss[0]["propertyName"]:<60} latest_stg_prd      v{latest_version}_v{stg_version}_v{prd_version}')
+                self.logger.info(f'{order:<5} {itemss[0]["propertyName"]:<60} latest_stg_prd      v{latest_version}_v{stg_version}_v{prd_version}')
         return latest_version, stg_version, prd_version
 
     def property_rate_limiting(self, property_id: int, version: int):
@@ -594,6 +610,11 @@ class Papi(AkamaiSession):
         url = self.form_url(f'{self.MODULE}/properties/{property_id}/versions/{version}/rules')
         params = {'contractId': self.contract_id,
                   'groupId': self.group_id}
+
+        self.headers['Content-Type'] = 'application/vnd.akamai.papirules.latest+json'
+        self.headers['Accept'] = 'application/vnd.akamai.papirules.latest+json'
+        # print_json(data=self.headers)
+
         resp = self.session.get(url, headers=self.headers, params=params)
         self.logger.debug(f'{resp.status_code} {resp.text}')
         # print_json(data=resp.json())

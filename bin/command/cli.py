@@ -154,6 +154,12 @@ delivery = [{'name': 'add-ehn',
                                    {'name': 'show', 'help': 'display ruletree', 'action': 'store_true', 'default': False},
                                    {'name': 'show-depth', 'help': 'to display max depth', 'action': 'store_true'},
                                    {'name': 'show-limit', 'help': 'show config limit ie. max-nested-rules-limit', 'action': 'store_true'}]},
+            {'name': 'ruleformat',
+             'help': 'upgrade rule format to latest version',
+             'required_arguments': [{'name': 'comment', 'help': 'note on the property'}],
+             'optional_arguments': [{'name': 'property', 'help': 'property name', 'nargs': '+'},
+                                    {'name': 'show', 'help': 'display ruletree', 'action': 'store_true', 'default': False},
+                                    {'name': 'input', 'help': 'input filename.extension ie config.txt'}]},
                 ]
 
 security = [{'name': 'hostname',

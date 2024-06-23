@@ -8,6 +8,7 @@ import platform
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from subprocess import Popen
@@ -58,7 +59,7 @@ def main(args, account_folder, logger):
     if args.property:
         distinct_properties = list(set(sorted(args.property)))
         all_properties = []
-        for property in distinct_properties:
+        for i, property in enumerate(distinct_properties, 1):
             status, resp = papi.search_property_by_name(property)
             # print_json(data=resp)
             if status != 200:
@@ -66,7 +67,7 @@ def main(args, account_folder, logger):
                 break
             else:
                 logger.debug(f'{papi.group_id} {papi.contract_id} {papi.property_id}')
-                _, stg, prd = papi.property_version(resp)
+                _, stg, prd = papi.property_version(resp, order=i)
                 all_properties.append((papi.account_id, papi.contract_id, papi.group_id, property, papi.property_id, stg, prd))
 
         properties_df = pd.DataFrame(all_properties, columns=['accountId', 'contractId', 'groupId', 'propertyName', 'propertyId', 'stagingVersion', 'productionVersion'])
@@ -104,7 +105,7 @@ def main(args, account_folder, logger):
                                                             if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
         # properties.loc[pd.notnull(properties['cpcode_unique_value']) & (properties['cpcode_unique_value'] == ''), 'cpcode'] = '0'
 
-        columns = ['propertyName', 'propertyId', 'latestVersion', 'stagingVersion', 'productionVersion',
+        columns = ['groupId', 'contractId', 'propertyName', 'propertyId', 'latestVersion', 'stagingVersion', 'productionVersion',
                    'updatedDate', 'productId', 'ruleFormat', 'hostname_count', 'hostname']
         properties_df['propertyId'] = properties_df['propertyId'].astype(str)
 
@@ -133,7 +134,7 @@ def main(args, account_folder, logger):
         properties_df = properties_df.reset_index(drop=True)
 
         generic_columns = properties_df.columns
-        main = ['propertyName', 'propertyId',
+        main = ['groupId', 'contractId', 'propertyName', 'propertyId',
                 'latestVersion', 'stagingVersion', 'productionVersion',
                 'updatedDate', 'productId', 'ruleFormat', 'propertyName(hyperlink)']
         properties_columns = [column for column in generic_columns if column not in main]
@@ -1214,6 +1215,73 @@ def get_custom_behavior(args, logger):
                 print(tabulate(df[columns], headers=columns, tablefmt='simple'))
                 print()
                 logger.warning('remove --hidexml to show XML')
+
+
+def upgrade_ruleformat(args, account_folder, logger):
+    if args.property and args.input:
+        sys.exit(logger.error('Please use either --property or --input, not both'))
+    if args.input:
+        with open(args.input) as file:
+            args.property = sorted([line.rstrip('\n') for line in file.readlines()])
+    if args.property:
+        properties = sorted(args.property)
+
+    df = main(args, account_folder, logger)
+    if df.empty:
+        sys.exit()
+
+    papi = p.PapiWrapper(account_switch_key=args.account_switch_key, section=args.section, edgerc=args.edgerc, logger=logger)
+    pandarallel.initialize(progress_bar=False, nb_workers=5, verbose=0)
+    df['ruletree_get'] = df.parallel_apply(lambda row: papi.get_property_full_ruletree(row['propertyId'], int(row['productionVersion'])
+                                                                if pd.notnull(row['productionVersion']) else row['latestVersion']), axis=1)
+
+    def download_rule(property_name: str, comment: str, resp):
+        errors = []
+        if resp.ok:
+            filename = f'{account_folder}/ruleformat/{property_name}.json'
+            rule = resp.json()
+            rule['comments'] = comment
+            errors = rule.get('errors', [])
+
+            files.write_json(filename, rule)
+            return filename, errors
+        return '', errors
+
+    df[['json_loc', 'errors']] = df[['propertyName', 'ruletree_get']].parallel_apply(
+        lambda row: pd.Series(download_rule(row['propertyName'], args.comment, row['ruletree_get'])),
+        axis=1)
+    # cols = ['propertyName', 'json_loc', 'errors']
+    logger.critical('create new version')
+    df['new_version'] = df[['propertyId', 'productionVersion']].parallel_apply(
+        lambda row: papi.create_new_property_version(row['propertyId'],  row['productionVersion']),
+        axis=1)
+
+    logger.critical('update now')
+    time.sleep(120)
+
+    # replace "useUniqueCacheKey": false,
+    # with "tlsVersionTitle": "",
+
+    df['ruletree_load'] = df['json_loc'].parallel_apply(lambda x: files.load_json(x))
+
+    df['update_resp'] = df.parallel_apply(
+        lambda row: papi.update_property_ruletree(row['propertyId'],
+                                                  row['new_version'],  # use new_version if create new version
+                                                  rule_format='latest',
+                                                  payload=row['ruletree_load'],
+                                                  version_notes=args.comment,
+                                                  group_id=row['groupId'],
+                                                  contract_id=row['contractId']),
+        axis=1)
+
+    df['errors'] = df['update_resp'].parallel_apply(lambda x: x.json().get('errors', ''))
+
+    cols = ['propertyName', 'propertyId', 'groupId', 'contractId', 'latestVersion',
+            'updatedDate', 'ruletree_load', 'update_resp', 'errors']
+    sheet = {'sheet1': df[cols]}
+    filepath = f'{account_folder}/{args.output}' if args.output else f'{account_folder}/upgrade_result.xlsx'
+    files.write_xlsx(filepath, sheet) if not df.empty else None
+    files.open_excel_application(filepath, args.show, df)
 
 
 # BEGIN helper method

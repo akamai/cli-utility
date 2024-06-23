@@ -10,6 +10,7 @@ ipwhois==1.2.0
 jsonpath_ng==1.6.0
 jsonschema==4.17.3
 lxml==4.9.2
+numpy==1.26.4
 pandarallel==1.6.5
 pandas==2.0.3
 plotly==5.17.0
@@ -24,4 +25,3 @@ UliPlot==0.2.2
 xlsxwriter==3.0.8
 yaspin==2.3.0
 ydiff==1.2
-numpy==1.26.4

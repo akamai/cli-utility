@@ -768,12 +768,24 @@ class PapiWrapper(Papi):
     def get_property_full_ruletree(self, property_id: int, version: int):
         return super().get_property_full_ruletree(property_id, version)
 
-    def update_property_ruletree(self, property_id: int, version: int, rule_format: str, payload: dict, version_notes: str) -> str:
+    def update_property_ruletree(self, property_id: int,
+                                 version: int,
+                                 rule_format: str,
+                                 payload: dict,
+                                 version_notes: str,
+                                 group_id: str | None = None,
+                                 contract_id: str | None = None) -> str:
+
         self.logger.debug(f'{property_id} {version} {rule_format=}')
-        status, resp = super().update_property_ruletree(property_id, version, rule_format, payload, version_notes)
-        if status != 200:
-            self.logger.error(f'{property_id=} {version=} {resp}')
-        return status
+        resp = super().update_property_ruletree(property_id, version, rule_format, payload, version_notes, group_id, contract_id)
+
+        if not resp.ok:
+            self.logger.error(f'{property_id=} {version=} {resp} {resp.url}')
+        else:
+            errors = resp.json().get('errors', '')
+            self.logger.error(errors)
+
+        return resp
 
     def build_new_ruletree(self, ruletree: dict, new_rule: dict) -> str:
         ruletree['rules']['children'].insert(0, new_rule)
