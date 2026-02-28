@@ -43,7 +43,12 @@ if __name__ == '__main__':
                 papi = p.PapiWrapper(account_switch_key=account_switch_key, section=section, edgerc=edgerc, logger=logger)
                 account_id = papi.get_account_id()
                 iam = IdentityAccessManagement(account_switch_key=account_id, logger=logger)
-                account = iam.search_account_name(value=account_id)[0]
+                result = iam.search_account_name(value=account_id)
+                if not result:  # None or empty list ? permission issue (normal for customers)
+                    print(f" [WARNING] Account name lookup failed (single-account permission). Using fallback ID: {account_id}")
+                    account = account_id
+                else:
+                    account = result[0]
             account = iam.show_account_summary(account)
             account_folder = f'output/{account}'
             Path(account_folder).mkdir(parents=True, exist_ok=True)

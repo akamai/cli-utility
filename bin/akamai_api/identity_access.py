@@ -47,7 +47,8 @@ class IdentityAccessManagement(AkamaiSession):
             else:
                 return resp.json()
         elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':
-            sys.exit(self.logger.error('You do not have permission to lookup other accounts'))
+            self.logger.warning('You do not have permission to lookup other accounts')
+            return None
         elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
             self.logger.error(resp.json()['detail'])
             self.logger.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)
@@ -79,7 +80,8 @@ class IdentityAccessManagement(AkamaiSession):
                 for account in resp.json():
                     account_name.append(account['accountName'])
         elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':
-            sys.exit(self.logger.error('You do not have permission to lookup other accounts'))
+            self.logger.warning('You do not have permission to lookup other accounts')
+            return None
         elif 'WAF deny rule IPBLOCK-' in resp.json()['detail']:
             self.logger.error(resp.json()['detail'])
             lg.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)
@@ -102,7 +104,8 @@ class IdentityAccessManagement(AkamaiSession):
         if resp.status_code == 200:
             return resp.json()
         elif resp.json()['title'] == 'ERROR_NO_SWITCH_CONTEXT':
-            sys.exit(self.logger.error('You do not have permission to lookup other accounts'))
+            self.logger.warning('You do not have permission to lookup other accounts')
+            return None
         elif 'WAF deny rule IPBLOCK-BURST' in resp.json()['detail']:
             self.logger.error(resp.json()['detail'])
             lg.countdown(540, msg='Oopsie! You just hit rate limit.', logger=self.logger)

@@ -9,13 +9,14 @@ emojis==0.7.0
 ipwhois==1.2.0
 jsonpath_ng==1.6.0
 jsonschema==4.17.3
-lxml==4.9.2
-numpy==1.26.4
+lxml>=5.3.0
+numpy>=2.1
 pandarallel==1.6.5
-pandas==2.0.3
+pandas>=2.2.3
 plotly==5.17.0
 polars==0.19.6
 pydig==0.4.0
+pytz>=2024.1
 Pygments==2.15.0
 pyopenssl==23.2.0
 rich-argparse==1.2.0
