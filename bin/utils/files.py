@@ -10,7 +10,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pandas as pd
-from lxml import etree
 from UliPlot.XLSX import auto_adjust_xlsx_column_width
 
 
@@ -51,9 +50,12 @@ def load_json(filepath: str) -> dict:
 
 def remove_comment_notes(root):
     ns = {'comment': 'uri:akamai.com/metadata/comment/5.0'}
-    for element in root.iterfind('.//comment:note', namespaces=ns):
-        parent = element.getparent()
-        parent.remove(element)
+    # stdlib ElementTree has no Element.getparent(), so build a child -> parent map
+    parent_map = {child: parent for parent in root.iter() for child in parent}
+    for element in root.findall('.//comment:note', namespaces=ns):
+        parent = parent_map.get(element)
+        if parent is not None:
+            parent.remove(element)
     return root
 
 
@@ -84,9 +86,9 @@ def remove_tags_from_xml_file(filepath, ignore_tags):
     }
 
     for prefix, uri in namespaces.items():
-        etree.register_namespace(prefix, uri)
+        ET.register_namespace(prefix, uri)
 
-    tree = etree.parse(filepath)
+    tree = ET.parse(filepath)
     root = tree.getroot()
     root = remove_comment_notes(root)
     if ignore_tags:
